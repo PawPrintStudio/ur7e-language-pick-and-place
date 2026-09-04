@@ -176,6 +176,26 @@ Gotchas learned (matter for task 1.6's `safety_monitor`):
 
 Still open from task 0.6: interactive keyboard-teleop jog, and the protective-stop recovery exercise.
 
+### 4a. Motion envelope finding — robot refuses trajectories above ~0.018 rad/s joint speed (MUST FIX before real trajectories)
+
+After the first success we attempted a 4-joint "nod" sequence (±10–20° per joint). The robot **never moved**: pendant showed a velocity-limit complaint (exact code TBD), the driver-side desired position crept ahead of the motionless joint until the scaled JTC's 0.2 rad path tolerance tripped → `error_code -4, Aborted due to state tolerance violation`. Reproduced twice with the identical signature (wrist_3, error 0.200 rad). Meanwhile a 1.1° micro-move and the original 2.9° move — commanded ~10–25× *slower* — both succeeded with sub-millidegree tracking.
+
+| Motion | wrist_3 actual speed | Result |
+|---|---|---|
+| +2.9° @10% slider | ~0.002 rad/s | success |
+| +1.1° micro-test | ~0.0007 rad/s | success |
+| +20° nod @20% slider | ~0.018 rad/s | robot never moved, -4 abort |
+| +20° repeat | ~0.018 rad/s | identical abort |
+
+0.018 rad/s is glacial — no sane configured limit sits there. Working hypothesis (was already on the session-1 watch list): **no RT scheduling** (`Could not enable FIFO RT scheduling policy`) lets the 500 Hz reverse-interface stream stall for tens of ms; on resume the setpoint arrives as a jump whose *implied instantaneous velocity* trips URControl's guard. Faster trajectories → proportionally bigger jump per stall → threshold behavior exactly as observed. Dashboard state was PLAYING/RUNNING/NORMAL throughout — the channel itself never dropped.
+
+Next steps (session 3, before any teleop):
+1. Read the exact pendant log entry (code + text) for the velocity complaint — distinguishes URControl runtime guard vs safety-limit event (check Safety → Joint Limits too, in case teleop-era limits are set absurdly low).
+2. Apply the catalogued RT fix on the Jetson (ARCHITECTURE.md risks): `rtprio` limits for the driver user (`/etc/security/limits.d/`, e.g. `jetson - rtprio 99`) so the FIFO warning disappears; retest the same +20° nod. If it then tracks, hypothesis confirmed and closed.
+3. If not RT: bisect speed (2×, 4×, 8× the known-good 0.002 rad/s) to measure the actual threshold, and test with explicit waypoint velocities (cubic interpolation) to rule out linear-interpolation velocity steps at waypoints.
+
+Until resolved, keep commanded joint speeds ≤0.002 rad/s (known good) for any verification moves.
+
 ### SSH path (task 0.3 documentation)
 
 - Laptop joins the Jetson's own WiFi hotspot, SSID **`urjetson`** → `ssh jetson@10.42.0.1`. This works with no lab infrastructure at all.

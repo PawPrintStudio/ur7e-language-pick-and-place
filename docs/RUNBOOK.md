@@ -104,7 +104,7 @@ scp jetson@<JETSON_IP>:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 | Item | Value |
 |---|---|
 | PolyScope version | **5.23** (PolyScope 5 — ≥5.9.4 driver minimum met; PolyScope X concerns retired) |
-| Local/Remote mode | |
+| Local/Remote mode | **Manual** (3-mode pendant: Manual / Automatic / Remote Control → Remote Control is enabled on this unit; stay Manual for session 1) |
 | External Control URCap installed? Host IP/port | |
 | JetPack version (apt) | |
 | MAXN SUPER mode id used | |

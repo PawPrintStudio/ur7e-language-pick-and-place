@@ -108,7 +108,7 @@ scp jetson@ubuntu.local:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 | External Control URCap installed? Host IP/port | **Yes, active** — Host IP `192.168.56.1`, Custom port `50002` (driver default), Host Name `192.168.56.1`. Also active: UR Connect. → Jetson eth must hold 192.168.56.1 (B4). |
 | JetPack version (apt) | **6.2.1+b38** (L4T R36.4.7, Ubuntu 22.04.5) |
 | MAXN SUPER mode id used | id **2** — was already the active mode |
-| Ethernet iface + Jetson IP / robot IP | |
+| Ethernet iface + Jetson IP / robot IP | **enP8p1s0** — Jetson 192.168.56.1/24 ↔ robot 192.168.56.101 (static, NM profile "Wired connection 1", `ipv4.method: manual`, autoconnect — no separate `ur-link` profile was needed) |
 | `ur_type:=ur7e` accepted? | **Yes** — Humble binary driver loaded hardware `ur7e`; dashboard reports robot version 5.23.0.0; RTDE v2 @ 500 Hz |
 | Controllers active | `scaled_joint_trajectory_controller`, `joint_state_broadcaster`, `io_and_status_controller`, `speed_scaling_state_broadcaster`, `force_torque_sensor_broadcaster`, `tcp_pose_broadcaster`, `ur_configuration_controller`, `friction_model_controller` (others loaded inactive) |
 | Calibration YAML extracted? | **Yes** — committed as `config/ur7e_calibration.yaml` (hash calib_12445833238222042106). Wire into bringup via `kinematics_params_file` (task 0.5); TCP spot-check vs pendant pending (issue #4 acceptance). |
@@ -123,9 +123,68 @@ scp jetson@ubuntu.local:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 - Robot logged error code `C210A0` at driver startup, then went NORMAL/RUNNING. Watch for recurrence.
 - External Control **Play was not exercised** in session 1 — driver bringup verified, motion path not yet. First item of session 2.
 
-## Lab session 2 — plan (issues #3, #4, #5, #6)
+## Lab session 2 — results (issues #3, #4; run remotely over SSH, 2026-09-04)
 
-1. Bringup launch (task 0.5) passing `kinematics_params_file` → confirm the calibration-mismatch error is GONE (closes the checksum question, most of #4).
-2. TCP spot-check: `tcp_pose_broadcaster` output vs pendant Move-screen TCP readout at 2–3 arm poses; < 1 mm closes #4.
-3. Reboot the Jetson once → confirm eth static config and robot link come back (closes #3).
-4. External Control Play + keyboard-teleop jog through our bringup (task 0.6) — first commanded motion; hand on the e-stop, speed slider low.
+Done entirely from the laptop over SSH — no pendant access. Plan items 1–3 executed; item 4 (first motion) needs a human at the arm and is queued for the next lab visit.
+
+### 1. Checksum question — CLOSED (issue #4)
+
+Relaunched the stock driver launch with our extracted calibration wired in:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur7e robot_ip:=192.168.56.101 launch_rviz:=false kinematics_params_file:=/home/jetson/ur7e_calibration.yaml
+```
+
+Driver log now prints `Calibration checksum: 'calib_12445833238222042106'` → **“Calibration checked successfully.”** — the session-1 mismatch ERROR is gone, and the log has zero ERROR lines. Confirms the hypothesis: the session-1 `calib_12788084448423163542` was the hash of the *default* kinematics file shipped with `ur_description`; our YAML carries the robot's true calibration. Every future launch must pass `kinematics_params_file` (this is why task 0.5's bringup launch bakes it in). Verified twice — before and after the reboot test.
+
+### 2. TCP spot-check — FK validated to <0.1 mm; pendant glance still wanted (issue #4)
+
+Why this works without the pendant: `/tcp_pose_broadcaster/pose` reports the **controller's** TCP (via RTDE — the same number the pendant Move screen displays), while TF `base → tool0` is **our URDF + calibration** computing FK from `/joint_states`. Comparing them checks the calibration chain against the robot's own ground truth, with more digits than the pendant shows.
+
+At the parked pose (joints ≈ [-1.0505, -2.5947, -2.3083, -5.6924, 5.5277, 5.3739] rad):
+
+| Source | x | y | z (m, `base` frame) |
+|---|---|---|---|
+| TF `base→tool0` (our FK) | -0.101107 | -0.222188 | 0.230576 |
+| Controller TCP (RTDE) | -0.131047 | -0.225229 | 0.225140 |
+
+Orientations match to <1e-4 (quaternion). The translation gap, rotated into the tool frame, is **[0.01, 0.03, 30.58] mm** — a pure +30.6 mm offset along tool-Z with ≤0.03 mm residual in x/y. That is a **TCP offset configured on the pendant**, and 30.5 mm is exactly the OnRobot Quick Changer height (the QC sits on the flange; cf. task 1.3's `0.2 kg QC` payload note). So the FK chain agrees with the controller to hundredths of a millimeter once the pendant TCP is accounted for.
+
+Remaining to fully close #4 (next lab visit, 2 min at the pendant):
+- Confirm Installation → General → TCP shows z ≈ 30.5 mm (and note the exact value + payload).
+- Repeat the comparison at 1–2 more arm poses (freedrive the arm, re-run the TF-vs-topic readout). One pose can't mathematically distinguish "constant tool-frame offset" from a coincidental FK error; a second orientation does.
+
+### 3. Reboot survival — PASSED (issue #3 closed)
+
+`sudo reboot` at 17:16; ~90 s later everything self-recovered with nobody touching anything:
+
+- WiFi hotspot `urjetson` back up, laptop re-associated automatically → SSH path restored
+- `enP8p1s0` static 192.168.56.1/24 restored (NM profile "Wired connection 1", `manual` + autoconnect)
+- USB-Ethernet internet adapter (`enxa0cec8b70c31`, 10.102.52.55) back
+- Robot ping 0.4 ms; driver relaunched cleanly with calibration OK
+- MAXN_SUPER (id 2) persisted across the reboot
+
+### 4. First commanded motion — NOT done (needs a human at the arm)
+
+External Control Play + teleop jog (task 0.6) requires someone physically present: pendant Play button, hand on the e-stop, speed slider low. Everything else is staged — driver running with calibration, `scaled_joint_trajectory_controller` active. First item of the next lab visit.
+
+### SSH path (task 0.3 documentation)
+
+- Laptop joins the Jetson's own WiFi hotspot, SSID **`urjetson`** → `ssh jetson@10.42.0.1`. This works with no lab infrastructure at all.
+- **Gotcha:** while on the hotspot, the laptop's *internet* also routes through the Jetson (default route via 10.42.0.1 → Jetson's USB-Ethernet uplink). Rebooting the Jetson therefore cuts the laptop's internet until the hotspot returns and the laptop re-associates.
+- After the reboot the Jetson's SSH host key verification tripped on a stale `known_hosts` entry (old ECDSA entry vs freshly negotiated RSA). Fix: `ssh-keygen -R 10.42.0.1`, reconnect, and sanity-check you're on the Jetson (hostname `ubuntu`, `~/ur7e_calibration.yaml` present).
+- Alternative from the robot-side private network: `jetson@ubuntu.local` via mDNS (session 1 note).
+- ROS env on the Jetson (must match to see topics): `ROS_DOMAIN_ID=42`, `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` (set in `~/.bashrc`; export explicitly in non-interactive SSH commands, since `.bashrc` returns early for non-interactive shells).
+
+### Session 2 watch list
+
+- `C210A0` **recurs at every driver connect** (WARN via `robot_state_helper`, robot proceeds to RUNNING). Reproducible, so far benign; still worth identifying the code's meaning at the pendant log next visit.
+- `Could not enable FIFO RT scheduling policy` still present (expected — unchanged stock kernel). Becomes real work only if reverse-interface drops appear under motion load.
+- Driver runs ad-hoc via `nohup ... > ~/ses2_driver.log` — fine for lab sessions; task 0.5's bringup owns making this a single command (and eventually a service).
+
+## Lab session 3 — plan (issues #4 close-out, #5, #6)
+
+1. At the pendant: read Installation → TCP (expect z ≈ 30.5 mm, the Quick Changer) + payload; note exact values into this file.
+2. TCP comparison at 2 more poses (freedrive between them): `ros2 run tf2_ros tf2_echo base tool0` vs `ros2 topic echo /tcp_pose_broadcaster/pose --once` — < 1 mm after subtracting the pendant TCP closes #4.
+3. External Control Play + keyboard-teleop jog through our bringup (task 0.6) — first commanded motion; hand on the e-stop, speed slider low; exercise protective-stop recovery and document it.
+4. Start task 0.5 bringup package: one launch = driver + `kinematics_params_file` + our params.

@@ -106,10 +106,11 @@ scp jetson@<JETSON_IP>:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 | PolyScope version | **5.23** (PolyScope 5 — ≥5.9.4 driver minimum met; PolyScope X concerns retired) |
 | Local/Remote mode | **Manual** (3-mode pendant: Manual / Automatic / Remote Control → Remote Control is enabled on this unit; stay Manual for session 1) |
 | External Control URCap installed? Host IP/port | **Yes, active** — Host IP `192.168.56.1`, Custom port `50002` (driver default), Host Name `192.168.56.1`. Also active: UR Connect. → Jetson eth must hold 192.168.56.1 (B4). |
-| JetPack version (apt) | |
-| MAXN SUPER mode id used | |
+| JetPack version (apt) | **6.2.1+b38** (L4T R36.4.7, Ubuntu 22.04.5) |
+| MAXN SUPER mode id used | id **2** — was already the active mode |
 | Ethernet iface + Jetson IP / robot IP | |
 | `ur_type:=ur7e` accepted? | |
 | Controllers active | |
 | Calibration YAML extracted? | |
-| Anything that errored (paste text) | |
+| Anything that errored (paste text) | apt offline on robot network (expected — DNS unavailable; install over WiFi) |
+| Notable | `/opt/ros` has **humble and rolling** — ensure shells source humble. **No `ros-humble-ur*` was installed** and `~/ur_ws/src` holds only `ur_dev_bringup` → the teleop-era driver never ran from this Jetson via apt; fresh install required. ~937 GB disk, 3.7 GB swap present. |

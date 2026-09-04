@@ -32,8 +32,8 @@ Goal: the arm picks a known object from a hardcoded pose with a real gripper, un
 | 1.1 | RG2 v2 ROS bench setup on the **direct tool connector** (decided — D6): install UR RS485 Daemon URCap, disable the OnRobot URCap, Tool I/O "Controlled by User" @ 24 V, verify `/tmp/ttyUR` bridge from the Jetson | Gripper opens/closes from a test script over the bridge |
 | 1.2 | `gripper_node`: `GripperCommand` action wrapping an OnRobot RG2 driver (`tonydle/OnRobot_ROS2_Driver` serial or `ABC-iRobotics/onrobot-ros2` TCP per 1.1) | Open/close/width/force from CLI works on real gripper |
 | 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant |
-| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test |
-| 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) | Each primitive callable as an action; unit-tested against mock hardware |
+| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); **`pick_ik` as IK solver** (kinematics.yaml); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test |
+| 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) **built on `pymoveit2`** (official `moveit_py` is not available on Humble binaries) | Each primitive callable as an action; unit-tested against mock hardware |
 | 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" |
 | 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs |
 
@@ -67,7 +67,7 @@ Goal: "pick up the hammer" works end-to-end, repeatably, with defined failure be
 | # | Task | Acceptance criteria |
 |---|---|---|
 | 4.1 | `orchestrator` state machine implementing the stage pipeline with per-stage timeouts, run IDs, structured logging (§1.2 of architecture) | Dry-run mode traverses all stages against mocks in CI |
-| 4.2 | Failure/retry policy: not-found → re-observe once; grasp-miss detection (gripper closed to min width) → single retry; protective stop → abort (Q8) | Each failure path exercised on hardware and logged |
+| 4.2 | Failure/retry policy: not-found → re-observe once; grasp-miss detection (gripper closed to min width) → single retry; protective stop → abort (Q8). If retry logic outgrows the flat FSM, migrate the orchestrator to `py_trees_ros` (Humble apt — the sanctioned upgrade path, architecture §5) | Each failure path exercised on hardware and logged |
 | 4.3 | **End-to-end demo**: 3 distinct objects by name, from voice-of-user text | Video + logs committed |
 | 4.4 | Repeatability benchmark: 20-run protocol per object, success rate + per-stage timing dashboard/report | ≥ 80% end-to-end success; report in repo |
 | 4.5 | `docs/RUNBOOK.md` final: cold-start to demo in one page (power-on order, pendant steps, launch commands, recovery) | A teammate reproduces the demo from the runbook alone |

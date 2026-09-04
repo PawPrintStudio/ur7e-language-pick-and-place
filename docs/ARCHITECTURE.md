@@ -42,6 +42,8 @@ Perception models run from **jetson-containers** Docker images (NanoOWL/NanoSAM 
 
 The keyboard controller proved raw FollowJointTrajectory works, but pick-and-place needs collision-aware planning (table, camera, gripper). `ur_moveit_config` gives us MoveIt2 out of the box; we extend it with a combined URDF (arm + gripper + camera mount). The scaled JTC is the right execution backend: it respects the pendant speed slider and pauses/resumes cleanly through safeguard stops — exactly the behavior we want during development with people nearby. Cartesian straight-line segments (descend/lift) via MoveIt cartesian path planning. No `moveit_servo` in v1 — nothing in this workflow needs realtime servoing.
 
+**Python access to MoveIt: `pymoveit2`** (AndrejOrsula). The official `moveit_py` bindings don't exist on Humble binaries (MoveIt 2.7+, Iron onward), and building MoveIt from source would drag us off the LTS line. pymoveit2 is the de-facto standard pure-Python layer over stock `ros-humble-moveit`: pose/joint goals, cartesian paths, collision objects, attach/detach — everything `motion_node` needs. **IK solver: `pick_ik`** (PickNik, Humble apt) instead of default KDL — a one-line `kinematics.yaml` change with better behavior near e-Series wrist singularities.
+
 **Mandatory step the teleop repo skipped:** extract the robot's factory kinematics with `ur_calibration` and feed it to the driver (`kinematics_params_file`). Without it, TCP poses are off by centimeters — fatal for vision-guided grasping, invisible for keyboard jogging.
 
 ### D3. Perception: NanoOWL + NanoSAM, open-vocabulary, on-demand
@@ -113,7 +115,21 @@ URSim's Docker image is **x86-only** — it cannot run on the Jetson. Developmen
 | Skipped kinematics calibration | Centimeter TCP error | `ur_calibration` extraction is a phase-0 blocking task (D2) |
 | URSim not available on Jetson | Slower on-robot iteration | x86 laptop URSim loop + mock-hardware CI (D7) |
 
-## 5. Reuse from ur7e-ros2-keyboard-controller
+## 5. Build-vs-adopt survey (2026-09)
+
+Verdicts on the popular drop-in candidates, so nobody re-litigates them without new information:
+
+| Candidate | Verdict | Reason |
+|---|---|---|
+| `pymoveit2` | **Adopted** (task 1.5) | Only maintained Python-on-Humble MoveIt layer; `moveit_py` needs MoveIt 2.7+ (not on Humble binaries) |
+| `pick_ik` IK plugin | **Adopted** (task 1.4) | Humble apt, one-line config change, better near-singularity behavior than KDL |
+| `py_trees` / `py_trees_ros` | **Deferred** (task 4.2's upgrade path) | v1's linear workflow is clearer as an explicit ~100-line FSM (and more teachable); adopt when retry/recovery logic starts nesting |
+| MoveIt Task Constructor | Reference only | In Humble apt but effectively C++-only on ROS2 (Python bindings never ported); heavy stage machinery for one fixed grasp sequence |
+| Learned grasping (GG-CNN, contact_graspnet, GPD, AnyGrasp) | Skip | Abandonware / no ROS2 wrappers / TF-on-Jetson pain / AnyGrasp is machine-locked closed source; centroid+PCA top-down is what shipping tabletop demos use |
+| LLM-ROS frameworks (ROSA, RAI, rosgpt) | Skip | Ops-chat/agent frameworks, not intent parsers; one direct LLM call with a JSON schema is smaller and clearer |
+| LangSAM / GroundingDINO+SAM | Skip on this hardware | Several GB + seconds/frame on an 8GB Nano; NanoOWL+NanoSAM is the same capability built for Orin |
+
+## 6. Reuse from ur7e-ros2-keyboard-controller
 
 - The **driver launch + pendant/External-Control startup ritual** (documented and validated) — becomes our runbook baseline.
 - `keyboard_teleop.py` — kept as a **manual jog & recovery tool** alongside the autonomous stack; its current-pose-as-first-point trajectory trick is the known-good pattern for direct JTC goals.

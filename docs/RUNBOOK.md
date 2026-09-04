@@ -109,10 +109,23 @@ scp jetson@ubuntu.local:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 | JetPack version (apt) | **6.2.1+b38** (L4T R36.4.7, Ubuntu 22.04.5) |
 | MAXN SUPER mode id used | id **2** — was already the active mode |
 | Ethernet iface + Jetson IP / robot IP | |
-| `ur_type:=ur7e` accepted? | |
-| Controllers active | |
+| `ur_type:=ur7e` accepted? | **Yes** — Humble binary driver loaded hardware `ur7e`; dashboard reports robot version 5.23.0.0; RTDE v2 @ 500 Hz |
+| Controllers active | `scaled_joint_trajectory_controller`, `joint_state_broadcaster`, `io_and_status_controller`, `speed_scaling_state_broadcaster`, `force_torque_sensor_broadcaster`, `tcp_pose_broadcaster`, `ur_configuration_controller`, `friction_model_controller` (others loaded inactive) |
 | Calibration YAML extracted? | **Yes** — committed as `config/ur7e_calibration.yaml` (hash calib_12445833238222042106). Wire into bringup via `kinematics_params_file` (task 0.5); TCP spot-check vs pendant pending (issue #4 acceptance). |
 | Anything that errored (paste text) | apt offline on robot network (expected — DNS unavailable; install over WiFi) |
 | Notable | `/opt/ros` has **humble and rolling** — ensure shells source humble. **No `ros-humble-ur*` was installed** and `~/ur_ws/src` holds only `ur_dev_bringup` → the teleop-era driver never ran from this Jetson via apt; fresh install required. ~937 GB disk, 3.7 GB swap present. |
 
 **Networking notes (learned the hard way):** from the laptop, address the Jetson as `jetson@ubuntu.local` — the `.local` suffix uses mDNS (the Jetson answers for itself via avahi), which works on the private network where plain DNS has no entry for it. The Jetson keeps two links at once: built-in Ethernet -> robot (192.168.56.1), USB-Ethernet adapter -> internet for package installs; keep that adapter with the robot kit.
+
+**Session 1 watch list:**
+- **Checksum question (verify in session 2):** driver (launched WITHOUT our kinematics file) printed `calib_12788084448423163542` and warned of calibration mismatch; our extracted YAML carries `calib_12445833238222042106`. Expected explanation: the printed value is the default kinematics file's hash, ours is the robot's true one. Definitive test: relaunch with `kinematics_params_file:=.../config/ur7e_calibration.yaml` — the mismatch ERROR must disappear. If it persists: re-extract and investigate before trusting any TCP pose.
+- `Could not enable FIFO RT scheduling policy` — stock kernel denies RT priority to the control thread. Harmless until "reverse interface dropped" appears under load; fixes (rtprio limits / lowlatency kernel / core isolation) are catalogued in ARCHITECTURE.md risks.
+- Robot logged error code `C210A0` at driver startup, then went NORMAL/RUNNING. Watch for recurrence.
+- External Control **Play was not exercised** in session 1 — driver bringup verified, motion path not yet. First item of session 2.
+
+## Lab session 2 — plan (issues #3, #4, #5, #6)
+
+1. Bringup launch (task 0.5) passing `kinematics_params_file` → confirm the calibration-mismatch error is GONE (closes the checksum question, most of #4).
+2. TCP spot-check: `tcp_pose_broadcaster` output vs pendant Move-screen TCP readout at 2–3 arm poses; < 1 mm closes #4.
+3. Reboot the Jetson once → confirm eth static config and robot link come back (closes #3).
+4. External Control Play + keyboard-teleop jog through our bringup (task 0.6) — first commanded motion; hand on the e-stop, speed slider low.

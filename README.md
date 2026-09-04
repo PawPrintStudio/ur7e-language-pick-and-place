@@ -42,13 +42,17 @@ Each stage has explicit entry checks, logged outcomes, and defined failure/retry
 |---|---|---|
 | Arm | UR7e (e-Series, 7.5 kg payload, 850 mm reach) | on hand |
 | Compute | Jetson Orin Nano 8GB, JetPack 6.2.x, MAXN Super mode | on hand |
-| Depth camera | Orbbec Gemini 335 (recommended) or RealSense D435 | **decision open** |
-| Gripper | Robotiq Hand-E / 2F-85 via tool RS-485 (recommended) or flange-IO gripper | **decision open** |
+| Depth camera | Stereolabs ZED 2i — fixed overhead mount (~1 m), NEURAL_LIGHT depth | decided |
+| Gripper | OnRobot RG2 v2 (110 mm stroke, 3–40 N) — Modbus via Compute Box or tool RS-485 | decided |
 
 ## Documentation
 
 - [Architecture & decisions](docs/ARCHITECTURE.md) — the full stack, resolved open questions, risks
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — phased plan; mirrors the GitHub issues/project board
+
+## Project goal
+
+Beyond the demo itself, this repo is a **learning platform** for makerspace members: every package documents the concept it embodies (hand-eye calibration, ros2_control, open-vocabulary detection), the code favors readability over cleverness, and each phase ends in a demo anyone can reproduce from the runbook.
 
 ## Status
 

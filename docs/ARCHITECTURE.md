@@ -25,7 +25,7 @@ One Jetson Orin Nano runs everything: the UR ROS 2 driver, perception, language 
 
 Design rules that make it repeatable:
 
-1. **Fixed observe pose.** Every run starts by moving to the same joint-space observe pose before capturing an image. Perception always sees the workspace from the same viewpoint → comparable detections, stable calibration validity.
+1. **Fixed observe pose.** Every run starts by parking the arm at the same joint-space observe pose — clear of the fixed overhead camera's view — before capturing an image. The camera always sees the unoccluded workspace from the same viewpoint → comparable detections, stable calibration validity.
 2. **Stage contracts.** Each stage has typed inputs/outputs, a timeout, and an explicit outcome (`OK`, `RETRY`, `ABORT`) logged with a run ID. A failed run tells you *which stage* failed and why.
 3. **Grasp strategy is fixed:** top-down grasp at the segmented object's centroid, gripper yaw aligned to the mask's principal axis, pre-grasp hover at +10 cm, straight-line descend, close, straight-line lift. No 6-DoF grasp inference in v1 — deterministic beats clever for repeatability.
 4. **Workspace is bounded.** A configured table-plane polygon in `base_link`; any grasp pose outside it (or below the table plane) is rejected before planning.
@@ -52,13 +52,18 @@ NanoOWL takes **noun phrases**, not sentences — which is exactly why the LLM i
 
 Rejected: FoundationPose / Isaac Manipulator (memory-heavy, Orin NX/AGX territory); Grounding DINO (too heavy / licensing); YOLO-World (fixed-vocabulary reparameterization defeats the open-vocabulary point).
 
-### D4. Camera: on-camera-depth sensor, wrist-mounted (eye-in-hand)
+### D4. Camera: ZED 2i (project hardware), fixed overhead mount (eye-to-hand)
 
-**Recommendation: Orbbec Gemini 335.** Depth computed on-camera (zero Jetson GPU cost — matters on 8GB shared memory), mature ROS2 Humble driver, used in NVIDIA's own Isaac workflows. RealSense D435 is acceptable if one is already on hand, but needs a source build with `-DFORCE_RSUSB_BACKEND=ON` and has documented enumeration problems on JetPack 6 — budget fiddling time.
+**The project uses a Stereolabs ZED 2i** (decided 2026-09-04). Jetson support is first-class: ZED SDK 5.2/5.3 targets JetPack 6.2, and `zed-ros2-wrapper` officially supports Humble. The trade-off vs on-camera-depth sensors: the ZED computes depth **on the Jetson GPU**, so its configuration must be tuned to coexist with NanoOWL on the 8GB Nano:
 
-**Mounting: wrist (eye-in-hand), capturing from the fixed observe pose.** At ~0.4 m standoff depth error is ~2× better than an overhead mount at ~1 m, the hand-eye transform is flange-relative (mechanically stable, calibrate once), and no external camera rig has to stay rigid. Cost: cable management along the arm and a printed mount. Fallback: fixed overhead mount (eye-to-hand) if cabling proves painful — same software, different calibration parent frame.
+- **Depth mode `NEURAL_LIGHT`** (~36% GPU at 30 FPS on Orin-class hardware, ideal range 0.3–5 m, <1% error to 3 m). `NEURAL` eats ~88% GPU — off the table alongside detection.
+- **Sequential, not concurrent**: grab frame → run detection → look up depth. Our on-demand capture design (Q7) already implies this.
+- Disable positional tracking **and** `depth_stabilization: 0` (stabilization silently re-enables tracking), no point-cloud publishing (biggest CPU sink — we use the registered depth image), HD720 @ 15 FPS is plenty.
+- `depth/depth_registered` is registered to the RGB viewpoint by construction — no manual alignment step.
 
-Hand-eye calibration via ChArUco board + `easy_handeye2` (or MoveIt's hand-eye calibration), verified with a touch-point test (arm touches a detected marker; error must be < 1 cm).
+**Mounting: fixed overhead/tripod (eye-to-hand) at ~0.8–1.2 m over the table.** The ZED 2i is the wrong shape for a wrist: 230 g, 175 mm wide, stiff locking USB3 cable, and — decisively — **0.3 m minimum depth**, which is exactly where a wrist camera sits during pre-grasp. At ~1 m overhead it's in every depth mode's sweet spot (~≤10 mm error). The arm parks at an observe pose *outside the camera's view* before each capture so it never occludes the scene. Requires a rigid mount (bumping it invalidates calibration — makerspace hazard; add a calibration-check step to the runbook).
+
+Hand-eye calibration via ChArUco board on the gripper flange + `easy_handeye2` (eye-to-hand mode), verified with a touch-point test (arm touches a detected marker; error must be < 1 cm).
 
 ### D5. Language: LLM intent parser, cloud-first with local fallback interface
 
@@ -66,14 +71,16 @@ Free-form request → strict JSON: `{action: "pick", target_query: "hammer", mod
 
 **Cloud API (Claude) is the v1 default**: far better language robustness, zero GPU/RAM footprint on the Nano (the crunch resource), and 1–3 s latency is nothing next to a ~20 s pick cycle. The parser node hides the backend behind its service interface, so a local model (Llama 3.2 3B via jetson-containers/ollama, ~28 tok/s on the Nano) can be swapped in later for offline demos. Voice input (whisper.cpp, CUDA build) is a stretch phase — text CLI first, since it exercises the identical pipeline.
 
-### D6. Gripper: pluggable backend; recommend Robotiq via tool RS-485
+### D6. Gripper: OnRobot RG2 v2 (project hardware)
 
-Two viable attachment paths on the e-Series tool flange:
+**The project uses an OnRobot RG2 v2** (decided 2026-09-04): 0–110 mm adjustable stroke, 3–40 N adjustable force, 2 kg force-fit payload, 0.78 kg, mounted via the OnRobot Quick Changer. It holds grip force on power loss — a nice safety property. Two ROS-viable control routes (both Modbus; `gripper_node` supports either behind one `GripperCommand` action):
 
-- **Tool RS-485 bridge** (recommended): driver's `use_tool_communication:=true` exposes the flange RS-485 as a virtual tty on the Jetson; run a Robotiq (Hand-E or 2F-85) Modbus RTU driver against it. Adjustable stroke/force → wider range of objects.
-- **Flange digital-IO gripper**: cheapest/simplest (spring or pneumatic, toggled via `io_and_status_controller/set_io`) — binary open/close only.
+- **Compute Box (Modbus TCP over Ethernet)** — if a Compute Box is on hand. Gripper traffic is plain Ethernet, fully independent of External Control; zero URCap conflicts. Humble driver: `ABC-iRobotics/onrobot-ros2` (Python) or `tonydle/OnRobot_ROS2_Driver` (C++ ros2_control).
+- **Direct tool connector (Modbus RTU over flange RS-485, 1 M baud)** — the v2 hardware revision supports this; no Compute Box needed. Requires UR's **RS485 Daemon URCap** (ToolComm Forwarder → virtual `/tmp/ttyUR` on the Jetson) alongside External Control — those two coexist by design. Driver: `tonydle/OnRobot_ROS2_Driver` (serial mode); its companion **`tonydle/UR_OnRobot_ROS2`** ships a combined UR+RG2 URDF, controllers, and MoveIt config (`onrobot_type:=rg2`) — our phase-1 URDF/MoveIt starting point.
 
-The `gripper_node` exposes one `GripperCommand` action either way, so the hardware decision (open question Q2) doesn't block any software work. Note: vendor URCap gripper control is **not** usable mid-External-Control — the ROS-side serial/IO route is the correct one.
+**Either way, the OnRobot URCap must be disabled** — it seizes Tool I/O control and its RS-485 daemon conflicts with the forwarder. Tool I/O is set to "Controlled by User", 24 V. TCP/payload must be configured statically by us (URCap auto-update is off): TCP ≈ [0, 0, 200 mm], CoG ≈ [0, 0, 64 mm], mass 0.78 kg + ~0.2 kg Quick Changer.
+
+The 2 kg force-fit payload bounds the object set (fine for hand tools; a sledgehammer is out).
 
 ### D7. Simulation & dev workflow
 
@@ -84,8 +91,8 @@ URSim's Docker image is **x86-only** — it cannot run on the Jetson. Developmen
 | # | Question | Resolution |
 |---|---|---|
 | Q1 | Native ROS or Docker on the Jetson? | Native Humble for ROS graph; jetson-containers only for the model runtimes (D1). |
-| Q2 | Which gripper? | **Open hardware decision** — tracked as an issue; software unblocked by the pluggable `gripper_node` (D6). Recommend Robotiq Hand-E. |
-| Q3 | Which depth camera, mounted where? | Orbbec Gemini 335 recommended, wrist-mounted, captures from fixed observe pose (D4). Final purchase tracked as an issue. |
+| Q2 | Which gripper? | **OnRobot RG2 v2** (chosen by the team). Control route — Compute Box vs direct tool RS-485 — is the remaining sub-decision (D6). |
+| Q3 | Which depth camera, mounted where? | **ZED 2i** (chosen by the team). Fixed overhead mount at ~1 m — its 0.3 m min depth and 175 mm width rule out the wrist (D4). |
 | Q4 | LLM local or cloud? | Cloud-first behind a swappable service interface (D5). |
 | Q5 | Full 6-DoF grasp planning? | No — fixed top-down grasp strategy for v1 (§1.3). Revisit only if object set demands it. |
 | Q6 | MoveIt2 or extend the teleop trajectory approach? | MoveIt2 (D2). The teleop node remains useful as a manual jog/recovery tool. |
@@ -100,7 +107,8 @@ URSim's Docker image is **x86-only** — it cannot run on the Jetson. Developmen
 | 500 Hz RTDE deadline misses on a loaded Jetson ("connection to reverse interface dropped") | Motion aborts mid-pick | Perception is on-demand (GPU/CPU quiet during motion); pin CPU governor, consider isolating a core for the driver; evaluate the passthrough trajectory controller (robot-side interpolation) if drops persist |
 | Jetson + PolyScope X velocity-limit bug (driver issue #1859) | Commands ignored | Verify PolyScope version first (Q9); prefer PolyScope 5 path; track upstream issue |
 | 8 GB shared RAM: ROS + TensorRT engines + depth + (local LLM?) | OOM, thrash | Cloud LLM in v1; load perception engines once, lazily; swap on zram; measure with `tegrastats` as a phase-2 acceptance gate |
-| RealSense on JetPack 6 enumeration issues | Camera dead on arrival | Prefer Orbbec (D4); if RealSense, RSUSB source build + known-good SDK version |
+| ZED depth competes with NanoOWL for the 8GB GPU | OOM / starved inference | NEURAL_LIGHT mode, sequential capture→detect, tracking/point-cloud disabled (D4); build TensorRT engines one at a time with swap enabled (OWL-ViT engine build is known to exhaust 8GB); `tegrastats` gate in phase 2 |
+| Overhead camera mount gets bumped (makerspace!) | Silent calibration drift → missed grasps | Rigid mount, calibration-check marker in the workspace, touch-point re-verification step in the runbook |
 | Depth/hand-eye error stack-up > gripper tolerance | Missed grasps | Touch-point calibration verification gate (< 1 cm); grasp strategy uses centroid of a *segmented mask*, not bbox center; wide-stroke gripper |
 | Skipped kinematics calibration | Centimeter TCP error | `ur_calibration` extraction is a phase-0 blocking task (D2) |
 | URSim not available on Jetson | Slower on-robot iteration | x86 laptop URSim loop + mock-hardware CI (D7) |

@@ -2,7 +2,10 @@
 
 Five phases, each ending in something demonstrable on real hardware. Phases map 1:1 to GitHub milestones; tasks map 1:1 to issues on the project board. Decisions referenced as D1–D7 and questions Q1–Q9 are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Guiding principle:** motion before perception, perception before language. Each layer is validated in isolation before the layer above depends on it.
+**Guiding principles:**
+
+1. Motion before perception, perception before language. Each layer is validated in isolation before the layer above depends on it.
+2. **This is a learning platform.** Makerspace members should be able to study any module in isolation. Concretely: every package ships with a README explaining *the concept* (not just usage) — "what is hand-eye calibration and why", "how a ros2_control chain works"; code favors readability over cleverness (Python-first, type hints, no premature abstraction); each phase's demo doubles as a teaching checkpoint someone can re-run from the runbook.
 
 ---
 
@@ -26,10 +29,10 @@ Goal: the arm picks a known object from a hardcoded pose with a real gripper, un
 
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 1.1 | **Decision: select and order gripper** (Q2/D6 — recommend Robotiq Hand-E via tool RS-485) | Decision recorded; hardware ordered |
-| 1.2 | `gripper_node` with pluggable backend (`GripperCommand` action; RS-485/Modbus RTU and flange-IO backends) | Open/close/force from CLI works on real gripper |
-| 1.3 | Combined URDF/xacro: UR7e + gripper + camera mount + table collision geometry | `robot_state_publisher` + RViz shows correct model; TCP offset configured |
-| 1.4 | MoveIt2 config for combined model (from `ur_moveit_config` base); named poses: `home`, `observe` | Plans execute on robot via scaled JTC; collision with table prevented in test |
+| 1.1 | RG2 v2 bench setup: Quick Changer mount, Tool I/O config ("Controlled by User", 24 V), **decide control route** — Compute Box (Modbus TCP) if on hand, else direct tool RS-485 + UR RS485 Daemon URCap (D6). Disable the OnRobot URCap | Gripper opens/closes from a test script; route recorded in architecture doc |
+| 1.2 | `gripper_node`: `GripperCommand` action wrapping an OnRobot RG2 driver (`tonydle/OnRobot_ROS2_Driver` serial or `ABC-iRobotics/onrobot-ros2` TCP per 1.1) | Open/close/width/force from CLI works on real gripper |
+| 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant |
+| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test |
 | 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) | Each primitive callable as an action; unit-tested against mock hardware |
 | 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" |
 | 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs |
@@ -40,11 +43,11 @@ Goal: given a noun phrase, return an accurate grasp pose in `base_link`.
 
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 2.1 | **Decision: select and order depth camera** (Q3/D4 — recommend Orbbec Gemini 335) + print/procure wrist mount | Decision recorded; hardware ordered |
-| 2.2 | Camera bringup on Jetson: ROS2 driver, aligned RGB-D at observe pose, rosbag capture tooling | Aligned RGB-D topics at ≥ 15 FPS; bags recorded for offline dev |
+| 2.1 | ZED 2i platform setup: ZED SDK 5.2+/JetPack 6.2 install, pre-optimize neural-depth TensorRT models (slow first run), build rigid overhead mount ~1 m over the table | `ZED_Diagnostic` clean; camera streams; mount doesn't flex |
+| 2.2 | `zed-ros2-wrapper` bringup tuned for the 8GB Nano: HD720@15, `NEURAL_LIGHT`, positional tracking off + `depth_stabilization: 0`, point cloud off; rosbag capture tooling | Registered RGB-D topics ≥ 15 FPS; GPU ≤ ~40% during capture (`tegrastats`); bags recorded for offline dev |
 | 2.3 | NanoOWL + NanoSAM runtime via jetson-containers; `perception_node` `DetectObject` service (D3) | Query "hammer" on live capture → correct mask; latency and `tegrastats` memory recorded |
 | 2.4 | `locator_node`: mask + depth → centroid + principal axis → top-down grasp `PoseStamped`; workspace-bounds rejection | On a marker of known position: localization error measured and < 1 cm |
-| 2.5 | Hand-eye calibration: ChArUco + easy_handeye2, eye-in-hand; publish static transform; touch-point verification gate (D4) | Arm touches detected marker within 1 cm, 5/5 attempts |
+| 2.5 | Hand-eye calibration: ChArUco board on the gripper + easy_handeye2 **eye-to-hand**; publish static camera→base transform; touch-point verification gate + workspace calibration-check marker (D4) | Arm touches detected marker within 1 cm, 5/5 attempts |
 | 2.6 | Perception validation harness: scripted eval over ~10 makerspace objects (tools, blocks) with success/latency report | Detection ≥ 8/10 objects; report committed |
 
 ## Phase 3 — Language front-end
@@ -84,7 +87,7 @@ Not scheduled; pull in as capacity allows.
 
 ## Sequencing notes
 
-- **Long-lead items first:** tasks 1.1 (gripper) and 2.1 (camera) are ordering decisions — file them on day one; shipping time overlaps with phase 0 work.
+- **Hardware is decided** (RG2 v2 + ZED 2i): tasks 1.1 and 2.1 are bench-setup tasks that can start during phase 0 — neither depends on the arm being ROS-controlled. If a Compute Box needs ordering (see 1.1), file that immediately.
 - Phase 2 software (2.3, 2.4) can start on rosbags/laptop before the camera decision lands on hardware.
 - Phase 3 is independent of phases 1–2 and can proceed in parallel; it's pure software.
 - The critical path is: 0.2 → 0.4 → 1.3 → 1.4 → 1.5 → 1.7 → 2.5 → 4.1 → 4.3.

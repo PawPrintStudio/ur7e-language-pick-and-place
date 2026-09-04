@@ -59,6 +59,8 @@ A VSCode devcontainer gives any member the full stack from `git clone`. Only gra
 
 - [Architecture & decisions](docs/ARCHITECTURE.md) — the full stack, resolved open questions, risks
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — phased plan; mirrors the GitHub issues/project board
+- [Runbook](docs/RUNBOOK.md) — verified lab procedures, session by session
+- [References](docs/REFERENCES.md) — UR7e/RG2/ZED/Jetson key facts, links, and local vendor PDFs
 
 ## Project goal
 

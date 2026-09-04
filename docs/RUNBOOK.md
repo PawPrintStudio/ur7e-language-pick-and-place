@@ -164,9 +164,17 @@ Remaining to fully close #4 (next lab visit, 2 min at the pendant):
 - Robot ping 0.4 ms; driver relaunched cleanly with calibration OK
 - MAXN_SUPER (id 2) persisted across the reboot
 
-### 4. First commanded motion — NOT done (needs a human at the arm)
+### 4. First commanded motion — DONE (coordinated: Nikola at the pendant, commands from the laptop)
 
-External Control Play + teleop jog (task 0.6) requires someone physically present: pendant Play button, hand on the e-stop, speed slider low. Everything else is staged — driver running with calibration, `scaled_joint_trajectory_controller` active. First item of the next lab visit.
+Protocol: speed slider to 10%, External Control program → Play (arm correctly did **not** move on Play — it just opens the command channel), hand on e-stop. Driver logged `Robot connected to reverse interface. Ready to receive control commands.`
+
+Motion: `FollowJointTrajectory` goal to `/scaled_joint_trajectory_controller/follow_joint_trajectory` — wrist_3 +0.05 rad over 3 s, back over 3 s (time-stretched ~10× by the 10% slider, as scaled JTC is designed to do). Result: **error_code 0 (SUCCESSFUL)**, final position within 0.0005 rad of start. This validates the full chain (laptop → Jetson → driver → reverse interface → robot) that MoveIt will use. Script kept at `~/first_motion.py` on the Jetson.
+
+Gotchas learned (matter for task 1.6's `safety_monitor`):
+- `/io_and_status_controller/robot_program_running` is **latched (TRANSIENT_LOCAL), publishes only on change** — a default-QoS subscriber never sees the stored value. Subscribe with `durability=TRANSIENT_LOCAL`.
+- `/speed_scaling_state_broadcaster/speed_scaling` read `10.0` with the slider at 10% (and `0.0` while no program runs) — treat it as percent-scaled, verify before using it as a 0–1 factor.
+
+Still open from task 0.6: interactive keyboard-teleop jog, and the protective-stop recovery exercise.
 
 ### SSH path (task 0.3 documentation)
 
@@ -186,5 +194,5 @@ External Control Play + teleop jog (task 0.6) requires someone physically presen
 
 1. At the pendant: read Installation → TCP (expect z ≈ 30.5 mm, the Quick Changer) + payload; note exact values into this file.
 2. TCP comparison at 2 more poses (freedrive between them): `ros2 run tf2_ros tf2_echo base tool0` vs `ros2 topic echo /tcp_pose_broadcaster/pose --once` — < 1 mm after subtracting the pendant TCP closes #4.
-3. External Control Play + keyboard-teleop jog through our bringup (task 0.6) — first commanded motion; hand on the e-stop, speed slider low; exercise protective-stop recovery and document it.
+3. Keyboard-teleop jog through our bringup (task 0.6 remainder — first *trajectory* motion already done in session 2); exercise protective-stop recovery and document it.
 4. Start task 0.5 bringup package: one launch = driver + `kinematics_params_file` + our params.

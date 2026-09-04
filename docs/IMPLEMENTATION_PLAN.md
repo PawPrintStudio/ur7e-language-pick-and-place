@@ -29,7 +29,7 @@ Goal: the arm picks a known object from a hardcoded pose with a real gripper, un
 
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 1.1 | RG2 v2 bench setup: Quick Changer mount, Tool I/O config ("Controlled by User", 24 V), **decide control route** — Compute Box (Modbus TCP) if on hand, else direct tool RS-485 + UR RS485 Daemon URCap (D6). Disable the OnRobot URCap | Gripper opens/closes from a test script; route recorded in architecture doc |
+| 1.1 | RG2 v2 ROS bench setup on the **direct tool connector** (decided — D6): install UR RS485 Daemon URCap, disable the OnRobot URCap, Tool I/O "Controlled by User" @ 24 V, verify `/tmp/ttyUR` bridge from the Jetson | Gripper opens/closes from a test script over the bridge |
 | 1.2 | `gripper_node`: `GripperCommand` action wrapping an OnRobot RG2 driver (`tonydle/OnRobot_ROS2_Driver` serial or `ABC-iRobotics/onrobot-ros2` TCP per 1.1) | Open/close/width/force from CLI works on real gripper |
 | 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant |
 | 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test |
@@ -87,7 +87,7 @@ Not scheduled; pull in as capacity allows.
 
 ## Sequencing notes
 
-- **Hardware is decided** (RG2 v2 + ZED 2i): tasks 1.1 and 2.1 are bench-setup tasks that can start during phase 0 — neither depends on the arm being ROS-controlled. If a Compute Box needs ordering (see 1.1), file that immediately.
+- **All hardware is on hand** (RG2 v2 + ZED 2i + an unused Compute Box on the shelf as gripper fallback): tasks 1.1 and 2.1 are bench-setup tasks that can start during phase 0 — 2.1 doesn't depend on the arm being ROS-controlled at all.
 - Phase 2 software (2.3, 2.4) can start on rosbags/laptop before the camera decision lands on hardware.
 - Phase 3 is independent of phases 1–2 and can proceed in parallel; it's pure software.
 - The critical path is: 0.2 → 0.4 → 1.3 → 1.4 → 1.5 → 1.7 → 2.5 → 4.1 → 4.3.

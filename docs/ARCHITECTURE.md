@@ -73,10 +73,10 @@ Free-form request → strict JSON: `{action: "pick", target_query: "hammer", mod
 
 ### D6. Gripper: OnRobot RG2 v2 (project hardware)
 
-**The project uses an OnRobot RG2 v2** (decided 2026-09-04): 0–110 mm adjustable stroke, 3–40 N adjustable force, 2 kg force-fit payload, 0.78 kg, mounted via the OnRobot Quick Changer. It holds grip force on power loss — a nice safety property. Two ROS-viable control routes (both Modbus; `gripper_node` supports either behind one `GripperCommand` action):
+**The project uses an OnRobot RG2 v2** (decided 2026-09-04): 0–110 mm adjustable stroke, 3–40 N adjustable force, 2 kg force-fit payload, 0.78 kg, mounted via the OnRobot Quick Changer. It holds grip force on power loss — a nice safety property. Both control routes are physically available (the makerspace has an unused Compute Box; the gripper currently runs on the direct tool connector). **Primary route: direct tool connector** — keeps the existing wiring, and the best-fit ROS2 stack is purpose-built for it:
 
-- **Compute Box (Modbus TCP over Ethernet)** — if a Compute Box is on hand. Gripper traffic is plain Ethernet, fully independent of External Control; zero URCap conflicts. Humble driver: `ABC-iRobotics/onrobot-ros2` (Python) or `tonydle/OnRobot_ROS2_Driver` (C++ ros2_control).
-- **Direct tool connector (Modbus RTU over flange RS-485, 1 M baud)** — the v2 hardware revision supports this; no Compute Box needed. Requires UR's **RS485 Daemon URCap** (ToolComm Forwarder → virtual `/tmp/ttyUR` on the Jetson) alongside External Control — those two coexist by design. Driver: `tonydle/OnRobot_ROS2_Driver` (serial mode); its companion **`tonydle/UR_OnRobot_ROS2`** ships a combined UR+RG2 URDF, controllers, and MoveIt config (`onrobot_type:=rg2`) — our phase-1 URDF/MoveIt starting point.
+- **Direct tool connector (primary)** — Modbus RTU over the flange RS-485 at 1 M baud (supported by the v2 hardware revision). Requires UR's **RS485 Daemon URCap** (ToolComm Forwarder → virtual `/tmp/ttyUR` on the Jetson) alongside External Control — those two coexist by design. Driver: `tonydle/OnRobot_ROS2_Driver` (serial mode, ros2_control — the gripper appears as a `finger_width` joint in RViz/MoveIt); its companion **`tonydle/UR_OnRobot_ROS2`** ships a combined UR+RG2 URDF, controllers, and MoveIt config (`onrobot_type:=rg2`) — our phase-1 URDF/MoveIt starting point.
+- **Compute Box (fallback / teaching rig)** — Modbus TCP over Ethernet, fully independent of External Control, zero URCap involvement; the gripper can be driven from any laptop without the robot — useful as a standalone teaching/debug station, and the escape hatch if the serial bridge proves flaky. Humble driver: `ABC-iRobotics/onrobot-ros2` (Python) or `tonydle/OnRobot_ROS2_Driver` (TCP mode). Cost: re-cabling the gripper to an external cable along the arm.
 
 **Either way, the OnRobot URCap must be disabled** — it seizes Tool I/O control and its RS-485 daemon conflicts with the forwarder. Tool I/O is set to "Controlled by User", 24 V. TCP/payload must be configured statically by us (URCap auto-update is off): TCP ≈ [0, 0, 200 mm], CoG ≈ [0, 0, 64 mm], mass 0.78 kg + ~0.2 kg Quick Changer.
 
@@ -91,7 +91,7 @@ URSim's Docker image is **x86-only** — it cannot run on the Jetson. Developmen
 | # | Question | Resolution |
 |---|---|---|
 | Q1 | Native ROS or Docker on the Jetson? | Native Humble for ROS graph; jetson-containers only for the model runtimes (D1). |
-| Q2 | Which gripper? | **OnRobot RG2 v2** (chosen by the team). Control route — Compute Box vs direct tool RS-485 — is the remaining sub-decision (D6). |
+| Q2 | Which gripper? | **OnRobot RG2 v2** (chosen by the team; on hand). Control route: **direct tool RS-485** primary — matches current wiring and the `tonydle` stack; the on-shelf Compute Box is the fallback (D6). |
 | Q3 | Which depth camera, mounted where? | **ZED 2i** (chosen by the team). Fixed overhead mount at ~1 m — its 0.3 m min depth and 175 mm width rule out the wrist (D4). |
 | Q4 | LLM local or cloud? | Cloud-first behind a swappable service interface (D5). |
 | Q5 | Full 6-DoF grasp planning? | No — fixed top-down grasp strategy for v1 (§1.3). Revisit only if object set demands it. |

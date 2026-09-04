@@ -120,14 +120,14 @@ Rejected: **Isaac Sim** — RTX GPU per seat, no UR7e asset yet, DIY ros2_contro
 | Q7 | Continuous perception or on-demand? | On-demand single capture per pick (D3). |
 | Q8 | How do we handle protective stops autonomously? | `safety_monitor` node: detect via `safety_mode`/`robot_program_running`, recover via `dashboard_client/unlock_protective_stop` (+ mandatory ~5 s robot-enforced delay) then `resend_robot_program`/play — but **never auto-resume motion**; the orchestrator aborts the run and returns to IDLE. A human re-issues the command. |
 | Q10 | Can members develop without the lab? | Yes — three-tier sim strategy (D7): mock-hardware CI, URSim for driver fidelity, Gazebo Fortress for the full pipeline; devcontainer for any OS. Sim never signs off grasp quality — hardware gates do. |
-| Q9 | PolyScope 5 or X on our unit? | **Must verify on the pendant** (tracked as a phase-0 task). UR7e ships as either. Driver needs ≥5.9.4 (PolyScope 5) or ≥10.7.0 (PolyScope X); PolyScope X changes URCap handling and was implicated in a Jetson-specific velocity-limit issue (driver issue #1859). |
+| Q9 | PolyScope 5 or X on our unit? | **Resolved 2026-09-04: PolyScope 5.23** (read at the pendant). Above the 5.9.4 driver minimum; the PolyScope X URCap changes and Jetson velocity bug (#1859) don't apply. Pin URSim to the matching `5.23` tag. |
 
 ## 4. Risks
 
 | Risk | Impact | Mitigation |
 |---|---|---|
 | 500 Hz RTDE deadline misses on a loaded Jetson ("connection to reverse interface dropped") | Motion aborts mid-pick | Perception is on-demand (GPU/CPU quiet during motion); pin CPU governor, consider isolating a core for the driver; evaluate the passthrough trajectory controller (robot-side interpolation) if drops persist |
-| Jetson + PolyScope X velocity-limit bug (driver issue #1859) | Commands ignored | Verify PolyScope version first (Q9); prefer PolyScope 5 path; track upstream issue |
+| ~~Jetson + PolyScope X velocity-limit bug (driver issue #1859)~~ | — | **Retired 2026-09-04**: unit confirmed PolyScope 5.23 (Q9) |
 | 8 GB shared RAM: ROS + TensorRT engines + depth + (local LLM?) | OOM, thrash | Cloud LLM in v1; load perception engines once, lazily; swap on zram; measure with `tegrastats` as a phase-2 acceptance gate |
 | ZED depth competes with NanoOWL for the 8GB GPU | OOM / starved inference | NEURAL_LIGHT mode, sequential capture→detect, tracking/point-cloud disabled (D4); build TensorRT engines one at a time with swap enabled (OWL-ViT engine build is known to exhaust 8GB); `tegrastats` gate in phase 2 |
 | Overhead camera mount gets bumped (makerspace!) | Silent calibration drift → missed grasps | Rigid mount, calibration-check marker in the workspace, touch-point re-verification step in the runbook |

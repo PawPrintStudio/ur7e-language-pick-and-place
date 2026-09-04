@@ -4,7 +4,7 @@ Living document. Each lab session appends its verified findings; the final one-p
 
 ## Lab session 1 — Phase 0 platform + robot link (issues #1–#4)
 
-State going in: Jetson confirmed on L4T R36.4.7 (JetPack 6.2.x, Ubuntu 22.04) — **no reflash needed**.
+State going in: Jetson confirmed on L4T R36.4.7 (JetPack 6.2.x, Ubuntu 22.04) — **no reflash needed**. Pendant confirmed **PolyScope 5.23** (issue #1 done). URSim should be pinned to the matching tag: `universalrobots/ursim_e-series:5.23` — simulating a different controller version than the real robot invites works-in-sim-only bugs.
 
 ### A. At the pendant (no SSH) — issue #1
 
@@ -101,7 +101,7 @@ scp jetson@<JETSON_IP>:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 
 | Item | Value |
 |---|---|
-| PolyScope version | |
+| PolyScope version | **5.23** (PolyScope 5 — ≥5.9.4 driver minimum met; PolyScope X concerns retired) |
 | Local/Remote mode | |
 | External Control URCap installed? Host IP/port | |
 | JetPack version (apt) | |

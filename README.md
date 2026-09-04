@@ -45,6 +45,16 @@ Each stage has explicit entry checks, logged outcomes, and defined failure/retry
 | Depth camera | Stereolabs ZED 2i — fixed overhead mount (~1 m), NEURAL_LIGHT depth | decided |
 | Gripper | OnRobot RG2 v2 (110 mm stroke, 3–40 N) — Modbus via Compute Box or tool RS-485 | decided |
 
+## Working without the robot
+
+Lab access is not required for most development ([architecture D7](docs/ARCHITECTURE.md)):
+
+- **Tier 1 — mock hardware**: MoveIt + RViz against `use_mock_hardware:=true`; runs anywhere, gates CI.
+- **Tier 2 — URSim**: the official UR controller simulator in Docker, driven by the *real* ROS driver (x86 Linux/Windows).
+- **Tier 3 — Gazebo**: full physics world — UR7e + RG2 + simulated overhead RGB-D camera — running the entire language → detect → pick pipeline, with OWLv2 standing in for the Jetson's NanoOWL.
+
+A VSCode devcontainer gives any member the full stack from `git clone`. Only grasping quality and calibration require the physical setup.
+
 ## Documentation
 
 - [Architecture & decisions](docs/ARCHITECTURE.md) — the full stack, resolved open questions, risks

@@ -21,7 +21,8 @@ Goal: the Jetson reliably commands the UR7e with correct kinematics, and the rep
 | 0.4 | Extract factory kinematics with `ur_calibration`; wire `kinematics_params_file` into our bringup launch | Calibration YAML committed; TCP pose spot-check vs pendant < 1 mm |
 | 0.5 | Bringup package: single launch file (driver + calibration + our params), headless-mode option evaluated vs External Control URCap | One command brings the robot to "ready"; startup runbook written |
 | 0.6 | Validate motion baseline: run keyboard teleop from the reference repo against our bringup | Jog works; protective-stop recovery procedure exercised and documented |
-| 0.7 | Dev workflow: URSim in Docker on x86 laptop + `use_mock_hardware` config; CI (colcon build + lint) on GitHub Actions | CI green; a MoveIt-less trajectory runs in URSim |
+| 0.7 | Sim tiers 1+2 (D7): `use_mock_hardware:=true` config; URSim Docker (`ursim_e-series:5.26`, `ROBOT_MODEL=UR7`) + External Control URCap against the real driver; CI (colcon build + lint + tier-1 smoke test) on GitHub Actions | CI green; a trajectory runs in URSim through the real driver |
+| 0.8 | Devcontainer: `osrf/ros:humble-desktop-full`-based VSCode devcontainer (athackst pattern) so any member on Linux/Windows(WSLg) gets the full stack; document the macOS headless path (rosbags + Foxglove) | A fresh machine reaches "RViz shows the arm" from `git clone` in < 30 min |
 
 ## Phase 1 — Deterministic pick-and-place (no vision, no language)
 
@@ -36,6 +37,7 @@ Goal: the arm picks a known object from a hardcoded pose with a real gripper, un
 | 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) **built on `pymoveit2`** (official `moveit_py` is not available on Humble binaries) | Each primitive callable as an action; unit-tested against mock hardware |
 | 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" |
 | 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs |
+| 1.8 | Gazebo sim world (D7 tier 3, motion half): `ur_simulation_gz` (`ur_type:=ur7e`) + RG2 xacro attached with sim inertials/mimic joints + DetachableJoint grasp latch + table/objects world | The 1.7 scripted pick sequence runs end-to-end in Gazebo on a machine with no lab access |
 
 ## Phase 2 — Perception (see and locate)
 
@@ -49,6 +51,7 @@ Goal: given a noun phrase, return an accurate grasp pose in `base_link`.
 | 2.4 | `locator_node`: mask + depth → centroid + principal axis → top-down grasp `PoseStamped`; workspace-bounds rejection | On a marker of known position: localization error measured and < 1 cm |
 | 2.5 | Hand-eye calibration: ChArUco board on the gripper + easy_handeye2 **eye-to-hand**; publish static camera→base transform; touch-point verification gate + workspace calibration-check marker (D4) | Arm touches detected marker within 1 cm, 5/5 attempts |
 | 2.6 | Perception validation harness: scripted eval over ~10 makerspace objects (tools, blocks) with success/latency report | Detection ≥ 8/10 objects; report committed |
+| 2.7 | Sim camera + dev perception backend (D7 tier 3, vision half): Fortress `rgbd_camera` at the overhead pose bridged via `ros_gz_bridge` (optical-frame TF, sensor QoS); pluggable `perception_node` backend — HuggingFace OWLv2 on dev machines, NanoOWL on Jetson, same service | Full PARSE→…→GRASP pipeline dry-runs in Gazebo without lab or Jetson |
 
 ## Phase 3 — Language front-end
 
@@ -90,4 +93,5 @@ Not scheduled; pull in as capacity allows.
 - **All hardware is on hand** (RG2 v2 + ZED 2i + an unused Compute Box on the shelf as gripper fallback): tasks 1.1 and 2.1 are bench-setup tasks that can start during phase 0 — 2.1 doesn't depend on the arm being ROS-controlled at all.
 - Phase 2 software (2.3, 2.4) can start on rosbags/laptop before the camera decision lands on hardware.
 - Phase 3 is independent of phases 1–2 and can proceed in parallel; it's pure software.
+- **Remote contributors** (no lab access) are unblocked by 0.8 + 1.8 + 2.7: after those land, every pipeline component except real grasping and calibration can be developed and integration-tested in simulation (D7). Sim results never sign off grasp quality — the hardware demos do.
 - The critical path is: 0.2 → 0.4 → 1.3 → 1.4 → 1.5 → 1.7 → 2.5 → 4.1 → 4.3.

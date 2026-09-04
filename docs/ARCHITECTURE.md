@@ -84,9 +84,28 @@ Free-form request → strict JSON: `{action: "pick", target_query: "hammer", mod
 
 The 2 kg force-fit payload bounds the object set (fine for hand tools; a sledgehammer is out).
 
-### D7. Simulation & dev workflow
+### D7. Simulation & remote development: three tiers
 
-URSim's Docker image is **x86-only** — it cannot run on the Jetson. Development loop: URSim + full ROS stack on an x86 laptop (driver treats URSim like a real robot, including dashboard + External Control), `use_mock_hardware:=true` for pure-kinematics CI. Perception development against recorded rosbags of real captures.
+Development must not require the lab (decided 2026-09-04). Three simulation tiers, each faithful to a different layer of the stack. The enabling design rule: **everything above the controller interface is backend-agnostic** — the trajectory controller name and the perception backend are launch parameters, so identical code runs against sim or hardware.
+
+| Tier | What | Faithful to | Runs on |
+|---|---|---|---|
+| 1 — Mock hardware | Real driver description with `use_mock_hardware:=true` — exposes the scaled JTC + MoveIt with no robot | Kinematics, planning, orchestrator logic | Anywhere incl. CI on every PR |
+| 2 — URSim | Official `universalrobots/ursim_e-series` Docker (pin ≥5.26, `ROBOT_MODEL=UR7`) + External Control URCap + the **real** `ur_robot_driver` | Driver behavior: bringup, dashboard services, protective-stop recovery | x86 Linux/Windows only (amd64 image; not the Jetson, not Apple Silicon) |
+| 3 — Gazebo Fortress | `ros-humble-ur-simulation-gz` (apt) with `ur_type:=ur7e` + our world | The full language → detect → locate → pick pipeline with physics and a simulated camera | Linux/Windows dev machines |
+
+Tier 3 needs three pieces of glue from us (no turnkey RG2+Gazebo integration exists):
+1. **RG2 in sim**: attach `tonydle/OnRobot_ROS2_Description`'s xacro macro to `tool0`, add sim-tuned inertials and mimic finger joints under `gz_ros2_control`.
+2. **Grasp latch**: two-finger contact physics in Gazebo is notoriously unstable (slip/jitter) — use the Fortress **DetachableJoint** pattern (weld object to finger on grasp, detach on release), as `gezp/universal_robot_ign` does. Consequence: **sim validates pipeline logic, never grasp quality** — hardware gates (1.7, 4.4) remain the acceptance authority.
+3. **Overhead camera**: Fortress `rgbd_camera` sensor at the calibrated camera pose, bridged via `ros_gz_bridge` (mind: static TF for the ROS optical-frame convention, sensor-data QoS overrides, depth aligned to RGB by construction).
+
+**Perception off-Jetson** (extends D3): `perception_node` gets a pluggable backend — HuggingFace **OWLv2** (`transformers`) on dev machines (CPU is fine at ~1–5 s/frame for our on-demand captures) vs NanoOWL TensorRT on the Jetson — identical service interface either way.
+
+**Portability**: VSCode devcontainer on `osrf/ros:humble-desktop-full` (athackst/vscode_ros2_workspace pattern). Linux and Windows (WSL2 + WSLg) are first-class GUI targets; macOS members work headless: rosbags, `gz sim -s`, Foxglove Studio instead of RViz.
+
+Known sim/real deltas (don't overfit): sim's default controller is the **unscaled** `joint_trajectory_controller` (speed scaling needs real hardware); sim depth is noise-free; DetachableJoint grasps always "succeed".
+
+Rejected: **Isaac Sim** — RTX GPU per seat, no UR7e asset yet, DIY ros2_control bridge; photorealism buys nothing for a scripted pick. Revisit only for synthetic training data at scale.
 
 ## 3. Resolved open questions
 
@@ -100,6 +119,7 @@ URSim's Docker image is **x86-only** — it cannot run on the Jetson. Developmen
 | Q6 | MoveIt2 or extend the teleop trajectory approach? | MoveIt2 (D2). The teleop node remains useful as a manual jog/recovery tool. |
 | Q7 | Continuous perception or on-demand? | On-demand single capture per pick (D3). |
 | Q8 | How do we handle protective stops autonomously? | `safety_monitor` node: detect via `safety_mode`/`robot_program_running`, recover via `dashboard_client/unlock_protective_stop` (+ mandatory ~5 s robot-enforced delay) then `resend_robot_program`/play — but **never auto-resume motion**; the orchestrator aborts the run and returns to IDLE. A human re-issues the command. |
+| Q10 | Can members develop without the lab? | Yes — three-tier sim strategy (D7): mock-hardware CI, URSim for driver fidelity, Gazebo Fortress for the full pipeline; devcontainer for any OS. Sim never signs off grasp quality — hardware gates do. |
 | Q9 | PolyScope 5 or X on our unit? | **Must verify on the pendant** (tracked as a phase-0 task). UR7e ships as either. Driver needs ≥5.9.4 (PolyScope 5) or ≥10.7.0 (PolyScope X); PolyScope X changes URCap handling and was implicated in a Jetson-specific velocity-limit issue (driver issue #1859). |
 
 ## 4. Risks
@@ -114,6 +134,7 @@ URSim's Docker image is **x86-only** — it cannot run on the Jetson. Developmen
 | Depth/hand-eye error stack-up > gripper tolerance | Missed grasps | Touch-point calibration verification gate (< 1 cm); grasp strategy uses centroid of a *segmented mask*, not bbox center; wide-stroke gripper |
 | Skipped kinematics calibration | Centimeter TCP error | `ur_calibration` extraction is a phase-0 blocking task (D2) |
 | URSim not available on Jetson | Slower on-robot iteration | x86 laptop URSim loop + mock-hardware CI (D7) |
+| Sim-to-real gap breeds false confidence (welded grasps, noise-free depth, unscaled controller) | "Works in sim" ships broken | Deltas documented in D7; hardware demos (1.7, 4.3, 4.4) are the only acceptance authority; controller name parameterized |
 
 ## 5. Build-vs-adopt survey (2026-09)
 

@@ -96,7 +96,7 @@ head -5 ~/ur7e_calibration.yaml
 Back on the laptop (still on the private network), pull the file so it can be committed:
 
 ```bash
-scp jetson@<JETSON_IP>:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
+scp jetson@ubuntu.local:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 ```
 
 ### C. Record before leaving the lab
@@ -111,6 +111,8 @@ scp jetson@<JETSON_IP>:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 | Ethernet iface + Jetson IP / robot IP | |
 | `ur_type:=ur7e` accepted? | |
 | Controllers active | |
-| Calibration YAML extracted? | |
+| Calibration YAML extracted? | **Yes** — committed as `config/ur7e_calibration.yaml` (hash calib_12445833238222042106). Wire into bringup via `kinematics_params_file` (task 0.5); TCP spot-check vs pendant pending (issue #4 acceptance). |
 | Anything that errored (paste text) | apt offline on robot network (expected — DNS unavailable; install over WiFi) |
 | Notable | `/opt/ros` has **humble and rolling** — ensure shells source humble. **No `ros-humble-ur*` was installed** and `~/ur_ws/src` holds only `ur_dev_bringup` → the teleop-era driver never ran from this Jetson via apt; fresh install required. ~937 GB disk, 3.7 GB swap present. |
+
+**Networking notes (learned the hard way):** from the laptop, address the Jetson as `jetson@ubuntu.local` — the `.local` suffix uses mDNS (the Jetson answers for itself via avahi), which works on the private network where plain DNS has no entry for it. The Jetson keeps two links at once: built-in Ethernet -> robot (192.168.56.1), USB-Ethernet adapter -> internet for package installs; keep that adapter with the robot kit.

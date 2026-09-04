@@ -48,19 +48,21 @@ sudo apt update && sudo apt install -y ros-humble-ur ros-humble-moveit
 
 **B4. Network link to the robot** — issue #3
 
+Robot IP confirmed at the pendant: **192.168.56.101** (the teleop-era config — keep it; changing both ends of a working link invites debugging). The Jetson's Ethernet side must be on the same subnet:
+
 ```bash
-ip -br addr               # identify the Ethernet interface (eth0/enP...) and its IP
-ping -c 3 <ROBOT_IP>      # robot IP from step A2
+ip -br addr                   # identify the Ethernet interface (eth0/enP...) and its IP
+ping -c 3 192.168.56.101
 ```
 
-If the link isn't static yet, make both ends static on a dedicated subnet (example uses 192.168.10.x — adjust to what the pendant already uses):
+If the Jetson's Ethernet isn't already static on 192.168.56.x, set it (why: DHCP with no server on a direct cable loses the address on reboot):
 
 ```bash
-sudo nmcli con add type ethernet ifname <ETH_IFACE> con-name ur-link ip4 192.168.10.1/24
+sudo nmcli con add type ethernet ifname <ETH_IFACE> con-name ur-link ip4 192.168.56.1/24
 sudo nmcli con up ur-link
 ```
 
-…and on the pendant set static IP 192.168.10.5 / netmask 255.255.255.0. Then re-run the ping.
+Then re-run the ping. Also confirm the pendant's Network screen says **Static**, not DHCP.
 
 **B5. Driver smoke test** — issue #2 acceptance
 
@@ -68,7 +70,7 @@ Terminal 1:
 
 ```bash
 source /opt/ros/humble/setup.bash
-ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur7e robot_ip:=<ROBOT_IP> launch_rviz:=false
+ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur7e robot_ip:=192.168.56.101 launch_rviz:=false
 ```
 
 (If `ur_type:=ur7e` is rejected, the packages are stale — re-run B3 and note it.)
@@ -87,7 +89,7 @@ Expect `scaled_joint_trajectory_controller [active]`. Then on the pendant: open/
 
 ```bash
 source /opt/ros/humble/setup.bash
-ros2 launch ur_calibration calibration_correction.launch.py robot_ip:=<ROBOT_IP> target_filename:="$HOME/ur7e_calibration.yaml"
+ros2 launch ur_calibration calibration_correction.launch.py robot_ip:=192.168.56.101 target_filename:="$HOME/ur7e_calibration.yaml"
 head -5 ~/ur7e_calibration.yaml
 ```
 

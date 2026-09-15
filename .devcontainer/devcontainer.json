@@ -1,0 +1,44 @@
+{
+    "name": "ur7e-pick-and-place",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "remoteUser": "ros",
+    // --network=host: ROS 2 discovery (multicast) and direct reach to the
+    //   URSim container's bridge IP work without port juggling (Linux/WSL2;
+    //   see docs/SIMULATION.md for the Windows URSim note).
+    // --ipc=host: Fast DDS shared-memory transport between host and container.
+    // ptrace/seccomp: let gdb attach inside the container.
+    "runArgs": [
+        "--network=host",
+        "--ipc=host",
+        "--cap-add=SYS_PTRACE",
+        "--security-opt=seccomp=unconfined"
+    ],
+    // GUI (RViz/Gazebo) via the host X server. On Linux run `xhost +local:`
+    // once per session; on Windows, WSLg provides DISPLAY=:0 automatically.
+    // macOS: no X — work headless, see docs/SIMULATION.md.
+    "containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "QT_X11_NO_MITSHM": "1"
+    },
+    "mounts": [
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+    ],
+    // rosdep at create time: dependencies come from the packages' own
+    // package.xml files, the same source of truth CI uses.
+    "postCreateCommand": "sudo apt-get update && rosdep update && rosdep install --from-paths src --ignore-src -y",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-vscode.cpptools",
+                "ms-iot.vscode-ros",
+                "redhat.vscode-yaml"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        }
+    }
+}

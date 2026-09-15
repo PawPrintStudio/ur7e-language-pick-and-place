@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ur7e_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Single-command bringup for our UR7e: the stock ur_robot_driver launch plus
+    everything that must never be forgotten (factory kinematics calibration,
+    our defaults). Works against the real robot, mock hardware (sim tier 1),
+    and URSim (sim tier 2) — the launch arguments select the backend.
+  </description>
+  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <license>MIT</license>
+
+  <!-- The launch file includes ur_control.launch.py from ur_robot_driver. -->
+  <exec_depend>ur_robot_driver</exec_depend>
+  <!-- Operators and the smoke test use `ros2 control list_controllers`. -->
+  <exec_depend>ros2controlcli</exec_depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

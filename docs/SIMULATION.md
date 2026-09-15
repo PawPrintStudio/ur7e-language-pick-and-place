@@ -118,12 +118,22 @@ Two log lines that are **expected** against URSim and not against the lab robot:
 Now send motion, e.g. the smoke test's trajectory, or drill the
 protective-stop recovery:
 
+To *provoke* a protective stop (the dashboard can only unlock one, not cause
+one): command a trajectory that violates a safety limit — e.g. a large joint
+move with an absurdly short `time_from_start` — or set a tight safety plane in
+PolyScope and drive into it. (The on-screen red button is an *emergency* stop,
+a different category with a different recovery — worth trying separately to
+see the difference.) Then recover:
+
 ```bash
-# trigger a protective stop from the dashboard, then recover:
 ros2 service call /dashboard_client/unlock_protective_stop std_srvs/srv/Trigger
 # (real robot enforces ~5 s before unlock is accepted; URSim mimics this)
 # then re-press Play (our default non-headless ritual) to restore control.
 ```
+
+Done for the day: `docker compose down` — your External Control program
+survives it (persisted in the `ursim_programs` volume), so the first-run
+PolyScope setup never has to be repeated.
 
 Windows note: `--network=host` in the devcontainer doesn't reach the URSim
 bridge network from inside Docker Desktop; either run the driver in WSL2

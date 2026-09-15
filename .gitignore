@@ -22,3 +22,6 @@ bags/
 # secrets
 .env
 *.key
+
+# URSim: fetched by sim/ursim/get_urcap.sh, not committed
+sim/ursim/urcaps/*.urcap

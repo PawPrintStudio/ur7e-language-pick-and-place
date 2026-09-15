@@ -1,0 +1,52 @@
+# Sim tier 2 (task 0.7, architecture D7): the official UR controller simulator.
+# This runs the SAME URControl software as the cabinet in the lab, so driver
+# behavior (bringup handshake, dashboard services, protective stop) is faithful.
+#
+# Version pin: 5.23 = the PolyScope version recorded on our real robot
+# (RUNBOOK, lab session 1). Simulating a different controller version than the
+# real robot invites works-in-sim-only bugs.
+#
+# Network design: the container gets the REAL robot's IP (192.168.56.101) on a
+# private bridge whose gateway (the host) is 192.168.56.1 — the Jetson's lab
+# address. Result: bringup commands and the External Control host IP are
+# byte-identical between sim and lab. What you rehearse here is what you type
+# there.
+#
+# amd64-only (x86 Linux/Windows). Not the Jetson, not Apple Silicon.
+#
+# Usage: see docs/SIMULATION.md. Short version:
+#   ./get_urcap.sh                 # once: fetch the External Control URCap
+#   docker compose up -d
+#   open http://localhost:6080/vnc.html   # PolyScope screen (noVNC)
+
+services:
+  ursim:
+    image: universalrobots/ursim_e-series:5.23
+    container_name: ursim
+    environment:
+      - ROBOT_MODEL=UR7
+    networks:
+      ursim_net:
+        ipv4_address: 192.168.56.101
+    ports:
+      # PolyScope GUI in the browser (noVNC) / native VNC client.
+      - "6080:6080"
+      - "5900:5900"
+    volumes:
+      # Auto-installs any .urcap placed here (External Control; get_urcap.sh).
+      - ./urcaps:/urcaps
+      # Persist programs/installation across container recreation, so the
+      # External Control program only has to be created once.
+      - ursim_programs:/ursim/programs
+
+networks:
+  ursim_net:
+    driver: bridge
+    ipam:
+      config:
+        # Mirrors the lab subnet: robot .101, host (≙ Jetson) .1
+        - subnet: 192.168.56.0/24
+          gateway: 192.168.56.1
+
+volumes:
+  ursim_programs:

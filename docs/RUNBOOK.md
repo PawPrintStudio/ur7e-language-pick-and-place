@@ -111,7 +111,7 @@ scp jetson@ubuntu.local:~/ur7e_calibration.yaml ./config/ur7e_calibration.yaml
 | Ethernet iface + Jetson IP / robot IP | **enP8p1s0** — Jetson 192.168.56.1/24 ↔ robot 192.168.56.101 (static, NM profile "Wired connection 1", `ipv4.method: manual`, autoconnect — no separate `ur-link` profile was needed) |
 | `ur_type:=ur7e` accepted? | **Yes** — Humble binary driver loaded hardware `ur7e`; dashboard reports robot version 5.23.0.0; RTDE v2 @ 500 Hz |
 | Controllers active | `scaled_joint_trajectory_controller`, `joint_state_broadcaster`, `io_and_status_controller`, `speed_scaling_state_broadcaster`, `force_torque_sensor_broadcaster`, `tcp_pose_broadcaster`, `ur_configuration_controller`, `friction_model_controller` (others loaded inactive) |
-| Calibration YAML extracted? | **Yes** — committed as `config/ur7e_calibration.yaml` (hash calib_12445833238222042106). Wire into bringup via `kinematics_params_file` (task 0.5); TCP spot-check vs pendant pending (issue #4 acceptance). |
+| Calibration YAML extracted? | **Yes** — committed as `config/ur7e_calibration.yaml`, since moved to `src/ur7e_bringup/config/` where the bringup launch installs and defaults to it (hash calib_12445833238222042106). TCP spot-check vs pendant pending (issue #4 acceptance). |
 | Anything that errored (paste text) | apt offline on robot network (expected — DNS unavailable; install over WiFi) |
 | Notable | `/opt/ros` has **humble and rolling** — ensure shells source humble. **No `ros-humble-ur*` was installed** and `~/ur_ws/src` holds only `ur_dev_bringup` → the teleop-era driver never ran from this Jetson via apt; fresh install required. ~937 GB disk, 3.7 GB swap present. |
 
@@ -210,9 +210,20 @@ Until resolved, keep commanded joint speeds ≤0.002 rad/s (known good) for any 
 - `Could not enable FIFO RT scheduling policy` still present (expected — unchanged stock kernel). Becomes real work only if reverse-interface drops appear under motion load.
 - Driver runs ad-hoc via `nohup ... > ~/ses2_driver.log` — fine for lab sessions; task 0.5's bringup owns making this a single command (and eventually a service).
 
+## Workstation session — non-lab infrastructure (2026-09-15, no robot)
+
+Tasks 0.5 (software half), 0.7, and 0.8 landed from the laptop, verified in a `ros:humble` Docker container (the CI image):
+
+- **`src/ur7e_bringup`** — single launch entrypoint wrapping the stock driver launch; pins `ur_type:=ur7e`, bakes in the calibration YAML (now at `src/ur7e_bringup/config/`), exposes `use_mock_hardware` / `headless_mode` / `robot_ip` / `launch_rviz`. Headless-vs-URCap evaluation written up in the package README — recommendation: keep the URCap + Play ritual; **lab session 3 confirms** and closes #5.
+- **Gotcha for the books:** the Humble apt driver still names the mock flag `use_fake_hardware` (the `use_mock_hardware` rename is post-Humble). Our launch exposes the modern name and maps internally.
+- **Sim tier 1 + CI (#7):** `scripts/tier1_smoke_test.sh` (controller active → `/joint_states` → FollowJointTrajectory succeeds — the sim twin of session 2's first motion) wired into GitHub Actions (`.github/workflows/ci.yml`: rosdep → colcon build → lint → smoke).
+- **Sim tier 2 (#7):** `sim/ursim/docker-compose.yml`, pinned `ursim_e-series:5.23` (= our PolyScope; tag verified on Docker Hub). Container gets the real robot's IP 192.168.56.101, host is 192.168.56.1 — sim and lab commands identical. First-run PolyScope steps in `docs/SIMULATION.md`. Trajectory-through-URSim acceptance still to be run on an x86 machine with the driver installed (devcontainer or CI machine — this laptop has no ROS).
+- **Devcontainer (#29):** `.devcontainer/` on `osrf/ros:humble-desktop-full`, Jetson-matching middleware env (`ROS_DOMAIN_ID=42`, CycloneDDS). "RViz shows the arm in <30 min from clone" acceptance needs a first member run.
+
 ## Lab session 3 — plan (issues #4 close-out, #5, #6)
 
+0. *Before the lab:* rehearse the protective-stop recovery flow in URSim (`docs/SIMULATION.md`, tier 2) — the lab visit then only confirms real-robot behavior instead of discovering the procedure.
 1. At the pendant: read Installation → TCP (expect z ≈ 30.5 mm, the Quick Changer) + payload; note exact values into this file.
 2. TCP comparison at 2 more poses (freedrive between them): `ros2 run tf2_ros tf2_echo base tool0` vs `ros2 topic echo /tcp_pose_broadcaster/pose --once` — < 1 mm after subtracting the pendant TCP closes #4.
 3. Keyboard-teleop jog through our bringup (task 0.6 remainder — first *trajectory* motion already done in session 2); exercise protective-stop recovery and document it.
-4. Start task 0.5 bringup package: one launch = driver + `kinematics_params_file` + our params.
+4. Task 0.5 close-out: `ros2 launch ur7e_bringup ur7e_bringup.launch.py` against the real robot — one command to "ready" (the package landed in the workstation session; this is its hardware acceptance).

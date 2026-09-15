@@ -47,19 +47,20 @@ Each stage has explicit entry checks, logged outcomes, and defined failure/retry
 
 ## Working without the robot
 
-Lab access is not required for most development ([architecture D7](docs/ARCHITECTURE.md)):
+Lab access is not required for most development ([architecture D7](docs/ARCHITECTURE.md); hands-on guide: [docs/SIMULATION.md](docs/SIMULATION.md)):
 
-- **Tier 1 — mock hardware**: MoveIt + RViz against `use_mock_hardware:=true`; runs anywhere, gates CI.
-- **Tier 2 — URSim**: the official UR controller simulator in Docker, driven by the *real* ROS driver (x86 Linux/Windows).
-- **Tier 3 — Gazebo**: full physics world — UR7e + RG2 + simulated overhead RGB-D camera — running the entire language → detect → pick pipeline, with OWLv2 standing in for the Jetson's NanoOWL.
+- **Tier 1 — mock hardware**: `ros2 launch ur7e_bringup ur7e_bringup.launch.py use_mock_hardware:=true`; runs anywhere, gates CI (`scripts/tier1_smoke_test.sh`).
+- **Tier 2 — URSim**: the official UR controller simulator in Docker (`sim/ursim/`), driven by the *real* ROS driver — same commands, same IPs as the lab (x86 Linux/Windows).
+- **Tier 3 — Gazebo** *(planned — issues #30/#31)*: full physics world — UR7e + RG2 + simulated overhead RGB-D camera — running the entire language → detect → pick pipeline, with OWLv2 standing in for the Jetson's NanoOWL.
 
-A VSCode devcontainer gives any member the full stack from `git clone`. Only grasping quality and calibration require the physical setup.
+A VSCode devcontainer (`.devcontainer/`) gives any member the full stack from `git clone`. Only grasping quality and calibration require the physical setup.
 
 ## Documentation
 
 - [Architecture & decisions](docs/ARCHITECTURE.md) — the full stack, resolved open questions, risks
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — phased plan; mirrors the GitHub issues/project board
 - [Runbook](docs/RUNBOOK.md) — verified lab procedures, session by session
+- [Simulation & remote development](docs/SIMULATION.md) — devcontainer, mock hardware, URSim: working without the robot
 - [References](docs/REFERENCES.md) — UR7e/RG2/ZED/Jetson key facts, links, and local vendor PDFs
 
 ## Project goal
@@ -68,4 +69,4 @@ Beyond the demo itself, this repo is a **learning platform** for makerspace memb
 
 ## Status
 
-Planning phase. See the project board for live task status.
+Phase 0 in progress: robot link verified through first commanded motion (tasks 0.1–0.4 done); dev loop landing — bringup package, sim tiers 1+2, CI, devcontainer. See the project board for live task status.

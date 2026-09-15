@@ -1,0 +1,43 @@
+# CI (task 0.7): every push/PR must build, pass lint, and pass the sim tier-1
+# smoke test. This is the same sequence a member runs locally in the
+# devcontainer, executed inside the plain `ros:humble` image so CI stays
+# lean (~no GUI stack) and honest (no devcontainer-only magic).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-lint-smoke:
+    runs-on: ubuntu-latest
+    container: ros:humble
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (rosdep)
+        # rosdep reads our package.xml files and apt-installs whatever they
+        # declare (ur_robot_driver, ros2controlcli, lint tools) — so the CI
+        # dependency list can never drift from the packages' own manifests.
+        run: |
+          apt-get update
+          rosdep update
+          rosdep install --from-paths src --ignore-src -y
+
+      - name: Build
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --symlink-install
+
+      - name: Lint (colcon test)
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon test
+          colcon test-result --verbose
+
+      - name: Sim tier-1 smoke test
+        shell: bash
+        run: bash scripts/tier1_smoke_test.sh

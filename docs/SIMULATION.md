@@ -92,9 +92,19 @@ docker compose up -d
 
 Open PolyScope at <http://localhost:6080/vnc.html>, then (first run only):
 
-1. Confirm the robot is powered on (bottom-left status → ON → START).
-2. Create a program: **Program → URCaps → External Control**; set Host IP to
-   `192.168.56.1` (already the URCap default port 50002). Save it.
+1. **Install the URCap** — our pinned 5.23 image does *not* auto-install
+   mounted URCaps (newer image tags do). ☰ (top-right) → **Settings → System →
+   URCaps** → **+** → the picker opens in the programs folder; enter `urcaps/`
+   and select `externalcontrol-1.0.5.urcap` → it lands under Active URCaps →
+   **Restart**. Restarting PolyScope **exits the container** (PolyScope is its
+   main process): run `docker compose up -d` again and reconnect the VNC page.
+   The install persists, so this is truly once.
+2. Confirm the robot is powered on (bottom-left status → ON → START).
+3. Create a program: **Program → URCaps → External Control** (a single
+   "Control by 192.168.56.1" node — the URCap's Installation defaults are
+   already our host IP and port 50002). Save it (☰ → Save All). PolyScope
+   pops an on-screen keyboard for the name; program names are safest as
+   plain letters, e.g. `externalcontrol`.
 
 Then from your workspace (host or devcontainer, Linux):
 
@@ -119,17 +129,35 @@ Now send motion, e.g. the smoke test's trajectory, or drill the
 protective-stop recovery:
 
 To *provoke* a protective stop (the dashboard can only unlock one, not cause
-one): command a trajectory that violates a safety limit — e.g. a large joint
-move with an absurdly short `time_from_start` — or set a tight safety plane in
-PolyScope and drive into it. (The on-screen red button is an *emergency* stop,
-a different category with a different recovery — worth trying separately to
-see the difference.) Then recover:
+one), use a **position** limit, not a velocity: Safety → Joint Limits (needs
+the safety password, `easybot1` in our sim), restrict e.g. the base's range so
+a slow, legal trajectory crosses the line, apply (forces a power cycle), then
+send that trajectory. Two dead ends, learned the hard way (rehearsal session,
+RUNBOOK 2026-09-17):
+
+- A "too fast" trajectory (short `time_from_start`) does **not** cause a
+  protective stop: the External Control URCap's own velocity guard vetoes the
+  setpoints first (*"Ignoring commands until a valid command is received"*
+  popup; goal aborts; program keeps running; recovery = the popup's Continue).
+- URSim with factory-preset safety limits didn't enforce speed limits at all
+  in our tests — another reason sim never signs off safety.
+
+(The on-screen red button is an *emergency* stop, a different category with a
+different recovery — worth trying separately to see the difference.)
+
+Then recover — all three steps, in order:
 
 ```bash
 ros2 service call /dashboard_client/unlock_protective_stop std_srvs/srv/Trigger
 # (real robot enforces ~5 s before unlock is accepted; URSim mimics this)
-# then re-press Play (our default non-headless ritual) to restore control.
 ```
+
+then **restart the driver** (Ctrl+C the bringup, relaunch): after a mid-goal
+protective stop the trajectory controller holds its stale pre-stop command,
+and reconnecting without a restart wedges the arm in an endless veto loop.
+Then re-press Play (our default non-headless ritual) to restore control, and
+verify with a small legal goal. A goal *rejected* at submission (vs *aborted*
+mid-flight) means External Control isn't running — Play wasn't pressed.
 
 Done for the day: `docker compose down` — your External Control program
 survives it (persisted in the `ursim_programs` volume), so the first-run

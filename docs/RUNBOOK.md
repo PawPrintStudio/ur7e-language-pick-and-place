@@ -220,6 +220,63 @@ Tasks 0.5 (software half), 0.7, and 0.8 landed from the laptop, verified in a `r
 - **Sim tier 2 (#7):** `sim/ursim/docker-compose.yml`, pinned `ursim_e-series:5.23` (= our PolyScope; tag verified on Docker Hub). Container gets the real robot's IP 192.168.56.101, host is 192.168.56.1 — sim and lab commands identical. First-run PolyScope steps in `docs/SIMULATION.md`. Trajectory-through-URSim acceptance still to be run on an x86 machine with the driver installed (devcontainer or CI machine — this laptop has no ROS).
 - **Devcontainer (#29):** `.devcontainer/` on `osrf/ros:humble-desktop-full`, Jetson-matching middleware env (`ROS_DOMAIN_ID=42`, CycloneDDS). "RViz shows the arm in <30 min from clone" acceptance needs a first member run.
 
+## URSim rehearsal session (2026-09-17, workstation, pre-lab-3)
+
+Executed lab session 3's item 0: full bringup + protective-stop drill against
+URSim tier 2 (driver in the devcontainer — also its first real member run,
+counts toward #29's acceptance). **Tier-2 acceptance from #7 is met:** a
+`FollowJointTrajectory` goal ran through the real driver against URSim
+(base +30°, elbow +15°, out-and-back, SUCCEEDED, returned within 0.02°).
+
+Setup potholes fixed in the docs as we hit them (see `docs/SIMULATION.md`
+and `sim/ursim/docker-compose.yml` diffs): the 5.23 image does **not**
+auto-install mounted URCaps (manual Settings → System → URCaps → + install,
+once); PolyScope's URCap "Restart" exits the container (`docker compose up -d`
+again); the URCap file picker is sandboxed to the programs dir (compose now
+mounts `./urcaps` inside it). URSim safety password was unset — set to
+`easybot1` (sim only, nothing sensitive).
+
+### Four findings that matter for the lab and for tasks 1.2/1.6
+
+1. **The External Control URCap has its own URScript-side velocity guard,
+   below the safety board.** A trajectory demanding more than the joint
+   velocity limit in a 2 ms setpoint step is not executed and does not fault
+   the robot: PolyScope pops *"External Control speed limit … Ignoring
+   commands until a valid command is received"*, the driver aborts the goal,
+   the program keeps running. Recovery is the popup's **Continue** button —
+   no dashboard unlock involved. **This is very likely the mechanism behind
+   session 2's "refuses trajectories above ~0.018 rad/s at 10% slider"
+   finding** — same veto signature, and now reproducible in sim (issue #6).
+
+2. **URSim with factory-preset safety limits did not enforce speed limits at
+   all.** A 100° base swing in 0.4 s (~375°/s peak, TCP ~2.7 m/s) executed
+   cleanly despite nominal 191°/s joint and 1.5 m/s TCP limits. Only after
+   setting a *custom* tool-speed limit (160 mm/s) did the guard/monitoring
+   engage. **Never let sim absolve a trajectory's safety** — matches the
+   standing "sim never signs off" rule, now with evidence.
+
+3. **A protective stop can be provoked reliably via a restricted joint
+   position limit** (Safety → Joint Limits, base min −30°, then a slow legal
+   trajectory across the line). Velocity-based provocations get vetoed by
+   finding 1 before the safety board ever sees them. The stop fired ~2°
+   before the boundary (stopping distance), program halted, goal ABORTED.
+
+4. **After a protective stop aborts a goal mid-flight, re-pressing Play is
+   not enough — restart the driver.** The trajectory controller holds its
+   stale pre-stop command; on reconnect it demands the arm jump to it, the
+   URCap guard vetoes every 2 ms cycle (popup counter climbing thousands),
+   and the connection is wedged. Full recovery ritual, verified twice:
+   `unlock_protective_stop` (≥5 s after the stop) → **Ctrl+C and relaunch
+   the bringup** → Play in PolyScope → verify with a small legal goal.
+   Task 1.6's `safety_monitor` must encode this. Also learned: a goal
+   **rejected** (vs aborted) means the controller refused it at submission —
+   with our stack that's "External Control isn't running", i.e. nobody
+   pressed Play.
+
+Pendant safety checksum (top-right, 4+4 hex, e.g. `52AA F631`) changes with
+every safety-config apply — quick visual check for "which safety config is
+loaded", useful at the real pendant too.
+
 ## Lab session 3 — plan (issues #4 close-out, #5, #6)
 
 0. *Before the lab:* rehearse the protective-stop recovery flow in URSim (`docs/SIMULATION.md`, tier 2) — the lab visit then only confirms real-robot behavior instead of discovering the procedure.

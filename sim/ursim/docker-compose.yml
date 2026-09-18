@@ -33,8 +33,12 @@ services:
       - "6080:6080"
       - "5900:5900"
     volumes:
-      # Auto-installs any .urcap placed here (External Control; get_urcap.sh).
-      - ./urcaps:/urcaps
+      # The 5.23 image does NOT auto-install URCaps from a mounted folder
+      # (newer image tags do; ours is pinned to match the real robot).
+      # Install is manual, once, via PolyScope: Settings → System → URCaps →
+      # "+". That file picker is sandboxed to the programs directory, so the
+      # URCap is mounted inside it (urcaps/ shows up as a folder in the picker).
+      - ./urcaps:/ursim/programs/urcaps
       # Persist programs/installation across container recreation, so the
       # External Control program only has to be created once.
       - ursim_programs:/ursim/programs

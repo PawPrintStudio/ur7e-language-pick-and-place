@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Fetch the External Control URCap into ./urcaps/, where docker-compose.yml
-# mounts it for URSim to auto-install on boot.
+# Fetch the External Control URCap into ./urcaps/, which docker-compose.yml
+# mounts into the programs dir so PolyScope's URCap installer can browse to
+# it (the 5.23 image has no auto-install; see docs/SIMULATION.md tier 2).
 #
 # Why needed: External Control is the pendant-side half of ur_robot_driver's
 # control channel — the URCap program node connects back to the driver

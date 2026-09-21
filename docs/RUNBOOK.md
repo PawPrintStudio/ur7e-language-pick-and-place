@@ -284,3 +284,91 @@ loaded", useful at the real pendant too.
 2. TCP comparison at 2 more poses (freedrive between them): `ros2 run tf2_ros tf2_echo base tool0` vs `ros2 topic echo /tcp_pose_broadcaster/pose --once` — < 1 mm after subtracting the pendant TCP closes #4.
 3. Keyboard-teleop jog through our bringup (task 0.6 remainder — first *trajectory* motion already done in session 2); exercise protective-stop recovery and document it.
 4. Task 0.5 close-out: `ros2 launch ur7e_bringup ur7e_bringup.launch.py` against the real robot — one command to "ready" (the package landed in the workstation session; this is its hardware acceptance).
+
+## Lab session 3 — results (2026-09-21): NEW Jetson adopted + first motion demos
+
+**The original Jetson (`ubuntu`) is missing.** Sessions 1–2 ran on a plain
+JetPack 6.2.1 unit; it could not be located this session. A **different**
+Jetson was adopted in its place and taken from bare power-on to running
+coordinated motion. Task **0.5 is now closed on this hardware** (bringup → Play
+→ reverse interface → three motion demos SUCCESSFUL).
+
+### The new Jetson (record before leaving — supersedes session-1 table for THIS unit)
+
+| Item | Value |
+|---|---|
+| Identity | hostname **`yahboom`**, user **`jetson`** — a **Yahboom vendor image**, NOT the old `ubuntu` unit. SSH host key (old unit, for reference): `SHA256:QyjRIgEenwIm5eU8jepHT8ANAzTyXNpsxhxBTh6UC9o` |
+| Board | **Jetson Orin Nano Developer Kit** (`p3767-0005`) |
+| Software | JetPack **6.2**, Ubuntu 22.04, kernel 5.15.148-tegra, ROS **Humble** preinstalled (`/opt/ros/humble` only) |
+| Libraries | CUDA 12.6.85, cuDNN 9.6, TensorRT 10.7, **OpenCV 4.10 WITH CUDA** (Yahboom rebuilt it — a freebie for phase 2) |
+| Login/sudo pw | vendor default **`yahboom`** (change before production; see the account owner) |
+| Disk | 134 GB NVMe, ~18 GB free at start (tight — phase 2's ZED+TensorRT will need a cleanup) |
+| `ros-humble-ur` | installed this session via apt (was absent) |
+| Workspace | `~/ur7e_ws` (git clone of this repo), `colcon build --symlink-install` OK |
+
+### Network setup for the new Jetson (differs from session 1 — read this)
+
+- The Orin dev kit has **one** wired port `eno1` and it must serve **two**
+  roles at different times: internet (for apt/git) and the robot link. WiFi
+  (`wlP1p1s0`) is present but was left unused this session.
+- **Robot link:** a dedicated NM profile — `ur-link`, static **192.168.56.1/24**,
+  `autoconnect no`. Created once:
+  `sudo nmcli con add type ethernet ifname eno1 con-name ur-link ipv4.method manual ipv4.addresses 192.168.56.1/24 autoconnect no` then `sudo nmcli con up ur-link`.
+  This matches the pendant's existing External Control Host IP (192.168.56.1),
+  so **the pendant needed no changes** — the whole reason to reuse `.1`.
+- **Internet** comes from the makerspace **wired** network (DHCP,
+  `10.102.52.0/22`, gw `10.102.52.1`, DNS `10.32.7.134/.135`, domain
+  `ingram.txstate.edu`). Toggle between roles by activating the other profile;
+  keeping them as separate profiles means neither clobbers the other.
+- **Squatter removed:** a leftover Docker bridge `ursim_net` (from a failed
+  amd64 URSim `docker compose up` on this arm64 box) held **192.168.56.0/24** —
+  the exact robot subnet. Left up, it would split-route robot packets into a
+  dead virtual bridge. Removed with `docker network rm ursim_net`. Check for
+  this on any Jetson that has run the sim compose.
+- Campus **WiFi** (TXST-Bobcats, `10.43.0.0/17`) cannot reach the Jetson
+  (different subnet + client isolation) — so no laptop SSH over WiFi. The
+  laptop CAN join the makerspace **wired** net; if both are on it at once,
+  wired SSH may work (untested — the future remote-driving path).
+
+### Repo made public
+
+`PawPrintStudio/ur7e-language-pick-and-place` was switched **private → public**
+(pre-flight scan: no keys/tokens/secrets in tree or history; only `easybot1`,
+the sim safety password). This removes a GitHub-auth step from every `git clone`
+on lab hardware and matches the learning-platform goal.
+
+### CRITICAL finding: `/joint_states` joint order is NOT anatomical
+
+On this robot `/joint_states` publishes:
+`shoulder_pan, wrist_2, wrist_3, wrist_1, elbow, shoulder_lift` — scrambled. A
+script that zips `position[]` onto the canonical joint order commands the wrong
+joints and swings the arm. **Always map `name → position` into a dict and
+rebuild trajectories by joint name** (the motion library does this). Observed
+start pose (folded/compact, elbow deeply bent): pan −0.006, lift −2.998,
+elbow +2.697, wrist_1 −1.425, wrist_2 +0.013, wrist_3 −0.531 rad.
+
+### Motion demos — SUCCEEDED
+
+New versioned motion library at [`scripts/motion/`](../scripts/motion/) replaces
+the lost ad-hoc `first_motion.py`. All three ran on the real robot,
+`error_code=0`, moved as expected (speed slider low, hand on e-stop):
+
+1. `demo_01_nudge.py` — wrist_3 +0.05 rad and back (chain liveness).
+2. `demo_02_wave.py` — wrist_3 slow sine, 3 cycles.
+3. `demo_03_fluid.py` — all 6 joints, phase-offset sines (first coordinated
+   multi-joint motion on this robot).
+
+A shared `ur_motion.py` enforces a velocity/step envelope before any trajectory
+is sent. All demo speeds stayed well under session-2's ~0.018 rad/s veto.
+
+### Still open after this session
+
+- **Velocity veto uncharacterized** (session-2 finding). Demos deliberately
+  stayed under it; not yet probed on this robot. `demo_02` is the tool for it
+  (raise AMP / lower PERIOD until the pendant vetoes) — **Gate A** before any
+  fast motion. Pull the exact pendant popup text when doing this.
+- **#6 not done:** keyboard-teleop jog and the real-robot protective-stop
+  recovery drill were not exercised (scripted motion was done instead).
+- **#4 TCP spot-check** at extra poses still nice-to-have (already closed on FK).
+- Reverse-interface / RT behavior on the Yahboom kernel unverified under load —
+  watch for "reverse interface dropped" when speeds increase.

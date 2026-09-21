@@ -89,9 +89,9 @@ class MotionClient(Node):
             'start pose: ' + ', '.join('%s=%.3f' % (j, self._start[j]) for j in JOINTS))
         return dict(self._start)
 
-    def _check(self, pts):
+    def _check(self, pts, anchor):
         """Raise ValueError if the trajectory leaves the safety envelope."""
-        seq = [(dict(self._start), 0.0)] + list(pts)
+        seq = [(dict(anchor), 0.0)] + list(pts)
         prev_pos, prev_t = seq[0]
         for pos, t in seq[1:]:
             dt = t - prev_t
@@ -107,13 +107,19 @@ class MotionClient(Node):
                                      % (dp / dt, j, MAX_JOINT_VEL))
             prev_pos, prev_t = pos, t
 
-    def run(self, pts):
+    def run(self, pts, anchor=None):
         """Send a trajectory. ``pts``: list of (pose_dict, time_from_start_s).
+
+        ``anchor``: the pose the first waypoint is safety-checked against
+        (default: the pose read at startup). Teleop passes the previous target
+        so each small jog is validated as a delta, not against the original home.
 
         Returns True on SUCCESSFUL, False otherwise. Enforces the safety
         envelope first; a violation raises before anything reaches the robot.
         """
-        self._check(pts)
+        if anchor is None:
+            anchor = self._start
+        self._check(pts, anchor)
         traj = JointTrajectory()
         traj.joint_names = JOINTS
         for pos, t in pts:

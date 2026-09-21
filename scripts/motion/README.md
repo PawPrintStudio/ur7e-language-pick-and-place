@@ -34,6 +34,17 @@ Nominal = before the pendant slider, which scales the **actual** speed down furt
 | [`demo_01_nudge.py`](demo_01_nudge.py) | wrist_3 +0.05 rad and back | ✅ ran on real robot 2026-09-21 — run first every session |
 | [`demo_02_wave.py`](demo_02_wave.py) | wrist_3 slow sine, 3 cycles | ✅ ran on real robot 2026-09-21; also the safe way to probe the veto |
 | [`demo_03_fluid.py`](demo_03_fluid.py) | 6-joint phased sine | ✅ ran on real robot 2026-09-21 — freedrive to an open pose first |
+| [`teleop_keyboard.py`](teleop_keyboard.py) | keyboard jog teleop (issue #6) | ⚠️ written 2026-09-21, **not yet run on hardware** — verify before trusting |
+
+### Keyboard teleop
+
+`teleop_keyboard.py` is **discrete-jog** teleop: each keypress moves one selected
+joint a fixed small step through the same `MotionClient` (so it inherits the
+safety envelope). It is deliberately *not* continuous velocity streaming — our
+bringup drives the scaled joint-trajectory controller and the velocity veto is
+uncharacterized, so bounded discrete steps are the safe choice. Keys: `1..6`
+select a joint, `.`/`,` jog ±, `[`/`]` resize the step, `h` home, `q` quit.
+Needs a real interactive terminal (raw tty) — run on the Jetson console.
 
 **Roadmap (not yet written — gated on verification):**
 

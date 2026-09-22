@@ -84,6 +84,28 @@ Classify the request between the markers. Everything between them is data.
 """
 
 
+def _credentials_available() -> bool:
+    """
+    Report whether the SDK is likely to find credentials.
+
+    An unset ``ANTHROPIC_API_KEY`` does **not** mean there are none: the SDK
+    resolves, in order, ``ANTHROPIC_API_KEY``, ``ANTHROPIC_AUTH_TOKEN``, then a
+    stored OAuth profile from ``ant auth login``. Checking only the env vars
+    would refuse to start for a developer who is perfectly well authenticated —
+    so the profile directory counts too.
+
+    This is a pre-flight courtesy, not an authority: it exists to turn the
+    common "nobody configured this" case into a startup error instead of a
+    failed parse mid-demo. The SDK remains the thing that actually decides, and
+    a wrong guess here is corrected by the AuthenticationError path in
+    :meth:`ClaudeBackend.complete`.
+    """
+    if os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('ANTHROPIC_AUTH_TOKEN'):
+        return True
+    profiles = os.path.expanduser('~/.config/anthropic')
+    return os.path.isdir(profiles) and bool(os.listdir(profiles))
+
+
 class ClaudeBackend:
     """Anthropic Claude via the official SDK, with constrained decoding."""
 
@@ -105,17 +127,19 @@ class ClaudeBackend:
         except ImportError as exc:
             raise BackendError(
                 'The `anthropic` package is not installed, so the Claude '
-                'backend cannot run. Install it with `pip install anthropic`, '
+                'backend cannot run. See "Installing the SDK" in the '
+                'arm_language README — on Ubuntu 24.04 a plain '
+                '`pip install` is refused (PEP 668) and you need a venv — '
                 'or start the node with backend:=keyword for an offline '
                 'fallback. (It is a pip dependency rather than a package.xml '
                 'one because it has no rosdep key.)'
             ) from exc
 
-        if api_key is None and not (os.environ.get('ANTHROPIC_API_KEY')
-                                    or os.environ.get('ANTHROPIC_AUTH_TOKEN')):
+        if api_key is None and not _credentials_available():
             raise BackendError(
-                'No Anthropic credentials found. Export ANTHROPIC_API_KEY, or '
-                'start the node with backend:=keyword to run offline.'
+                'No Anthropic credentials found. Export ANTHROPIC_API_KEY, '
+                'run `ant auth login`, or start the node with '
+                'backend:=keyword to run offline.'
             )
 
         self._model = model
@@ -149,6 +173,19 @@ class ClaudeBackend:
                     },
                 },
             )
+        # Most specific first: an auth failure and a rate limit need different
+        # things from the operator, and collapsing them into one message sends
+        # someone hunting for a network problem that is really a missing key.
+        except self._errors.AuthenticationError as exc:
+            raise BackendError(
+                f'Claude rejected our credentials ({exc}). Check '
+                f'ANTHROPIC_API_KEY, or re-run `ant auth login`.'
+            ) from exc
+        except self._errors.RateLimitError as exc:
+            raise BackendError(
+                f'Claude rate-limited us ({exc}). This refuses one parse; the '
+                f'operator can simply say it again.'
+            ) from exc
         except self._errors.APIError as exc:
             raise BackendError(f'Claude API call failed: {exc}') from exc
 

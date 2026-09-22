@@ -22,7 +22,9 @@ import pytest
 
 from arm_language import schema
 from arm_language.backends.base import BackendError
-from arm_language.backends.claude import DEFAULT_MODEL, ClaudeBackend
+from arm_language.backends.claude import (
+    DEFAULT_MODEL, ClaudeBackend, _credentials_available,
+)
 from arm_language.parser import IntentParser
 from arm_language.result import Outcome, ReasonCode
 
@@ -127,12 +129,42 @@ def test_a_response_with_no_text_block_is_an_error_not_a_crash():
     assert 'max_tokens' in str(caught.value)
 
 
-def test_missing_credentials_fail_at_construction(monkeypatch):
+def test_missing_credentials_fail_at_construction(monkeypatch, tmp_path):
     """Absent credentials must fail at startup, not mid-demo."""
     # Checked by clearing the environment rather than by a test-only
     # constructor flag — a backdoor added for a test is a backdoor that ships.
+    # HOME is redirected so a developer who really is logged in via
+    # `ant auth login` does not see this test fail on their machine.
     monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
     monkeypatch.delenv('ANTHROPIC_AUTH_TOKEN', raising=False)
+    monkeypatch.setenv('HOME', str(tmp_path))
     with pytest.raises(BackendError) as caught:
         ClaudeBackend()
     assert 'credentials' in str(caught.value).lower()
+
+
+@pytest.mark.parametrize('env_var', ['ANTHROPIC_API_KEY',
+                                     'ANTHROPIC_AUTH_TOKEN'])
+def test_either_credential_env_var_counts(monkeypatch, tmp_path, env_var):
+    """Both env vars the SDK reads are recognised."""
+    monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
+    monkeypatch.delenv('ANTHROPIC_AUTH_TOKEN', raising=False)
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv(env_var, 'something')
+    assert _credentials_available()
+
+
+def test_an_oauth_profile_counts_as_credentials(monkeypatch, tmp_path):
+    """A stored `ant auth login` profile must not read as "no credentials"."""
+    # The bug this pins: checking only the env vars refuses to start for a
+    # developer who is perfectly well authenticated through a profile.
+    monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
+    monkeypatch.delenv('ANTHROPIC_AUTH_TOKEN', raising=False)
+    monkeypatch.setenv('HOME', str(tmp_path))
+
+    profiles = tmp_path / '.config' / 'anthropic'
+    profiles.mkdir(parents=True)
+    assert not _credentials_available(), 'an empty profile dir is not a login'
+
+    (profiles / 'profiles.json').write_text('{}')
+    assert _credentials_available()

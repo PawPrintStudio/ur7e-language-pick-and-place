@@ -4,11 +4,12 @@ Free-form text in, a validated manipulation command out — or a clear refusal.
 Task 3.1 ([#21]) plus the parser-side half of task 3.3 ([#23]).
 
 ```bash
-# Offline, no credentials, runs anywhere (including a laptop with no ROS):
+# Offline, no credentials, no SDK, runs anywhere (even with no ROS installed):
 python3 -m arm_language.eval --backend keyword
 
-# The real thing:
-pip install anthropic && export ANTHROPIC_API_KEY=...
+# The real thing (see "Installing the SDK" below — a bare pip install is
+# refused on Ubuntu 24.04):
+export ANTHROPIC_API_KEY=...
 python3 -m arm_language.eval --backend claude --report /tmp/acceptance.json
 
 # As a node:
@@ -16,6 +17,45 @@ ros2 run arm_language intent_parser_node
 ros2 service call /intent_parser/parse_intent arm_interfaces/srv/ParseIntent \
   "{text: 'pick up the red screwdriver and put it in the bin'}"
 ```
+
+## Installing the SDK
+
+The cloud backend needs `anthropic`, which is a **pip** package — deliberately
+not in `package.xml`, because it has no rosdep key and declaring it would break
+`rosdep install` for everyone including CI.
+
+**On the workstation (Ubuntu 24.04):** `pip install anthropic` is refused with
+`error: externally-managed-environment`. That is [PEP 668] — 24.04 protects the
+system Python from pip. Use a venv; the repo's `.venv/` is already gitignored:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install anthropic
+cd src/arm_language && PYTHONPATH=. ../../.venv/bin/python -m arm_language.eval --backend claude
+```
+
+**On the Jetson (JetPack 6.2 = Ubuntu 22.04):** PEP 668 is not enforced there,
+so a plain `pip install anthropic` works and the node picks it up.
+
+If you ever *do* need the SDK importable from a ROS node on a PEP 668 system,
+build the venv with `--system-site-packages` so `rclpy` stays visible, then
+activate it before `ros2 run` — the entry point is a `#!/usr/bin/env python3`
+script, so it follows whichever `python3` is on `PATH`:
+
+```bash
+python3 -m venv --system-site-packages ~/.venvs/arm && ~/.venvs/arm/bin/pip install anthropic
+source ~/.venvs/arm/bin/activate && ros2 run arm_language intent_parser_node
+```
+
+### Credentials
+
+The SDK resolves, in order: `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, then a
+stored OAuth profile from `ant auth login`. An unset `ANTHROPIC_API_KEY` does
+not by itself mean you are unauthenticated, which is why the backend's
+pre-flight check looks for a profile too. With none of them present it refuses
+at startup rather than mid-demo, and `eval` exits 2.
+
+[PEP 668]: https://peps.python.org/pep-0668/
 
 ## The concept: why a language model sits between a human and a robot arm
 
@@ -179,7 +219,7 @@ acceptance result.
 | Gate | Status |
 |---|---|
 | Builds + lints under `colcon` on Humble | ✅ verified in `ros:humble` |
-| 104 tests, incl. adversarial validator fixtures | ✅ 98 run in CI; 6 cloud-backend shape tests need the SDK |
+| 107 tests, incl. adversarial validator fixtures | ✅ 98 run in CI; 9 cloud-backend shape tests need the SDK |
 | Contract invariants, 27 scored utterances, default policy | ✅ 0 violations |
 | Contract invariants under a narrowed (`pick`-only) policy | ✅ 0 violations |
 | Live node answers `ParseIntent` over the ROS graph | ✅ smoke-tested |
@@ -190,9 +230,10 @@ The last row is issue #21's actual acceptance criterion and it is **not met
 yet**. To close it:
 
 ```bash
-pip install anthropic
+# From the repo root, after the venv step in "Installing the SDK":
 export ANTHROPIC_API_KEY=...
-python3 -m arm_language.eval --backend claude --report docs/acceptance_3_1.json
+cd src/arm_language && PYTHONPATH=. ../../.venv/bin/python -m arm_language.eval \
+  --backend claude --report ../../docs/acceptance_3_1.json
 ```
 
 Commit the report, paste the summary into the issue, and note any utterance the

@@ -38,6 +38,54 @@ jobs:
           colcon test
           colcon test-result --verbose
 
+      - name: Guard against silent test-collection loss
+        # `colcon test` exits 0 when a package collects NO tests, so a broken
+        # test file can silently disable a whole suite while CI stays green.
+        #
+        # Case study (2026-09-22): a single `pytest.importorskip` at module
+        # level in arm_language/test/test_claude_backend.py aborted the entire
+        # collection session on Humble's pytest 6.2.5. The package went from 98
+        # collected tests to "1 skipped" and `colcon test` still passed. The
+        # fix was a `pytestmark` skipif; this step is so the next one is caught
+        # by a machine instead of by someone re-reading a log.
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+
+          failed = False
+          for path in sorted(glob.glob('build/*/pytest.xml')):
+              root = ET.parse(path).getroot()
+              suites = root.iter('testsuite') if root.tag != 'testsuite' else [root]
+              total = skipped = 0
+              for suite in suites:
+                  total += int(suite.get('tests', 0))
+                  skipped += int(suite.get('skipped', 0))
+              ran = total - skipped
+              print(f'{path}: {total} collected, {skipped} skipped, {ran} ran')
+              if ran == 0:
+                  print(f'::error::{path} ran no tests — collection is broken.')
+                  failed = True
+          sys.exit(1 if failed else 0)
+          PY
+
       - name: Sim tier-1 smoke test
         shell: bash
         run: bash scripts/tier1_smoke_test.sh
+
+      - name: Intent-parser corpus (offline backend)
+        # `colcon test` already gates this via test_corpus.py; running the
+        # eval again here is for the human-readable table in the CI log — when
+        # a parse regresses, the per-utterance rows say which one and why
+        # without anyone re-running it locally.
+        #
+        # The offline backend is used on purpose: CI must not need an API key,
+        # and this step gates the SAFETY CONTRACT (exit 1 on any violation),
+        # not language accuracy. Accuracy against the real Claude backend is
+        # task 3.1's acceptance bar and is run by hand — see
+        # src/arm_language/README.md.
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          python3 -m arm_language.eval --backend keyword

@@ -1,0 +1,185 @@
+<?xml version="1.0"?>
+<!--
+Task 1.8's tier-3 glue (D7 in docs/ARCHITECTURE.md: "no turnkey RG2+Gazebo
+integration exists" — this file, and this package, is that integration).
+
+Why this ISN'T built by extending ur7e_pick_place_bringup's URDF wrapper
+(urdf/ur7e_pick_place.urdf.xacro): that file calls the vendored
+`ur_onrobot` macro (src/vendor/UR_OnRobot_ROS2), which only forwards
+`use_fake_hardware` down to `ur_description`'s own arm macro — it never
+passes through `sim_ignition` or `simulation_controllers`, the two things
+that actually switch `ur_description`'s `<ros2_control>` block to Gazebo's
+`ign_ros2_control/IgnitionSystem` plugin and register the world-level plugin
+that reads our controller config. Checked by reading
+`ur_description/urdf/ur.urdf.xacro` directly (installed by ros-humble-ur) —
+that's the file `ros_simulation_gz`'s own launch uses, and the pattern below
+mirrors it.
+
+Similarly, `onrobot_description`'s own `onrobot_macro.xacro` bakes in a
+`<ros2_control>` block whose `sim_gazebo` branch targets *classic* Gazebo
+(`gazebo_ros2_control/GazeboSystem`, `libgazebo_ros2_control.so`) — wrong
+plugin family for Fortress/Ignition. So this file includes RG2's *geometry*
+macro (`onrobot_rg2`, from rg2_macro.xacro) directly and writes our own
+<ros2_control> block for the gripper below, using the same
+`ign_ros2_control/IgnitionSystem` plugin as the arm.
+
+Simplification, clearly flagged: the gripper's mimic finger joints
+(left/right inner knuckle, inner finger — see rg2_macro.xacro) may not
+visually track `finger_width` under Ignition Gazebo 6 the way MoveIt's
+RViz display does (mimic-joint support varies by Gazebo version/system
+plugins). This does not affect grasp behavior — that's handled entirely by
+the DetachableJoint plugin below, not by finger contact physics (D7: "sim
+never signs off grasp quality" — the latch is a deliberate stand-in, not an
+attempt at real two-finger contact simulation).
+-->
+<robot name="ur7e_gz" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="ur_type" default="ur7e"/>
+  <xacro:arg name="tf_prefix" default=""/>
+  <xacro:arg name="kinematics_parameters_file"
+             default="$(find ur7e_bringup)/config/ur7e_calibration.yaml"/>
+  <xacro:arg name="simulation_controllers"
+             default="$(find ur7e_gazebo)/config/ur7e_gz_controllers.yaml"/>
+
+  <xacro:include filename="$(find ur_description)/urdf/ur_macro.xacro"/>
+
+  <!-- rg2_macro.xacro's top-level content (gripper_tcp link/joint, outside
+       any xacro:macro) references ${prefix} directly — it only works
+       included from within a scope that already binds `prefix`, which is
+       normally onrobot_macro.xacro's own wrapper macro (we bypass that file,
+       see this file's header). Reproduce that binding ourselves rather than
+       edit the vendored file. -->
+  <xacro:property name="prefix" value="$(arg tf_prefix)"/>
+  <xacro:include filename="$(find onrobot_description)/urdf/rg2_macro.xacro"/>
+
+  <link name="world"/>
+
+  <xacro:ur_robot
+      name="ur7e_gz"
+      tf_prefix="$(arg tf_prefix)"
+      parent="world"
+      joint_limits_parameters_file="$(find ur_description)/config/$(arg ur_type)/joint_limits.yaml"
+      kinematics_parameters_file="$(arg kinematics_parameters_file)"
+      physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
+      visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
+      ur_type="$(arg ur_type)"
+      sim_ignition="true"
+      >
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <!--
+  RG2 geometry — NOT via the `onrobot_rg2` convenience macro (which bundles
+  in `finger_joint`, rg2_macro.xacro's macro that creates `finger_width` and
+  its child `finger_width_mock_link`). Confirmed live in Ignition Gazebo 6:
+  `finger_width_mock_link` has no <inertial>, and gz-sim's URDF->SDF
+  converter silently DROPS any link with no mass, taking its parent joint
+  with it (`Error Code 18: parent joint[finger_width] ignored... link[...]
+  is not modeled in sdf`) — the exact reason `finger_width` never showed up
+  as a controllable joint in Gazebo (`gz_ros2_control: Skipping joint...
+  which is not in the gazebo model`).
+
+  Can't fix this in the vendored macro without editing vendored source, so
+  we call every OTHER piece of `onrobot_rg2` directly and replace just
+  `finger_joint` with an equivalent definition below that gives the mock
+  link a (physically negligible but nonzero) mass. Diff this block against
+  rg2_macro.xacro's `onrobot_rg2` and `finger_joint` macros if the vendor
+  pin ever moves — our only intentional change is the <inertial> tag.
+  -->
+  <xacro:onrobot_base_link prefix="${prefix}"/>
+  <xacro:finger_links prefix="${prefix}" fingerprefix="left"/>
+  <xacro:finger_links prefix="${prefix}" fingerprefix="right"/>
+  <xacro:right_outer_knuckle_joint prefix="${prefix}"/>
+  <xacro:transmission_macro prefix="${prefix}" joint_name="finger_width"/>
+
+  <link name="${prefix}finger_width_mock_link">
+    <!-- OUR delta vs rg2_macro.xacro's finger_joint macro: everything else
+         below is copied verbatim from there. -->
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+  </link>
+  <joint name="${prefix}finger_width" type="prismatic">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="${prefix}onrobot_base_link" />
+    <child link="${prefix}finger_width_mock_link" />
+    <axis xyz="0 0 1" />
+    <limit lower="0" upper="0.110" velocity="0.127" effort="40" />
+  </joint>
+  <joint name="${prefix}finger_joint" type="revolute">
+    <origin xyz="0 -0.017178 0.125797" rpy="0 0 0" />
+    <parent link="${prefix}onrobot_base_link" />
+    <child link="${prefix}left_outer_knuckle" />
+    <axis xyz="-1 0 0" />
+    <limit lower="-0.558505" upper="0.785398" velocity="100.0" effort="1000" />
+    <mimic joint="${prefix}finger_width" multiplier="${0.85 * ((-0.558505 - 0.785398) / 0.110)}" offset="0.785398" />
+  </joint>
+  <xacro:finger_joints prefix="${prefix}" fingerprefix="left" reflect="1.0"/>
+
+  <joint name="$(arg tf_prefix)onrobot_base_link_joint" type="fixed">
+    <parent link="$(arg tf_prefix)tool0"/>
+    <child link="$(arg tf_prefix)onrobot_base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 ${-pi/2}"/>
+  </joint>
+
+  <!--
+  Root cause #3 of the DetachableJoint saga (see this file's header + the
+  world file's comment for #1/#2): sdformat's URDF->SDF conversion LUMPS any
+  link joined only by fixed joints into its nearest ancestor by default —
+  `onrobot_base_link` doesn't survive as its own SDF link/entity at all,
+  which is why DetachableJoint could resolve the model (`ur7e_gz`, once
+  actually spawned) but never the link, no matter which link we picked
+  (`tool0` failed identically for the same reason — it's ALSO joined to its
+  parent by nothing but fixed joints). `disableFixedJointLumping` is
+  sdformat's documented escape hatch (confirmed present in this apt version
+  via `strings` on libsdformat, not assumed).
+  -->
+  <gazebo reference="$(arg tf_prefix)onrobot_base_link">
+    <disableFixedJointLumping>true</disableFixedJointLumping>
+  </gazebo>
+
+  <!-- Gripper ros2_control block: OUR delta (see file header). Only the
+       driven joint needs a command interface — the mimic joints follow it
+       kinematically. -->
+  <ros2_control name="OnRobotGripperSim" type="actuator">
+    <hardware>
+      <plugin>ign_ros2_control/IgnitionSystem</plugin>
+    </hardware>
+    <joint name="$(arg tf_prefix)finger_width">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <!--
+  The world-level plugin that reads simulation_controllers and actually
+  starts controller_manager inside Gazebo — same pattern as
+  ur_description/urdf/ur.urdf.xacro's own sim_ignition branch.
+
+  NOTE on the grasp latch (D7 tier-3 item 2, DetachableJoint): it is
+  deliberately NOT declared here. Confirmed by direct testing (varying
+  `parent_link` across both a deep gripper link and a shallow arm-only link
+  — `onrobot_base_link` and `tool0` both failed identically): a
+  DetachableJoint plugin declared on a model spawned dynamically at launch
+  time via `ros_gz_sim create` (this robot) can never resolve ANY link by
+  name — its Configure() callback appears to run before gz-sim's ECM has
+  the freshly-created model's links queryable, a timing issue independent of
+  which link or how deep. The reference world that ships with Ignition
+  Gazebo 6 itself (detachable_joint.sdf) only works because every model in
+  it, including the one the plugin lives on, is parsed from the world file
+  at load time — never dynamically spawned.
+
+  The fix: declare the plugin on `pick_object` instead (worlds/pick_place_table.sdf)
+  — a model that IS present in the world from load time — with `pick_object`
+  as the DetachableJoint's own parent and the robot as its (lazily-resolved)
+  child. See that file's comment for the result.
+  -->
+  <gazebo>
+    <plugin filename="libign_ros2_control-system.so"
+            name="ign_ros2_control::IgnitionROS2ControlPlugin">
+      <parameters>$(arg simulation_controllers)</parameters>
+      <controller_manager_node_name>$(arg tf_prefix)controller_manager</controller_manager_node_name>
+    </plugin>
+  </gazebo>
+</robot>

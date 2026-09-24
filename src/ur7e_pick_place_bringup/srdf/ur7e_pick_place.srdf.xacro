@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Our delta on the vendored SRDF (src/vendor/UR_OnRobot_ROS2, D6): everything
+semantic about the robot — groups, the gripper end effector, `home`, and the
+disable-collisions pairs — is already correct there and included unchanged.
+We add exactly one thing task 1.4 needs that isn't upstream: an `observe`
+named pose, clear of the (not-yet-mounted, see task 2.1) overhead camera's
+view. Keeping this as a separate include rather than editing the vendored
+file means `scripts/vendor_import.sh` can re-fetch a pin bump without ever
+clobbering our addition.
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
+  <xacro:arg name="name" default="ur_onrobot"/>
+  <xacro:arg name="prefix" default=""/>
+
+  <xacro:include filename="$(find ur_onrobot_moveit_config)/srdf/ur_onrobot_macro.srdf.xacro"/>
+  <xacro:ur_onrobot_srdf name="$(arg name)" prefix="$(arg prefix)"/>
+
+  <!--
+  Elbow-up, wrist_2 rotated so the gripper looks straight down: clear of the
+  table and out of the way of a future overhead camera's frustum. Values are
+  a starting point — re-tune once the camera is actually mounted (task 2.1)
+  and once we can see the real workspace in RViz against the table collision
+  object (ur7e_pick_place_bringup/ur7e_pick_place_bringup/planning_scene.py).
+  -->
+  <group_state name="$(arg prefix)observe" group="$(arg name)_manipulator">
+    <joint name="$(arg prefix)shoulder_pan_joint" value="0"/>
+    <joint name="$(arg prefix)shoulder_lift_joint" value="-1.9"/>
+    <joint name="$(arg prefix)elbow_joint" value="1.9"/>
+    <joint name="$(arg prefix)wrist_1_joint" value="-1.57"/>
+    <joint name="$(arg prefix)wrist_2_joint" value="-1.57"/>
+    <joint name="$(arg prefix)wrist_3_joint" value="0"/>
+  </group_state>
+</robot>

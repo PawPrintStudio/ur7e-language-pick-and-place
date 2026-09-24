@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ur7e_safety_monitor</name>
+  <version>0.1.0</version>
+  <description>
+    safety_monitor (task 1.6): watches safety_mode/robot_program_running,
+    cancels in-flight motion/gripper goals on a protective stop, and offers
+    a recovery service that unlocks the safety system and reports the
+    remaining manual steps.
+  </description>
+  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>ur_dashboard_msgs</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>ur7e_interfaces</exec_depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

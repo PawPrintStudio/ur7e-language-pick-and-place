@@ -25,3 +25,7 @@ bags/
 
 # URSim: fetched by sim/ursim/get_urcap.sh, not committed
 sim/ursim/urcaps/*.urcap
+
+# Vendored third-party ROS packages: fetched by scripts/vendor_import.sh
+# (ur7e.repos), not committed — same treatment as apt-installed deps.
+src/vendor/

@@ -1,0 +1,27 @@
+# One action for every motion_node primitive (task 1.5) instead of five
+# near-identical ones — see ur7e_motion/README.md for why. `primitive`
+# selects which fields matter; motion_node validates the combination and
+# rejects (in the result, not silently) anything malformed.
+#
+# primitive values and the fields each one reads:
+#   goto_named          named_pose
+#   approach_above       target_pose, z_offset  (hover z_offset above target_pose)
+#   cartesian_descend    z_offset               (move -z_offset in the tool frame)
+#   cartesian_lift        z_offset               (move +z_offset in the tool frame)
+#   retreat              z_offset               (move +z_offset along -approach axis)
+
+string PRIMITIVE_GOTO_NAMED = goto_named
+string PRIMITIVE_APPROACH_ABOVE = approach_above
+string PRIMITIVE_CARTESIAN_DESCEND = cartesian_descend
+string PRIMITIVE_CARTESIAN_LIFT = cartesian_lift
+string PRIMITIVE_RETREAT = retreat
+
+string primitive
+string named_pose
+geometry_msgs/PoseStamped target_pose
+float64 z_offset
+---
+bool success
+string message
+---
+string stage

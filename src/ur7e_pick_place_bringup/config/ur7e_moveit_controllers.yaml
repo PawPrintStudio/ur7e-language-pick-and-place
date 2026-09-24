@@ -1,0 +1,26 @@
+# MoveIt's trajectory-execution controller list (task 1.4's "plans execute
+# on robot via scaled JTC"). NOT reused from the vendored
+# ur_onrobot_moveit_config/config/controllers.yaml: that file is written for
+# the OLD-style hand-assembled launch (which manually nests it under a
+# `moveit_simple_controller_manager:` key — see its own launch file), while
+# `MoveItConfigsBuilder.trajectory_execution()` merges a controllers file's
+# top-level keys directly as move_group parameters, so the file itself must
+# already carry that nesting. Also trimmed to the one controller we actually
+# spawn active in ur7e_pick_place.launch.py (`scaled_joint_trajectory_controller`)
+# — the gripper is a GripperCommand action (task 1.2), not something MoveIt's
+# trajectory-execution manager should be driving.
+moveit_simple_controller_manager:
+  controller_names:
+    - scaled_joint_trajectory_controller
+  scaled_joint_trajectory_controller:
+    action_ns: follow_joint_trajectory
+    type: FollowJointTrajectory
+    default: true
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager

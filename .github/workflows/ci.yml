@@ -16,6 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Vendor import (ur7e.repos)
+        # Phase 1's UR+RG2 packages (D6) aren't vendored in-tree — pulled at
+        # build time same as any other dependency, see ur7e.repos and
+        # scripts/vendor_import.sh. libnet1-dev is the one apt dep those
+        # vendored packages need that isn't resolvable from their own
+        # package.xml (see the script's comment).
+        run: |
+          apt-get update
+          apt-get install -y python3-vcstool git libnet1-dev
+          bash scripts/vendor_import.sh
+
       - name: Install dependencies (rosdep)
         # rosdep reads our package.xml files and apt-installs whatever they
         # declare (ur_robot_driver, ros2controlcli, lint tools) — so the CI

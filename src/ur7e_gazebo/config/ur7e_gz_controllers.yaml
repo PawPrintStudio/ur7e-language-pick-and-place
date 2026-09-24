@@ -1,0 +1,47 @@
+# Tier-3 controllers config — deliberately NOT the same file as
+# ur7e_pick_place_bringup/config/ur7e_controllers.yaml. That file's UR-specific
+# controllers (io_and_status_controller/GPIOController,
+# speed_scaling_state_broadcaster, tcp_pose_broadcaster, ...) read hardware
+# interfaces the real UR driver exposes that `ign_ros2_control/IgnitionSystem`
+# does not — spawning them here would fail. And per D7 in
+# docs/ARCHITECTURE.md ("known sim/real deltas"), sim uses the UNSCALED
+# joint_trajectory_controller — ur_controllers/ScaledJointTrajectoryController
+# needs a real speed-scaling hardware interface Gazebo doesn't provide.
+controller_manager:
+  ros__parameters:
+    update_rate: 250
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gripper_action_controller:
+      type: position_controllers/GripperActionController
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+
+gripper_action_controller:
+  ros__parameters:
+    joint: finger_width
+    goal_tolerance: 0.002
+    max_effort: 40.0
+    stall_timeout: 1.0
+    stalled_velocity_threshold: 0.001
+    allow_stalling: true

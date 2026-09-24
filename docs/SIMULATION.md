@@ -9,7 +9,7 @@ lowest tier that exercises what you're changing:
 |---|---|---|---|
 | 1 — Mock hardware | Kinematics, controllers, planning, orchestration logic | Launch files, MoveIt, nodes above the driver | **working** (gates CI) |
 | 2 — URSim | Driver ↔ controller behavior: bringup handshake, dashboard, protective stop | Bringup, recovery logic, anything talking to URControl | **working** (this doc) |
-| 3 — Gazebo | Physics + camera: the full language → detect → pick pipeline | Perception, grasp sequencing | planned (issues #30, #31) |
+| 3 — Gazebo | Physics + camera: the full language → detect → pick pipeline | Perception, grasp sequencing | **motion working, grasp latch open** (`src/ur7e_gazebo`) |
 
 One rule to internalize: **sim results never sign off grasp quality or
 calibration** — those are validated on hardware only (plan tasks 1.7, 4.4).
@@ -53,6 +53,41 @@ useless for timing or contact.
 ```bash
 ros2 launch ur7e_bringup ur7e_bringup.launch.py use_mock_hardware:=true
 ```
+
+**Phase 1 (arm + RG2 gripper + MoveIt2) also runs fully on tier 1** — this is
+what "hardware-free development" concretely means for the pick-and-place
+stack, not just the bare-arm bringup above. First, one-time setup:
+
+```bash
+bash scripts/vendor_import.sh   # pulls the third-party UR+RG2 packages, D6 — see ur7e.repos
+rosdep install --from-paths src --ignore-src -y
+colcon build --symlink-install
+```
+
+Then, three terminals:
+
+```bash
+ros2 launch ur7e_pick_place_bringup ur7e_pick_place.launch.py use_fake_hardware:=true
+ros2 launch ur7e_pick_place_bringup ur7e_moveit.launch.py launch_rviz:=true
+ros2 run ur7e_motion motion_node
+```
+
+...and task 1.7's scripted pick, end to end, with the table collision object
+enforced and `pick_ik` actually solving IK (verified this session — see
+`docs/RUNBOOK.md` and `docs/IMPLEMENTATION_PLAN.md`'s Phase 1 status note):
+
+```bash
+python3 scripts/pick_place_demo.py
+```
+
+**Known mock-hardware quirk:** setpoints are mirrored straight back as state
+with no continuous-joint wrapping — after many relative Cartesian moves in
+one long-lived process, a wrist joint can accumulate to a value like `6.28`
+rad (two full turns) instead of wrapping to `~0`. Planning FROM such a state
+can fail outright. It's a mock-hardware artifact (a real driver wraps
+continuous joints), not a planning bug — if a primitive starts failing to
+"submit" after a long ad-hoc testing session, restart the bringup stack
+before assuming the code is broken.
 
 The smoke test codifies "tier 1 works" (CI runs it on every push — task 0.7):
 
@@ -168,12 +203,35 @@ bridge network from inside Docker Desktop; either run the driver in WSL2
 directly, or attach the devcontainer to the URSim network:
 `docker network connect ursim_ursim_net <devcontainer-name>`.
 
-## Tier 3 — Gazebo (planned)
+## Tier 3 — Gazebo (motion working, grasp latch open)
 
-Lands with issues [#30](https://github.com/PawPrintStudio/ur7e-language-pick-and-place/issues/30)
-(world + RG2 + grasp latch) and [#31](https://github.com/PawPrintStudio/ur7e-language-pick-and-place/issues/31)
-(overhead RGB-D camera + OWLv2 perception backend). The devcontainer already
-ships the Gazebo Fortress bridge (`ros-humble-ros-gz`) in anticipation.
+Ignition Gazebo 6 (Fortress) — `src/ur7e_gazebo`. Real physics: gravity,
+inertia, actual simulated motor response, as opposed to tier 1's mirrored
+setpoints.
+
+```bash
+ros2 launch ur7e_gazebo ur7e_gz.launch.py gazebo_gui:=false   # true on a workstation with a display
+ros2 launch ur7e_pick_place_bringup ur7e_moveit.launch.py launch_rviz:=false \
+    use_sim_time:=true moveit_controllers_file:=config/ur7e_gz_moveit_controllers.yaml
+ros2 run ur7e_motion motion_node --ros-args -p use_sim_time:=true
+```
+
+Everything above `ros2_control` — MoveIt2, `motion_node`,
+`scripts/pick_place_demo.py` — is the exact same code tier 1 uses; only
+what's *behind* `ros2_control` changed. Verified: sending
+`goto_named home` through `ExecutePrimitive` moves the arm under real
+simulated dynamics (checked `/joint_states` before/after against actual
+physics, not a mirror).
+
+**Not yet working:** the DetachableJoint grasp latch (D7 tier-3 item 2 —
+weld the object to the gripper on command) and reliable gripper
+actuation in sim. Both were investigated in real depth this session — not
+guessed at — and the findings are written up in full in
+`src/ur7e_gazebo/README.md`, including the specific sdformat behavior
+(fixed-joint lumping) that's the leading suspect for the grasp latch issue.
+Known sim/real deltas from D7 in ARCHITECTURE.md (grasp always "succeeds" in
+sim once the latch works, sim depth is noise-free, unscaled controller) still
+apply once it does.
 
 ## What runs where (quick reference)
 

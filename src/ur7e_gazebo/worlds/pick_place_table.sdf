@@ -1,0 +1,146 @@
+<?xml version="1.0"?>
+<!--
+Task 1.8's world: a table + the pick/place objects task 1.7's demo needs, in
+Ignition Gazebo 6 (Fortress — see ur7e_gazebo/README.md for how that was
+confirmed, not assumed). The robot itself is NOT defined here — it's spawned
+into this world at launch time (ur7e_gazebo/launch/ur7e_gz.launch.py, via
+`ros_gz_sim create`), same pattern ur_simulation_gz's own launch uses.
+
+Poses/coordinates deliberately match
+ur7e_pick_place_bringup/planning_scene.py's pick_object/place_target/table
+(same PLACEHOLDER caveat: taped/hardcoded, re-measure in a lab session).
+The robot is spawned at the world origin with no offset, so this world's
+frame and the robot's base_link frame coincide closely enough for that.
+
+`pick_object` must be named exactly `pick_object` with a link named `link` —
+ur7e_gazebo/urdf/ur7e_gz.urdf.xacro's DetachableJoint plugin references it by
+that exact name/link to weld it to the gripper on command.
+-->
+<sdf version="1.6">
+  <world name="pick_place_table">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material>
+            <ambient>0.6 0.6 0.6 1</ambient>
+            <diffuse>0.6 0.6 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Table — matches planning_scene.py's `table` collision box: 1.0 x 0.8 x
+         0.05, top surface at z=0 (flush with the robot's base_link, a
+         typical fixed-base UR mounting), centred at x=0.4. -->
+    <model name="table">
+      <static>true</static>
+      <pose>0.4 0.0 -0.025 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.0 0.8 0.05</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.0 0.8 0.05</size></box></geometry>
+          <material>
+            <ambient>0.55 0.4 0.25 1</ambient>
+            <diffuse>0.55 0.4 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- The object task 1.7 picks — matches planning_scene.py's `pick_object`
+         (0.03 x 0.03 x 0.08, resting on the table). Dynamic (has mass/inertia)
+         so it actually sits under gravity until the DetachableJoint welds it
+         to the gripper. -->
+    <model name="pick_object">
+      <pose>0.45 -0.15 0.04 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.05</mass>
+          <inertia><ixx>0.00002</ixx><ixy>0</ixy><ixz>0</ixz>
+                    <iyy>0.00002</iyy><iyz>0</iyz><izz>0.00001</izz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.03 0.03 0.08</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.03 0.03 0.08</size></box></geometry>
+          <material>
+            <ambient>0.9 0.2 0.2 1</ambient>
+            <diffuse>0.9 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+
+      <!--
+      Grasp latch (D7 tier-3 item 2). Declared HERE, on `pick_object`, not on
+      the robot — confirmed by direct testing (see
+      ur7e_gazebo/urdf/ur7e_gz.urdf.xacro's comment for the full story): a
+      DetachableJoint plugin on a model spawned dynamically at launch time
+      (the robot, via `ros_gz_sim create`) never resolves ANY of its own
+      links by name, regardless of which link or how deep — a gz-sim ECM
+      timing issue, not a naming mistake. `pick_object` is parsed from this
+      world file at load time, so ITS own link ("link", the parent here)
+      resolves fine; the robot is only needed as the (separately, lazily
+      resolved) child, once it exists.
+      -->
+      <plugin filename="ignition-gazebo-detachable-joint-system"
+              name="ignition::gazebo::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>ur7e_gz</child_model>
+        <child_link>onrobot_base_link</child_link>
+        <detach_topic>/pick_object/detach</detach_topic>
+        <attach_topic>/pick_object/attach</attach_topic>
+        <output_topic>/pick_object/state</output_topic>
+      </plugin>
+    </model>
+
+    <!-- Where 1.7 places it — a flat marker, not something the arm ever
+         grasps, so no DetachableJoint plugin. Static so it can't be knocked
+         off the table by a slightly-off retreat motion. -->
+    <model name="place_target">
+      <static>true</static>
+      <pose>0.45 0.20 0.001 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>0.06 0.06 0.002</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.9 1</ambient>
+            <diffuse>0.2 0.6 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

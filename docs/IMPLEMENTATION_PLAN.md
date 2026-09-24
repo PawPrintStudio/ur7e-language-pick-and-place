@@ -28,16 +28,33 @@ Goal: the Jetson reliably commands the UR7e with correct kinematics, and the rep
 
 Goal: the arm picks a known object from a hardcoded pose with a real gripper, under MoveIt2, safely. This proves the entire motion+gripper stack.
 
+> **2026-09-24 status (remote session, no lab access):** 1.3–1.5 and the
+> software half of 1.2 are built and **verified against sim tier 1** (mock
+> hardware) — see `src/ur7e_pick_place_bringup`, `src/ur7e_motion`,
+> `src/ur7e_interfaces`. 1.7's full scripted sequence runs end-to-end against
+> tier 1 (`scripts/pick_place_demo.py`, exit 0, every stage logged). **Tier 3
+> (Gazebo, `src/ur7e_gazebo`) now exists and its motion half is verified**:
+> MoveIt2 → motion_node → real Gazebo physics confirmed driving the arm
+> end-to-end. Its grasp latch and gripper actuation are not yet working —
+> investigated in detail, root cause understood, not resolved this session
+> (see `src/ur7e_gazebo/README.md`). 1.6 (`src/ur7e_safety_monitor`) is
+> written but only verifiable against tier 2 (URSim) or the real robot — not
+> yet run. **Still lab-only:** 1.1 (physical RS-485/URCap bench wiring), the
+> hardware leg of 1.2 (real gripper), 1.6's verification, and 1.7's
+> ≥9/10-real-runs acceptance. Details and how-to-run in each new package's
+> README. `docs/SIMULATION.md` and `docs/RUNBOOK.md` have the session's full
+> record.
+
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 1.1 | RG2 v2 ROS bench setup on the **direct tool connector** (decided — D6): install UR RS485 Daemon URCap, disable the OnRobot URCap, Tool I/O "Controlled by User" @ 24 V, verify `/tmp/ttyUR` bridge from the Jetson | Gripper opens/closes from a test script over the bridge |
-| 1.2 | `gripper_node`: `GripperCommand` action wrapping an OnRobot RG2 driver (`tonydle/OnRobot_ROS2_Driver` serial or `ABC-iRobotics/onrobot-ros2` TCP per 1.1) | Open/close/width/force from CLI works on real gripper |
-| 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant |
-| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); **`pick_ik` as IK solver** (kinematics.yaml); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test |
-| 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) **built on `pymoveit2`** (official `moveit_py` is not available on Humble binaries) | Each primitive callable as an action; unit-tested against mock hardware |
-| 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" |
-| 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs |
-| 1.8 | Gazebo sim world (D7 tier 3, motion half): `ur_simulation_gz` (`ur_type:=ur7e`) + RG2 xacro attached with sim inertials/mimic joints + DetachableJoint grasp latch + table/objects world | The 1.7 scripted pick sequence runs end-to-end in Gazebo on a machine with no lab access |
+| 1.1 | RG2 v2 ROS bench setup on the **direct tool connector** (decided — D6): install UR RS485 Daemon URCap, disable the OnRobot URCap, Tool I/O "Controlled by User" @ 24 V, verify `/tmp/ttyUR` bridge from the Jetson | Gripper opens/closes from a test script over the bridge — **lab-only, not started** |
+| 1.2 | `gripper_node`: `GripperCommand` action wrapping an OnRobot RG2 driver (`tonydle/OnRobot_ROS2_Driver` serial or `ABC-iRobotics/onrobot-ros2` TCP per 1.1) | Open/close/width/force from CLI works on real gripper — **software done & sim-verified** (`gripper_action_controller` in `ur7e_pick_place_bringup`, a stock `position_controllers/GripperActionController` over the vendored Modbus `hardware_interface`); **real-gripper verification is lab-only** |
+| 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant — **done & sim-verified** (URDF parses, full kinematic tree confirmed via `check_urdf`; table + pick/place objects added as a MoveIt planning scene, not baked into the URDF — see `ur7e_pick_place_bringup/README.md`); **TCP-vs-pendant check is lab-only** |
+| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); **`pick_ik` as IK solver** (kinematics.yaml); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test — **done & sim-verified**: `pick_ik/PickIkPlugin` confirmed live via `ros2 param get`, `home`/`observe` both reachable, and the table collision is real (a demo run that got too close to the table failed to plan until the sequence was routed clear of it — see RUNBOOK) |
+| 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) **built on `pymoveit2`** (official `moveit_py` is not available on Humble binaries) | Each primitive callable as an action; unit-tested against mock hardware — **done & sim-verified**: all five primitives exercised individually and as part of the full 1.7 sequence over `ExecutePrimitive` (`ur7e_interfaces`); named poses resolved live from the running SRDF, not hardcoded |
+| 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" — **written, not yet run**: needs tier 2 (URSim) or the real robot, since mock hardware has no dashboard/safety system to watch |
+| 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs — **sim leg done**: `scripts/pick_place_demo.py` runs the full sequence end-to-end against tier 1 (exit 0); **the ≥9/10-real-runs acceptance is lab-only** |
+| 1.8 | Gazebo sim world (D7 tier 3, motion half): `ur_simulation_gz` (`ur_type:=ur7e`) + RG2 xacro attached with sim inertials/mimic joints + DetachableJoint grasp latch + table/objects world | The 1.7 scripted pick sequence runs end-to-end in Gazebo on a machine with no lab access — **motion half done & verified** (`src/ur7e_gazebo`: MoveIt2 → motion_node → real Gazebo physics confirmed end-to-end, arm moves under actual dynamics); **grasp latch (DetachableJoint) and reliable gripper actuation in sim are open** — root-caused in detail, not yet resolved, see `src/ur7e_gazebo/README.md` |
 
 ## Phase 2 — Perception (see and locate)
 

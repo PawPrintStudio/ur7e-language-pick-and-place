@@ -1,0 +1,30 @@
+# Third-party ROS 2 packages Phase 1 builds on: the UR+RG2 stack (D6 in
+# docs/ARCHITECTURE.md) and pymoveit2 (adopted libraries, ARCHITECTURE.md §5 —
+# the Python layer over MoveIt2 motion_node uses, since official moveit_py
+# bindings aren't on Humble).
+#
+# Pinned to specific commits, not `main` or a tag, deliberately: none of these
+# repos publish releases, and "main" can change under us on a Jetson bringup
+# a member runs a week after a laptop dev session. Bump the pin on purpose,
+# with a note why, not by accident.
+#
+# Imported into src/vendor/ (gitignored) by scripts/vendor_import.sh — not
+# committed, same treatment the project already gives ur_robot_driver (apt,
+# not vendored). Re-run the script any time this file changes.
+repositories:
+  vendor/UR_OnRobot_ROS2:
+    type: git
+    url: https://github.com/tonydle/UR_OnRobot_ROS2.git
+    version: 9b5f7f80f3fb0761fb97ca4894f00443b6d07b32
+  vendor/OnRobot_ROS2_Driver:
+    type: git
+    url: https://github.com/tonydle/OnRobot_ROS2_Driver.git
+    version: b99abaccfbbe90f2096feff833f4c0849757a587
+  vendor/OnRobot_ROS2_Description:
+    type: git
+    url: https://github.com/tonydle/OnRobot_ROS2_Description.git
+    version: 29180b3fa9cba6555f3e515e789b8ccd34252fab
+  vendor/pymoveit2:
+    type: git
+    url: https://github.com/AndrejOrsula/pymoveit2.git
+    version: 20e6ee55e59be5f7a2b0762b16735fcdc744e8bc

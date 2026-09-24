@@ -5,14 +5,27 @@
 FROM osrf/ros:humble-desktop-full
 
 # Project stack, mirroring the Jetson install (RUNBOOK B3) plus sim extras:
-#   ros-humble-ur        driver + calibration + moveit config (same as Jetson)
-#   ros-humble-moveit    motion planning (phase 1)
-#   ros-humble-ros-gz    Gazebo Fortress bridge (sim tier 3, issue #30)
-#   rmw-cyclonedds-cpp   the RMW the Jetson runs — same middleware everywhere
+#   ros-humble-ur              driver + calibration + moveit config (Jetson)
+#   ros-humble-moveit          motion planning (phase 1)
+#   ros-humble-pick-ik         phase-1 IK solver (D6/ARCHITECTURE.md task 1.4)
+#   ros-humble-ros-gz          Gazebo Fortress bridge (sim tier 3)
+#   ros-humble-ur-simulation-gz  Gazebo-ready UR7e (gz_ros2_control), the arm
+#                              base for tier 3 — see ur7e_gazebo/README.md
+#   ros-humble-gz-ros2-control   sim ros2_control plugin the RG2 gripper's
+#                              sim joints are wired under (tier 3)
+#   libnet1-dev                Modbus RTU/TCP dep for the vendored gripper
+#                              hardware_interface (src/vendor, ur7e.repos) —
+#                              only needed to build it, not to exercise it in
+#                              sim
+#   rmw-cyclonedds-cpp         the RMW the Jetson runs — same middleware everywhere
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-ur \
     ros-humble-moveit \
+    ros-humble-pick-ik \
     ros-humble-ros-gz \
+    ros-humble-ur-simulation-gz \
+    ros-humble-gz-ros2-control \
+    libnet1-dev \
     ros-humble-rmw-cyclonedds-cpp \
     python3-colcon-common-extensions \
     python3-rosdep \

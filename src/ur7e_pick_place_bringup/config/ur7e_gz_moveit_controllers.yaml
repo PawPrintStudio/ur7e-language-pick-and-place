@@ -1,0 +1,21 @@
+# MoveIt trajectory-execution config for tier 3 (Gazebo) — the sim twin of
+# config/ur7e_moveit_controllers.yaml, differing only in the controller name:
+# `joint_trajectory_controller` (unscaled), matching what
+# ur7e_gazebo/config/ur7e_gz_controllers.yaml actually spawns. D7 in
+# docs/ARCHITECTURE.md documents this as a known, deliberate sim/real delta —
+# not a bug: speed scaling needs the real driver's hardware interface.
+moveit_simple_controller_manager:
+  controller_names:
+    - joint_trajectory_controller
+  joint_trajectory_controller:
+    action_ns: follow_joint_trajectory
+    type: FollowJointTrajectory
+    default: true
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager

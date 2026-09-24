@@ -372,3 +372,173 @@ is sent. All demo speeds stayed well under session-2's ~0.018 rad/s veto.
 - **#4 TCP spot-check** at extra poses still nice-to-have (already closed on FK).
 - Reverse-interface / RT behavior on the Yahboom kernel unverified under load —
   watch for "reverse interface dropped" when speeds increase.
+
+## 2026-09-24 — Phase 1 sim build (remote session, no lab access)
+
+Built and sim-verified everything in Phase 1 that doesn't need the physical
+robot/gripper (docs/IMPLEMENTATION_PLAN.md's guiding sequencing note: remote
+contributors are unblocked once 0.8 + 1.8 land — this session covers most of
+what 1.8 needs *except* the Gazebo world itself, which is still open).
+
+**Verification approach:** every claim below was actually run, in Docker
+(`ros:humble` for the vendor-only build check, then a purpose-built
+`ur7e-dev:phase1` image matching the updated `.devcontainer/Dockerfile`),
+not just written and assumed correct — colcon build, xacro render +
+`check_urdf`, then live `ros2 launch` + `ros2 action send_goal` against tier-1
+mock hardware.
+
+### What got built
+
+- **Vendoring** (`ur7e.repos`, `scripts/vendor_import.sh`): D6's
+  `tonydle/UR_OnRobot_ROS2` (+ `OnRobot_ROS2_Driver`, `OnRobot_ROS2_Description`)
+  turned out to be far more complete than expected — working combined
+  URDF, `ros2_control` controllers (including a real Modbus gripper
+  `hardware_interface`), and a MoveIt2 config, MIT-licensed. Also vendored
+  `pymoveit2` (the Python MoveIt2 layer the architecture doc already named
+  for `motion_node`). All four build clean, including the C++ Modbus driver.
+- **`ur7e_pick_place_bringup`**: our deltas on the vendored stack — forked
+  launch file (the vendored one hardcodes its controllers-YAML path and
+  never wires in our calibration file), `gripper_action_controller` (task
+  1.2's GripperCommand, a stock controller, no custom driver node needed),
+  `pick_ik` kinematics override, an `observe` named pose added to the
+  vendored SRDF, and a `planning_scene.py` node seeding the table + pick/place
+  objects as MoveIt collision geometry.
+- **`ur7e_interfaces`**: one action, `ExecutePrimitive`, for all five motion
+  primitives.
+- **`ur7e_motion`**: `motion_node`, a `pymoveit2`-based action server. Named
+  poses resolve live from the running SRDF (`RobotDescription.from_node`) —
+  edit a pose in the SRDF, nothing in the node needs to change.
+- **`ur7e_safety_monitor`**: written, not yet runnable-tested (needs tier 2
+  or the real robot — mock hardware has no safety system to watch).
+- **`scripts/pick_place_demo.py`**: task 1.7's scripted sequence.
+
+### Bugs found and fixed by actually running it (not just plausible on read)
+
+- `ur7e_pick_place.urdf.xacro`'s macro call was missing several required
+  xacro args (`joint_limits_parameters_file` etc.) that the vendored
+  top-level xacro defaults but the bare macro does not — `xacro` failed
+  loudly, fixed by passing them all through explicitly.
+- `MoveItConfigsBuilder`'s `file_path` arguments resolve as plain
+  `pathlib.Path` joins at graph-construction time, not launch-time
+  substitutions — passing a `PathJoinSubstitution` crashed the launch file.
+  Restructured `ur7e_moveit.launch.py` around `OpaqueFunction` +
+  `.perform(context)`.
+- The vendored `ur_onrobot_moveit_config/config/controllers.yaml` is a flat
+  file that only works via its *own* hand-written launch file's manual
+  nesting under `moveit_simple_controller_manager:` — `MoveItConfigsBuilder`
+  needs that nesting already in the file. Move_group loaded with "0
+  controllers in list" (silently — trajectory *planning* still worked, only
+  *execution* would have failed) until this was caught and a correctly-nested
+  `ur7e_moveit_controllers.yaml` written.
+- `planning_scene.py` had a use-before-set bug (`self._timer_handle`
+  referenced before assignment) — crashed on its 3rd publish, caught
+  immediately by the crash in the launch log.
+- `motion_node` deadlocked on startup: it discovered the robot config
+  (a blocking service call to `move_group`) before starting to spin, so the
+  service response's callback never ran. Fixed by spinning in a background
+  thread first (the same pattern pymoveit2's own examples use), *then*
+  discovering.
+- The full 1.7 sequence failed at the very last `goto_named home`: OMPL
+  couldn't find a joint-space plan from a pose near the place object back to
+  `home` without the table collision box in the way. Confirms 1.4's
+  acceptance criterion ("collision with table prevented") is real, not
+  cosmetic. Fixed by raising the demo's hover height and routing the return
+  through `observe` (already clear of the table by design) before `home`.
+- **Mock-hardware quirk, not a bug:** repeated manual testing in one
+  long-lived mock-hardware process let a wrist joint accumulate to ~6.28 rad
+  (two full turns) since mock hardware mirrors setpoints with no continuous-
+  joint wrapping. Planning from that state failed outright. A clean restart
+  of the bringup stack fixed it — documented in `docs/SIMULATION.md` so it
+  doesn't get mistaken for a real planning bug next time.
+
+### Verified, concretely
+
+- `colcon build` — 11 packages, clean, including vendor.
+- `xacro` + `check_urdf` on the combined URDF — full arm+gripper kinematic
+  tree parses.
+- Live tier-1 launch: `gripper_action_controller` activates;
+  `GripperCommand` goal (open to 0.10 m) succeeds; `ros2 param get` confirms
+  `pick_ik/PickIkPlugin` is the live kinematics solver (not silently
+  falling back to KDL); `goto_named home` moves the mock arm to the SRDF's
+  `home` joint values (confirmed via `/joint_states`); `cartesian_lift`
+  exercises IK successfully.
+- `scripts/pick_place_demo.py` — full sequence, fresh bringup, exit 0, every
+  stage logged: home → open → approach → descend → close → lift → approach
+  → descend → open → retreat → observe → home.
+
+### Still open
+
+- **1.8 (Gazebo tier 3)** — not built this session. `ros-humble-ur-simulation-gz`
+  and `ros-humble-gz-ros2-control` are now in `.devcontainer/Dockerfile`,
+  ready for it; the world file, RG2-in-sim attachment (sim inertials + mimic
+  joints under `gz_ros2_control`), and the `DetachableJoint` grasp latch are
+  the remaining pieces D7 itself flagged as needing custom glue.
+- **1.6 verification** — needs tier 2 (URSim) or the real robot.
+- **Lab-only, unchanged by this session:** 1.1 (physical bench wiring), the
+  hardware leg of 1.2, 1.3's TCP-vs-pendant spot check, and 1.7's real
+  ≥9/10-runs acceptance.
+
+Full context, decisions, and the exact commands to reproduce any of this are
+in each new package's own README (learning-platform principle) — start with
+`src/ur7e_pick_place_bringup/README.md`.
+
+## 2026-09-24 (cont'd) — Gazebo tier 3 (motion working, grasp latch investigated)
+
+Same remote session as the Phase 1 sim build above. Built `src/ur7e_gazebo`
+(task 1.8) and got the arm running under real Gazebo Fortress (Ignition
+Gazebo 6) physics, driven by the exact same MoveIt2/motion_node stack tier 1
+already uses. The grasp latch (DetachableJoint) does not work yet — deeply
+investigated, root cause understood, not resolved. Full write-up in
+`src/ur7e_gazebo/README.md`; summary here for the session record.
+
+**Verified working:** combined arm+gripper URDF spawns; both
+`ign_ros2_control/IgnitionSystem` hardware interfaces (arm via
+`ur_description`'s own `sim_ignition` branch, gripper written by hand since
+the vendored `onrobot_macro.xacro` only supports classic Gazebo) initialize;
+`joint_trajectory_controller` and `gripper_action_controller` activate; a
+real `goto_named home` action moved the arm under actual simulated dynamics
+— confirmed via `/joint_states` before/after, not assumed from logs alone.
+
+**DetachableJoint investigation (three stages, each empirically confirmed,
+not guessed):**
+
+1. Plugin on the robot (`parent_link=onrobot_base_link`) → "Link ... not
+   found in model ur7e_gz". Tried a shallower, pure-arm link (`tool0`) —
+   identical failure. Confirmed via Ignition Gazebo 6's own shipped
+   reference world (`detachable_joint.sdf`) that this plugin, on a
+   *dynamically spawned* model (`ros_gz_sim create`, our robot), can't
+   resolve any of its own links by name at all — a gz-sim ECM timing issue,
+   not a naming problem. (First hypothesis — plugin declaration order — was
+   a false lead: a stale second `ign gazebo` process from an earlier test
+   made a reorder *look* like it fixed things; a from-scratch container
+   re-test showed the failure was unchanged. Lesson logged in
+   `src/ur7e_gazebo/README.md`'s process-hygiene note.)
+2. Flipped the plugin onto `pick_object` (present in the world from load
+   time) with the robot as the lazily-checked child. Model-level resolution
+   then succeeded once the robot actually spawned (retries every frame
+   rather than failing once) — but link-level resolution
+   (`onrobot_base_link`) still fails, every frame.
+3. Root-caused to sdformat's default fixed-joint lumping: `onrobot_base_link`
+   is reached only via a fixed joint, and sdformat merges such links into
+   their ancestor by default for physics efficiency — consistent with
+   `tool0` also failing in stage 1 (it's also fixed-joint-only from its
+   parent). Confirmed sdformat ships `disableFixedJointLumping` for exactly
+   this (via `strings` on the installed `libsdformat`, not assumed) and
+   added it. **Did not resolve the issue** — left in place as the
+   textbook-correct fix; the actual remaining blocker is undetermined.
+
+Also found and fixed along the way: `finger_width_mock_link` (a bookkeeping
+link with no mass, from the vendored RG2 macro) gets silently dropped by
+gz-sim's URDF→SDF conversion, taking the whole `finger_width` joint with it
+— confirmed via the exact sdformat warning (`Error Code 18: parent joint
+[finger_width] ignored`). Fixed by reimplementing that one macro
+(`finger_joint`) with a nonzero placeholder inertial, calling every other
+piece of the vendored `onrobot_rg2` macro unmodified.
+
+**Still open:** the grasp latch itself; the gripper accepts commands and
+activates but doesn't reliably reach a commanded width in sim (`stalled:
+true, reached_goal: false` — not yet root-caused, candidates listed in the
+package README); mimic finger joints untested visually.
+
+Docs updated: `docs/SIMULATION.md` tier 3 section, `docs/IMPLEMENTATION_PLAN.md`
+task 1.8 status.

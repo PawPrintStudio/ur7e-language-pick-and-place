@@ -25,9 +25,12 @@
     "mounts": [
         "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
     ],
-    // rosdep at create time: dependencies come from the packages' own
-    // package.xml files, the same source of truth CI uses.
-    "postCreateCommand": "sudo apt-get update && rosdep update && rosdep install --from-paths src --ignore-src -y",
+    // Vendor import first (scripts/vendor_import.sh, ur7e.repos, D6): pulls
+    // the third-party UR+RG2 packages phase 1 builds on into src/vendor/
+    // (gitignored) so rosdep below sees their package.xml files. Then rosdep
+    // at create time: dependencies come from every package.xml under src/,
+    // the same source of truth CI uses.
+    "postCreateCommand": "bash scripts/vendor_import.sh && sudo apt-get update && rosdep update && rosdep install --from-paths src --ignore-src -y",
     "customizations": {
         "vscode": {
             "extensions": [

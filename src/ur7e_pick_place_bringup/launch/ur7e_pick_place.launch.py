@@ -1,7 +1,8 @@
 """
-Phase 1 bringup (arm + RG2 gripper): a fork, not a wrap, of the vendored
-``ur_onrobot_control/launch/start_robot.launch.py`` (src/vendor, D6 in
-docs/ARCHITECTURE.md, pinned via ur7e.repos).
+Phase 1 bringup (arm + RG2 gripper): a fork of the vendored launch file.
+
+This forks, rather than wraps, ``ur_onrobot_control/launch/start_robot.launch.py``
+(src/vendor, D6 in docs/ARCHITECTURE.md, pinned via ur7e.repos).
 
 Why a fork and not ``IncludeLaunchDescription`` (the pattern ``ur7e_bringup``
 uses for the bare-arm driver launch): that file hardcodes two things as
@@ -70,7 +71,9 @@ def launch_setup(context, *args, **kwargs):
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
-            PathJoinSubstitution([FindPackageShare("ur_onrobot_description"), "urdf", "ur_onrobot.urdf.xacro"]),
+            PathJoinSubstitution(
+                [FindPackageShare("ur_onrobot_description"), "urdf", "ur_onrobot.urdf.xacro"]
+            ),
             " ",
             "robot_ip:=",
             robot_ip,
@@ -292,7 +295,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "ur_type",
             description="Type/series of used UR robot.",
-            choices=["ur3", "ur3e", "ur5", "ur5e", "ur7e", "ur10", "ur10e", "ur16e", "ur20", "ur30"],
+            choices=[
+                "ur3", "ur3e", "ur5", "ur5e", "ur7e", "ur10", "ur10e", "ur16e", "ur20", "ur30",
+            ],
             default_value="ur7e",
         ),
         DeclareLaunchArgument(

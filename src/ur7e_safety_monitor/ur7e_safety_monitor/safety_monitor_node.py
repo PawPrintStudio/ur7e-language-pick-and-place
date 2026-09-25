@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""safety_monitor (task 1.6): watches the driver's safety/program-running
-status and reacts to a protective stop — the one failure mode every other
-Phase 1 node assumes someone else handles.
+"""
+safety_monitor (task 1.6): reacts to a protective stop.
+
+Watches the driver's safety/program-running status — the one failure mode
+every other Phase 1 node assumes someone else handles.
 
 On a transition INTO ``PROTECTIVE_STOP`` (or any of the other non-NORMAL
-`SafetyMode`\\ s that mean the robot stopped moving on its own): cancel any
-goal ``motion_node`` has in flight and publish a status message other nodes
+``SafetyMode`` values that mean the robot stopped moving on its own): cancel
+any goal ``motion_node`` has in flight and publish a status message other nodes
 (the demo script, eventually the orchestrator in Phase 4) can watch instead
 of discovering the stop the hard way — a hung action.
 
@@ -52,7 +54,10 @@ STOPPED_SAFETY_MODES = {
 CANCELLABLE_ACTIONS = {
     "motion_node": (ExecutePrimitive, "execute_primitive"),
     "gripper": (GripperCommand, "gripper_action_controller/gripper_cmd"),
-    "arm_trajectory": (FollowJointTrajectory, "scaled_joint_trajectory_controller/follow_joint_trajectory"),
+    "arm_trajectory": (
+        FollowJointTrajectory,
+        "scaled_joint_trajectory_controller/follow_joint_trajectory",
+    ),
 }
 
 
@@ -67,10 +72,18 @@ class SafetyMonitor(Node):
         qos = QoSProfile(depth=1)
         qos.reliability = QoSReliabilityPolicy.RELIABLE
         qos.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
-        self.create_subscription(SafetyMode, "/io_and_status_controller/safety_mode",
-                                  self._on_safety_mode, qos)
-        self.create_subscription(Bool, "/io_and_status_controller/robot_program_running",
-                                  self._on_program_running, 10)
+        self.create_subscription(
+            SafetyMode,
+            "/io_and_status_controller/safety_mode",
+            self._on_safety_mode,
+            qos,
+        )
+        self.create_subscription(
+            Bool,
+            "/io_and_status_controller/robot_program_running",
+            self._on_program_running,
+            10,
+        )
 
         cb = ReentrantCallbackGroup()
         self._action_clients = {

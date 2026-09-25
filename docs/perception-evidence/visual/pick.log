@@ -1,0 +1,15 @@
+[INFO] [1790321678.455915590] [pick_place_demo]: 1 / OBSERVE: move to the camera observation pose
+[INFO] [1790321681.462238211] [pick_place_demo]: -> goto_named
+[INFO] [1790321681.634735478] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790321683.590613034] [pick_place_demo]: 2 / DETECT: asking OWLv2/perception for "red block"
+[INFO] [1790321703.236665802] [pick_place_demo]: DETECT 9a5d8a537fcc4dc7a8457fa70f29a6c0
+[INFO] [1790321703.263549046] [pick_place_demo]: LOCATE 0.4517 -0.1477 0.0800
+[INFO] [1790321703.263859807] [pick_place_demo]: 3 / PLAN: validate a complete collision-free hover and descent
+[INFO] [1790321706.267023612] [pick_place_demo]: -> approach_above
+[INFO] [1790321707.540709374] [pick_place_demo]: 4 / DESCEND: follow the validated straight-line grasp path
+[INFO] [1790321710.543874265] [pick_place_demo]: -> cartesian_descend
+[INFO] [1790321714.107053900] [pick_place_demo]: 5 / GRASP: close gripper and engage the simulation grasp latch
+[INFO] [1790321717.180223059] [pick_place_demo]: -> gripper to 0.000 m
+[INFO] [1790321718.982810042] [pick_place_demo]: 6 / LIFT: raise the held block by 10 cm
+[INFO] [1790321721.986317729] [pick_place_demo]: -> cartesian_lift
+{"software_pipeline": "PARSE->OBSERVE->DETECT->LOCATE->PLAN->GRASP->LIFT", "capture_id": "9a5d8a537fcc4dc7a8457fa70f29a6c0", "target_m": [0.4516598821615777, -0.1477295123804176, 0.07999992370605469], "simulation_only": true, "motion_actions_succeeded": true}

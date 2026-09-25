@@ -1,0 +1,8 @@
+# Resolve only an immutable capture returned by DetectObject, never latest depth.
+string capture_id
+---
+bool success
+string reason
+geometry_msgs/PoseStamped pose
+uint32 valid_points
+float64 axis_ratio

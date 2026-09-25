@@ -1,8 +1,10 @@
 """
-MoveIt2 for the combined UR7e + RG2 (task 1.4). Built with
-``moveit_configs_utils.MoveItConfigsBuilder`` — the standard modern way to
-assemble a MoveIt launch from files that live in more than one package —
-rather than forking the vendored ``ur_onrobot_moveit_config`` launch file the
+MoveIt2 for the combined UR7e + RG2 (task 1.4).
+
+Built with ``moveit_configs_utils.MoveItConfigsBuilder`` — the standard
+modern way to assemble a MoveIt launch from files that live in more than
+one package — rather than forking the vendored ``ur_onrobot_moveit_config``
+launch file the
 way ``ur7e_pick_place.launch.py`` forks ``start_robot.launch.py``. That fork
 was necessary there because two internal paths had no override argument at
 all; here, ``MoveItConfigsBuilder`` already gives us a clean per-file

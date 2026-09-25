@@ -1,0 +1,9 @@
+string query
+---
+bool success
+string reason
+string capture_id
+sensor_msgs/Image mask
+float32[4] bbox
+float32 confidence
+float64 latency_ms

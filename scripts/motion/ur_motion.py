@@ -122,7 +122,14 @@ class MotionClient(Node):
         self._check(pts, anchor)
         traj = JointTrajectory()
         traj.joint_names = JOINTS
-        for pos, t in pts:
+        # Explicit t=0 anchor: without it, the controller has no message-level
+        # record of "where the arm already is" and must infer the trajectory's
+        # start state itself. Observed on real hardware: that inference can be
+        # wildly wrong (immediate state-tolerance ABORTED, error magnitude
+        # matching the arm's actual joint values), even though the anchor is
+        # already used for the safety envelope check above. Sending it as a
+        # real point removes the ambiguity instead of relying on inference.
+        for pos, t in [(anchor, 0.0)] + list(pts):
             p = JointTrajectoryPoint()
             p.positions = [float(pos[j]) for j in JOINTS]
             p.time_from_start = _dur(t)

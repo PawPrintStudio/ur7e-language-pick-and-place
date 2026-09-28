@@ -1,0 +1,6 @@
+=== SCENARIO 2: NEEDS_CONFIRMATION, declined ===
+$ echo "n" | python3 scripts/pick_place_language_demo.py --execute-simulation --backend keyword \
+    --require-confirmation "pick up the red block"
+PARSE needs_confirmation/confirmation_required: Did you mean: pick up the red block?
+Proceed? [y/N]: PARSE not confirmed -- no motion
+exit: 1

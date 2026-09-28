@@ -81,6 +81,22 @@ synthetic results do not close the Jetson, real-object or touch-point gates.
 
 Goal: free-form text becomes a validated structured command.
 
+> **2026-09-28 status:** 3.1 and the parser-side half of 3.3 are **built,
+> tested, and integrated** — `arm_language`/`arm_interfaces` (built
+> 2026-09-22 on a separate branch, merged in this session) implement
+> backend -> validator -> guardrails -> `ParseResult`, with a swappable
+> Claude/keyword backend (D5). `scripts/pick_place_language_demo.py` wires
+> the parser's output into Task 2's Gazebo pick pipeline, unmodified: a
+> sentence the old `pick <noun phrase>` grammar could never parse ("could you
+> grab the red block for me") now runs the full observe/detect/locate/plan/
+> descend/grasp/lift sequence through a live Claude call. All three guardrail
+> outcomes (accept / confirm-then-decline / refuse) verified against the
+> running sim. 29/29 on the corpus against live Claude, exceeding the
+> 20-utterance acceptance bar — see [Task 3 software report](TASK3_SOFTWARE.md).
+> **Still open:** 3.2 (command console); `pick_and_place` is understood by the
+> parser but not executed (no place stage exists yet downstream of the pick
+> demo); everything above is simulation-only, same caveats as Task 2.
+
 | # | Task | Acceptance criteria |
 |---|---|---|
 | 3.1 | `intent_parser` service: LLM → strict JSON schema (`action`, `target_query`, `modifiers`, `place_target`); cloud backend first, backend interface swappable (D5) | 20-utterance test set parses correctly incl. rejections of non-pick requests |

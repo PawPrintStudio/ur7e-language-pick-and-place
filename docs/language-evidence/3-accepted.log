@@ -1,0 +1,20 @@
+=== SCENARIO 3: ACCEPTED, live Claude backend -- the actual pick ===
+$ python3 scripts/pick_place_language_demo.py --execute-simulation --backend claude \
+    --stage-pause 0.5 "could you grab the red block for me"
+[INFO] [1790621220.559548767] [pick_place_demo]: 1 / OBSERVE: move to the camera observation pose
+[INFO] [1790621221.060871059] [pick_place_demo]: -> goto_named
+[INFO] [1790621222.405793023] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790621223.759846870] [pick_place_demo]: 2 / DETECT: asking OWLv2/perception for "red block"
+[INFO] [1790621224.288388149] [pick_place_demo]: DETECT ccbc806b6c07420aa4692667212cf809
+[INFO] [1790621224.297351337] [pick_place_demo]: LOCATE 0.4168 -0.1427 0.0800
+[INFO] [1790621224.297579985] [pick_place_demo]: 3 / PLAN: validate a complete collision-free hover and descent
+[INFO] [1790621224.798870278] [pick_place_demo]: -> approach_above
+[INFO] [1790621225.662307475] [pick_place_demo]: 4 / DESCEND: follow the validated straight-line grasp path
+[INFO] [1790621226.163175621] [pick_place_demo]: -> cartesian_descend
+[INFO] [1790621228.553572169] [pick_place_demo]: 5 / GRASP: close gripper and engage the simulation grasp latch
+[INFO] [1790621229.079312434] [pick_place_demo]: -> gripper to 0.000 m
+[INFO] [1790621230.231616955] [pick_place_demo]: 6 / LIFT: raise the held block by 10 cm
+[INFO] [1790621230.732795435] [pick_place_demo]: -> cartesian_lift
+PARSE accepted/ok: pick up the red block
+{"software_pipeline": "PARSE->OBSERVE->DETECT->LOCATE->PLAN->GRASP->LIFT", "capture_id": "ccbc806b6c07420aa4692667212cf809", "target_m": [0.4168023288080799, -0.14274998612525666, 0.07999914884567261], "simulation_only": true, "motion_actions_succeeded": true}
+exit: 0

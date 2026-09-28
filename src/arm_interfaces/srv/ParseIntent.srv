@@ -1,0 +1,33 @@
+# Free-form text -> validated structured command (task 3.1, architecture D5).
+#
+# The service ALWAYS succeeds at the ROS level. "I refuse to act on this" is a
+# normal, expected result carried in `outcome`, not a service failure — callers
+# must branch on `outcome`, never on the call returning.
+
+string text
+
+---
+
+# Accepted: `command` is valid and the caller may proceed to motion.
+string OUTCOME_ACCEPTED=accepted
+# Parsed, but the caller must echo `message` to a human and get a yes before
+# any motion ("did you mean: pick up the hammer?" — issue #23).
+string OUTCOME_NEEDS_CONFIRMATION=needs_confirmation
+# Not actionable. `command` is empty and MUST NOT be acted on.
+string OUTCOME_REFUSED=refused
+
+string outcome
+
+# Stable machine-readable tag for why this outcome happened, e.g.
+# "ok", "low_confidence", "action_not_allowed", "target_not_noun_phrase",
+# "backend_error". Stable across wording changes in `message` so dashboards and
+# the run logs (architecture §1.2) can count failure modes.
+string reason_code
+
+# Human-readable sentence: the refusal explanation, or the confirmation echo.
+# Safe to show a user verbatim.
+string message
+
+# Populated only when outcome is `accepted` or `needs_confirmation`.
+# On `refused`, every field is empty/zero.
+Command command

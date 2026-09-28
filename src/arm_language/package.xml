@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>arm_language</name>
+  <version>0.1.0</version>
+  <description>
+    Language front-end (task 3.1): free-form text to a validated, guardrailed
+    manipulation command. The backend is swappable (architecture D5) — cloud
+    Claude by default, an offline keyword matcher for CI and lab-less
+    development.
+
+    Note the cloud backend needs the `anthropic` pip package, which is
+    deliberately NOT declared below: it has no rosdep key, so declaring it
+    would break `rosdep install` for everyone including CI. The package builds,
+    lints, and passes its whole test suite without it; only calling the cloud
+    backend needs `pip install anthropic`.
+  </description>
+  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>arm_interfaces</exec_depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

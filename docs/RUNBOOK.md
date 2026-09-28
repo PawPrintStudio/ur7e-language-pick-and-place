@@ -542,3 +542,164 @@ package README); mimic finger joints untested visually.
 
 Docs updated: `docs/SIMULATION.md` tier 3 section, `docs/IMPLEMENTATION_PLAN.md`
 task 1.8 status.
+
+## 2026-09-28 — real-hardware session with the Jetson down (devcontainer on laptop)
+
+The lab's Jetson was hardware-dead/unreachable going into this session (no
+replacement adopted this time, unlike 2026-09-21). Instead of standing up a
+new physical compute unit, ran the existing `.devcontainer/Dockerfile` on
+Nikola's laptop and pointed it at the real robot.
+
+### Jetson-down pattern (worked, reusable)
+
+`.devcontainer/devcontainer.json` already runs `--network=host`, and the
+Dockerfile already mirrors the Jetson's install (RUNBOOK B3). The robot's
+External Control URCap has Host IP hardcoded to `192.168.56.1` — a config
+value, not a device binding — so any machine holding that address on its NIC
+*is* "the Jetson" as far as the robot is concerned. Procedure: move the
+robot's Ethernet cable to the laptop, then
+
+```bash
+sudo nmcli con add type ethernet ifname <IFACE> con-name ur-link ipv4.method manual ipv4.addresses 192.168.56.1/24 autoconnect no
+sudo nmcli con up ur-link
+```
+
+(`<IFACE>` from `ip -br link` — was `enp7s0` this session). Sub-millisecond
+ping to `.101` confirmed a direct link. Zero pendant reconfiguration needed.
+Built `ur7e-dev:latest` from the devcontainer Dockerfile, ran it
+(`--network=host --ipc=host -v $PWD:/workspaces/AI_arm`), vendor-imported,
+rosdep-installed, `colcon build` — 13/13 packages clean. `rosdep install`
+prints an unresolvable-key error for `ament_python`/`ament_cmake` on every
+package that declares it (i.e. all of them) — harmless; those are buildtool
+markers already satisfied by the base ROS install, not real apt packages.
+
+### Gripper bridge (task 1.1) confirmed still not started — and blocks more than expected
+
+Brought up `ur7e_pick_place_bringup` (combined arm+gripper URDF) first.
+`ur_ros2_control_node` hung forever retrying `Cannot open serial port
+/tmp/ttyUR` (the UR driver's standard tool-comm forwarder, bridging the
+robot's RS485 Daemon URCap to a local virtual serial port — see
+`docs/ARCHITECTURE.md`). Confirms IMPLEMENTATION_PLAN task 1.1 (install the
+URCap, disable OnRobot's, Tool I/O → Controlled by User) was never done on
+*any* machine, Jetson included — this was not a casualty of losing the
+Jetson. Consequence worth remembering: because the arm and gripper share one
+`ros2_control_node`, the gripper's stuck retry blocks the whole controller
+manager — **both** spawner groups died, arm controllers included, not just
+the gripper's. `ur7e_pick_place_bringup` is not usable against real hardware
+until 1.1 lands; used plain arm-only `ur7e_bringup` for the rest of the
+session instead.
+
+### Real bug found and fixed: `MotionClient.run()` never sent its own anchor point
+
+First trajectory goal after a fresh controller activation (`demo_01_nudge`,
+unmodified) **ABORTED immediately, error_code=-4** (state tolerance
+violation), with per-joint errors matching the arm's actual joint values to
+4-5 decimal places (e.g. shoulder_lift error 0.568856 vs actual -0.569).
+Root cause: `run()`'s safety envelope check (`_check()`) already prepends the
+anchor pose to validate implied velocity/step, but the actual
+`JointTrajectory` message sent to the robot never included that anchor as a
+real point — only the caller's waypoints. With no explicit t=0 point, the
+controller had nothing but its own inference for "where the arm already is,"
+and that inference was badly wrong. Fixed in `scripts/motion/ur_motion.py`
+by sending `[(anchor, 0.0)] + pts` as the actual trajectory. This is a
+latent bug in shared code, not a Docker/environment artifact — every demo
+and `teleop_keyboard.py` goes through the same `run()`.
+
+Verified after the fix, on the real robot:
+- `demo_01_nudge` — SUCCESSFUL (error_code=0)
+- `demo_02_wave` — SUCCESSFUL (error_code=0), default amplitude (AMP=0.12,
+  PERIOD=16s), no velocity-veto popup
+- `teleop_keyboard.py` — **first-ever real-hardware run**, confirmed working
+  by Nikola at the keyboard. Closes the "not yet run on hardware" status in
+  `scripts/motion/README.md`.
+
+`demo_03_fluid` was **not** run — the arm was resting in a deeply-folded pose
+(elbow ≈ -145° / -2.539 rad) and the script's own docstring requires
+freedriving to an open posture first; ran out of session time before that
+happened.
+
+### MoveIt on real hardware — first time, mostly good, one real gap found
+
+`ur7e_moveit.launch.py` (move_group + RViz-less planning stack only — no
+`ros2_control` of its own) layers cleanly on top of an already-running
+`ur7e_bringup`. Came up against the real robot for the first time ever
+(previously mock hardware / Gazebo only): "You can start planning now!",
+manipulator group `ur_onrobot_manipulator` resolved to the correct 6 arm
+joints.
+
+Found a real, separate bug while probing it: `ur7e_motion`'s Cartesian
+primitives (`cartesian_lift`, `approach_above`, `cartesian_descend`,
+`retreat`) all plan relative to the `gripper_tcp` link. On arm-only
+hardware that link's controlling joint (`finger_width`) is never published,
+so `planning_scene_monitor` never reaches a complete robot state ("The
+complete state of the robot is not yet known. Missing finger_width" —
+repeats forever) and the Cartesian path planner fails at 0% immediately,
+independent of pose or amplitude:
+
+```
+Attempting to follow 1 waypoints for link 'gripper_tcp' ...
+Computed Cartesian path with 1 points (followed 0.000000% of requested trajectory)
+```
+
+Needs either a fake/static `finger_width` joint-state publisher for
+arm-only sessions, or the Cartesian primitives retargeted to a link that
+exists without the gripper (`tool0`?) when `onrobot_type` isn't present.
+Worth a GitHub issue.
+
+Separately checked the SRDF's only named pose (`observe`, in
+`ur7e_pick_place.srdf.xacro`) against the arm's actual resting joints: **~254°
+elbow swing, ~76° shoulder_lift swing** from where it actually was. Not
+attempted. `goto_named` is exactly as unsafe to fire blind from a cold
+folded start as the Cartesian primitives are, for a different reason
+(magnitude, not a missing frame) — worth either a smaller "ready" pose close
+to the typical resting configuration, or documenting freedrive-first as
+mandatory before any named-pose motion.
+
+### TCP-vs-pendant spot check — inconclusive, do not trust either way
+
+Attempted the same comparison as session 1/2 (`tf2_echo base tool0` vs
+`/tcp_pose_broadcaster/pose`) at the current pose. Got a large, unexplained
+mismatch — roughly 20 cm position, very different orientation — far outside
+the known ~30 mm Quick-Changer offset. Investigation was cut short by the
+lab losing power before confirming whether this is a real calibration
+problem or an artifact of running two `robot_state_publisher` instances at
+once (arm-only `ur7e_bringup`'s plus MoveIt's own combined-URDF one — same
+"two-graph" class of issue as the 2026-09-15 session, this time as
+conflicting TF rather than duplicate `controller_manager`). **Genuinely
+open** — re-run cleanly (single `robot_state_publisher`, or MoveIt launched
+with its own real-hardware bringup already accounted for) before drawing any
+conclusion from this number.
+
+### Perception/CV — re-confirmed healthy, no new information
+
+Re-ran the CPU test image (`ur7e-perception:cpu`) in this fresh environment
+as a sanity check: 55/55 tests, 30/30 scene regression, live detect+locate
+PASS, exit 0. Confirms `docs/TASK2_SOFTWARE.md`'s recorded results still
+hold; nothing new learned.
+
+### Session end: lab power outage, not a robot fault
+
+Mid-session, every stream to the robot and the laptop's own local DDS
+multicast failed simultaneously; `enp7s0` showed `NO-CARRIER`. First read as
+a possible loose cable — confirmed afterward by Nikola to be a facility
+power outage (the robot lost power, which dropped the Ethernet link as a
+downstream symptom). No sign the arm did anything uncontrolled; it lost its
+command channel and safely stopped, consistent with every other
+connection-loss finding in this project's history. Container torn down at
+session end.
+
+### Still open for next session
+
+1. **Gripper RS-485 bridge (task 1.1)** — still not started; blocks
+   `ur7e_pick_place_bringup`, pick-place, and all Cartesian motion
+   primitives on real hardware.
+2. **Freedrive-to-open-posture** — needed before `demo_03_fluid`,
+   `goto_named`, or any large motion, every session that starts from a cold
+   folded pose. Consider a smaller/safer named pose near the typical resting
+   configuration.
+3. **MoveIt Cartesian primitives' `gripper_tcp` dependency** — fails on
+   arm-only hardware regardless of pose; needs a real fix, not a workaround.
+4. **TCP-vs-pendant mismatch** — re-investigate cleanly, single
+   `robot_state_publisher`.
+5. The devcontainer-on-laptop pattern above is proven and reusable next time
+   the Jetson is unavailable.

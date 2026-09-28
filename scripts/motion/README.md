@@ -34,7 +34,7 @@ Nominal = before the pendant slider, which scales the **actual** speed down furt
 | [`demo_01_nudge.py`](demo_01_nudge.py) | wrist_3 +0.05 rad and back | ✅ ran on real robot 2026-09-21 — run first every session |
 | [`demo_02_wave.py`](demo_02_wave.py) | wrist_3 slow sine, 3 cycles | ✅ ran on real robot 2026-09-21; also the safe way to probe the veto |
 | [`demo_03_fluid.py`](demo_03_fluid.py) | 6-joint phased sine | ✅ ran on real robot 2026-09-21 — freedrive to an open pose first |
-| [`teleop_keyboard.py`](teleop_keyboard.py) | keyboard jog teleop (issue #6) | ⚠️ written 2026-09-21, **not yet run on hardware** — verify before trusting |
+| [`teleop_keyboard.py`](teleop_keyboard.py) | keyboard jog teleop (issue #6) | ✅ ran on real hardware 2026-09-28 |
 
 ### Keyboard teleop
 

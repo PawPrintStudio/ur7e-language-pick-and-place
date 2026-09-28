@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Publish the fixed workspace collision geometry for Phase 1 (task 1.3's
-table collision + task 1.7's hardcoded pick/place poses) as MoveIt
-CollisionObjects.
+"""
+Publish the fixed workspace collision geometry for Phase 1 as MoveIt CollisionObjects.
+
+Covers task 1.3's table collision and task 1.7's hardcoded pick/place poses.
 
 Deliberately NOT baked into the URDF: this is workspace furniture, not part
 of the robot, and 1.7's whole premise ("taped, hardcoded pose") means these

@@ -60,6 +60,13 @@ Goal: the arm picks a known object from a hardcoded pose with a real gripper, un
 
 Goal: given a noun phrase, return an accurate grasp pose in `base_link`.
 
+**Software milestone (2026-09-25):** camera-free RGB-D/replay, detection and
+localization services, calibration/evaluation tools, and the complete Gazebo
+pick/lift workflow are implemented and tested with both fixture and OWLv2
+backends. See [Task 2 software report](TASK2_SOFTWARE.md) for per-task scope and
+evidence. The original physical acceptance criteria below remain pending;
+synthetic results do not close the Jetson, real-object or touch-point gates.
+
 | # | Task | Acceptance criteria |
 |---|---|---|
 | 2.1 | ZED 2i platform setup: ZED SDK 5.2+/JetPack 6.2 install, pre-optimize neural-depth TensorRT models (slow first run), build rigid overhead mount ~1 m over the table | `ZED_Diagnostic` clean; camera streams; mount doesn't flex |

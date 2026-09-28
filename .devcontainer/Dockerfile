@@ -27,6 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-gz-ros2-control \
     libnet1-dev \
     ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-cv-bridge \
+    ros-humble-message-filters \
+    python3-opencv \
+    python3-numpy \
+    python3-pytest \
+    xvfb \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-vcstool \

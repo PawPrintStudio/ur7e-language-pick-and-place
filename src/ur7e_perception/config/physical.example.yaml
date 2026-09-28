@@ -1,0 +1,18 @@
+# Deliberately invalid until populated with measurements. Never copy sim TF.
+perception_node:
+  ros__parameters:
+    simulation: false
+    backend: nanoowl
+    camera_frame: zed_left_camera_optical_frame
+    base_frame: base_link
+    camera_to_base: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    base_from_marker: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    workspace: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    table_z: 0.0
+    max_z: 0.35
+    calibration_verification: ''
+    calibration_marker_id: 42
+    calibration_marker_size: 0.04
+    owl_engine: ''
+    sam_encoder: ''
+    sam_decoder: ''

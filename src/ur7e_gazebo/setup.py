@@ -20,7 +20,7 @@ setup(
     zip_safe=True,
     maintainer="Nikola Markovic",
     maintainer_email="nikolamarkovic.idea@gmail.com",
-    description="Task 1.8: Gazebo Fortress tier-3 sim — RG2-in-sim, grasp latch, pick/place world.",
+    description="Task 1.8: Gazebo Fortress tier-3 sim — RG2-in-sim, grasp latch, pick/place.",
     license="MIT",
     tests_require=["pytest"],
 )

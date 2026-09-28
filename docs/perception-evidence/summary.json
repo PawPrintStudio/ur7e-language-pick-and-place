@@ -1,0 +1,61 @@
+{
+  "date": "2026-09-25",
+  "scope": "software, synthetic RGB-D and Gazebo; no physical acceptance",
+  "branch": "codex/task2-camera-free-perception",
+  "workspace_build_packages": 13,
+  "focused_colcon": {"tests": 67, "errors": 0, "failures": 0, "skipped": 0},
+  "fixture_evaluation": {
+    "cases": 30,
+    "passed": 30,
+    "max_position_error_mm": 2.6782537042526355,
+    "max_yaw_error_deg": 1.6786445150199722,
+    "median_detection_ms": 2.7769254993472714,
+    "median_localization_ms": 1.2167485001555178
+  },
+  "owlv2_synthetic_evaluation": {
+    "model": "google/owlv2-base-patch16-ensemble",
+    "device": "cpu",
+    "cases": 3,
+    "passed": 3,
+    "max_position_error_mm": 0.5551327415706804,
+    "median_detection_ms": 9750.74414700066,
+    "median_localization_ms": 1.9101399993814994
+  },
+  "gazebo_snapshot": {
+    "path": "gazebo_capture.npz",
+    "optical_frame": "overhead_camera/link/rgbd",
+    "rgb_size": [320, 240],
+    "owlv2_red_block_confidence": 0.28979942202568054,
+    "depth_mask_pixels": 100
+  },
+  "simulator_execution": {
+    "fixture": "gazebo/pick.log",
+    "owlv2": "gazebo_owlv2/pick.log",
+    "stages": ["PARSE_FIXED_GRAMMAR", "OBSERVE", "DETECT", "LOCATE", "PLAN", "GRASP", "LIFT"],
+    "complete_cartesian_paths_required": true,
+    "tcp_endpoint_verification": true,
+    "robot_table_collision_checks": true,
+    "grasp_physics": "DetachableJoint surrogate"
+  },
+  "gazebo_bag": {
+    "duration_sim_seconds": 3.29,
+    "messages": 217,
+    "rgb_depth_intrinsics_triplets": 50
+  },
+  "camera_stopped_replay_service_test": "passed",
+  "portable_container": {
+    "image": "ur7e-perception:cpu",
+    "build": "passed",
+    "fresh_container_tests": 55,
+    "fresh_container_fixture_cases": 30,
+    "live_and_replay_services": "passed",
+    "exit_code": 0
+  },
+  "not_validated": [
+    "physical ZED or Jetson performance",
+    "NanoOWL and NanoSAM TensorRT engine execution",
+    "ten real makerspace objects",
+    "physical hand-eye accuracy and five touch checks",
+    "physical robot grasp performance"
+  ]
+}

@@ -1,6 +1,7 @@
 """
-Task 1.8: bring up the UR7e + RG2 in Ignition Gazebo 6 (Fortress) — table,
-pick/place objects, real physics, the DetachableJoint grasp latch.
+Task 1.8: bring up the UR7e + RG2 in Ignition Gazebo 6 (Fortress).
+
+Table, pick/place objects, real physics, the DetachableJoint grasp latch.
 
 Same seam as tier 1/2 (docs/SIMULATION.md): everything above ros2_control —
 MoveIt2 (ur7e_pick_place_bringup/launch/ur7e_moveit.launch.py), motion_node,
@@ -111,7 +112,11 @@ def generate_launch_description():
         package="ros_gz_sim",
         executable="create",
         output="screen",
-        arguments=["-string", robot_description_content, "-name", "ur7e_gz", "-allow_renaming", "true"],
+        arguments=[
+            "-string", robot_description_content,
+            "-name", "ur7e_gz",
+            "-allow_renaming", "true",
+        ],
     )
 
     # /clock bridge — everything downstream (MoveIt, motion_node) runs with

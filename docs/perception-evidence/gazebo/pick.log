@@ -1,0 +1,1 @@
+{"software_pipeline": "PARSE->OBSERVE->DETECT->LOCATE->PLAN->GRASP->LIFT", "capture_id": "c094888f236b4b66818ea39f211771ad", "target_m": [0.6491858593893272, -0.12947080860306262, 0.07999992370605469], "simulation_only": true, "motion_actions_succeeded": true}

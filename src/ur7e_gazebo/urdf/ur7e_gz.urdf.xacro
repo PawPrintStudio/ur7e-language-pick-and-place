@@ -130,12 +130,12 @@ attempt at real two-finger contact simulation).
   which is why DetachableJoint could resolve the model (`ur7e_gz`, once
   actually spawned) but never the link, no matter which link we picked
   (`tool0` failed identically for the same reason — it's ALSO joined to its
-  parent by nothing but fixed joints). `disableFixedJointLumping` is
-  sdformat's documented escape hatch (confirmed present in this apt version
-  via `strings` on libsdformat, not assumed).
+  parent by nothing but fixed joints). `preserveFixedJoint` must reference
+  the JOINT, not the link. The old link-scoped setting was ignored and the
+  latch could never resolve onrobot_base_link in a fresh Fortress world.
   -->
-  <gazebo reference="$(arg tf_prefix)onrobot_base_link">
-    <disableFixedJointLumping>true</disableFixedJointLumping>
+  <gazebo reference="$(arg tf_prefix)onrobot_base_link_joint">
+    <preserveFixedJoint>true</preserveFixedJoint>
   </gazebo>
 
   <!-- Gripper ros2_control block: OUR delta (see file header). Only the

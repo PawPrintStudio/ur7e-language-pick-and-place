@@ -1,0 +1,95 @@
+# Load as a Script/File node in BeforeStart of a PolyScope program containing
+# the OnRobot RG Grip and External Control URCaps. This is NOT a standalone
+# program to send over port 30002. See docs/URCAP_HANDOFF.md for the exact tree.
+# Change these three values only together with both RG Grip nodes and ROS CLI.
+global lab_close_mm = 59.0
+global lab_open_mm = 70.0
+global lab_force_n = 5.0
+
+def lab_handoff_fail():
+  socket_close("lab_handoff")
+  popup("Handoff failed. Stop and inspect ROS/pendant logs; do not resume this cycle.", title="Lab handoff", error=True, blocking=False)
+  halt
+end
+
+def lab_handoff_expect(phase):
+  local response = socket_read_binary_integer(2, "lab_handoff", timeout=30)
+  if response[0] != 2:
+    lab_handoff_fail()
+  end
+  if response[1] != lab_run_id or response[2] != phase:
+    lab_handoff_fail()
+  end
+end
+
+def lab_handoff_begin(phase):
+  if not socket_send_int(lab_run_id, "lab_handoff"):
+    lab_handoff_fail()
+  end
+  if not socket_send_int(-phase, "lab_handoff"):
+    lab_handoff_fail()
+  end
+  lab_handoff_expect(phase)
+end
+
+def lab_handoff_done(phase):
+  # These are the documented single-gripper URCap feedback variables; our
+  # exported 6.5.0 preamble maps them to the detected RG2 at tool index 2.
+  sleep(0.1)
+  if rg_Busy:
+    lab_handoff_fail()
+  end
+  local detected = 0
+  if rg_Grip_detected:
+    detected = 1
+  end
+  if not socket_send_int(lab_run_id, "lab_handoff"):
+    lab_handoff_fail()
+  end
+  if not socket_send_int(phase, "lab_handoff"):
+    lab_handoff_fail()
+  end
+  if not socket_send_int(floor(rg_Width * 10 + 0.5), "lab_handoff"):
+    lab_handoff_fail()
+  end
+  if not socket_send_int(0, "lab_handoff"):
+    lab_handoff_fail()
+  end
+  if not socket_send_int(detected, "lab_handoff"):
+    lab_handoff_fail()
+  end
+  lab_handoff_expect(phase)
+end
+
+if not socket_open("192.168.56.1", 50010, "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(731901, "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(1, "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(rg_index_get(), "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(floor(lab_close_mm * 10 + 0.5), "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(floor(lab_open_mm * 10 + 0.5), "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(floor(lab_force_n * 10 + 0.5), "lab_handoff"):
+  lab_handoff_fail()
+end
+if not socket_send_int(floor(rg_Width * 10 + 0.5), "lab_handoff"):
+  lab_handoff_fail()
+end
+local lab_start = socket_read_binary_integer(1, "lab_handoff", timeout=30)
+if lab_start[0] != 1:
+  lab_handoff_fail()
+end
+if lab_start[1] <= 0:
+  lab_handoff_fail()
+end
+global lab_run_id = lab_start[1]

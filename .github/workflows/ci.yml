@@ -95,6 +95,7 @@ jobs:
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           python3 -m unittest discover -s scripts -p test_urcap_handoff_protocol.py
+          python3 -m unittest discover -s scripts -p test_pick_sequence.py
           ROS_DOMAIN_ID=86 ROS_LOCALHOST_ONLY=1 python3 -m unittest discover -s scripts -p test_urcap_handoff_ros.py
 
       - name: Intent-parser corpus (offline backend)

@@ -2,6 +2,8 @@
 """Supervised ROS -> pendant RG Grip -> ROS acceptance coordinator.
 
 No motion by default. Requires the exact pendant tree in docs/URCAP_HANDOFF.md.
+``--pick-place`` runs the same step plan as the simulation demo
+(pick_sequence.py), handing the gripper steps to the pendant.
 Never uploads URScript, bypasses OnRobot, unlocks a stop, or starts a program.
 """
 import argparse
@@ -23,6 +25,8 @@ from std_srvs.srv import Trigger
 from ur_dashboard_msgs.msg import SafetyMode
 from ur7e_interfaces.action import ExecutePrimitive
 
+from pick_place_demo import goal_fields
+from pick_sequence import GOTO_NAMED, Motion, pick_place_steps, split_for_handoff
 from urcap_handoff_protocol import Settings, run_session
 
 ARM_JOINTS = (
@@ -46,6 +50,8 @@ class Coordinator(Node):
         self.anchor = None
         self.active_goals = set()
         self.goal = None
+        # (before_close, before_open, after_open) motions for --pick-place.
+        self.segments = getattr(args, "segments", None)
         qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(Bool, "/io_and_status_controller/robot_program_running",
                                  lambda m: setattr(self, "running", m.data), qos)
@@ -163,26 +169,25 @@ class Coordinator(Node):
     def wait_left(self):
         self.wait_running(False)
 
-    def move(self, phase):
+    def phase_motions(self, phase):
+        if self.segments is not None:
+            return self.segments[phase - 1]
         name = self.args.before_close_pose if phase == 1 else self.args.before_open_pose
-        if not name:
+        return [Motion(GOTO_NAMED, named_pose=name)] if name else []
+
+    def move(self, phase):
+        self.run_motions(self.phase_motions(phase))
+
+    def run_motions(self, motions):
+        if not motions:
             return
         self.check()
         if self.speed <= 0 or not self.motion.server_is_ready():
             raise RuntimeError("Motion server unavailable or speed zero")
         self.stationary = False
         self.anchor = None
-        goal = ExecutePrimitive.Goal()
-        goal.primitive = ExecutePrimitive.Goal.PRIMITIVE_GOTO_NAMED
-        goal.named_pose = name
-        self.report({"event": "named_motion_requested", "pose": name})
-        self.goal = self.wait_future(self.motion.send_goal_async(goal))
-        if not self.goal.accepted:
-            raise RuntimeError("Named motion rejected")
-        result = self.wait_future(self.goal.get_result_async(), 60)
-        if result.status != GoalStatus.STATUS_SUCCEEDED or not result.result.success:
-            raise RuntimeError(f"Named motion failed: {result.result.message}")
-        self.goal = None
+        for motion in motions:
+            self.run_one(motion)
         # Wait for the trajectory's terminal status/settled joint sample to
         # arrive before establishing the handoff's stationary reference.
         deadline = time.monotonic() + 3
@@ -192,9 +197,23 @@ class Coordinator(Node):
             if not self.active_goals and max(abs(speeds[j]) for j in ARM_JOINTS) <= 0.005:
                 break
             if time.monotonic() >= deadline:
-                raise TimeoutError("Arm failed to settle after named motion")
+                raise TimeoutError("Arm failed to settle after motion")
         self.stationary = True
         self.check()
+
+    def run_one(self, motion):
+        label = motion.named_pose or motion.primitive
+        self.report({"event": "motion_requested", "primitive": motion.primitive,
+                     "pose": motion.named_pose or None,
+                     "xyz": list(motion.xyz) if motion.xyz else None})
+        self.goal = self.wait_future(
+            self.motion.send_goal_async(ExecutePrimitive.Goal(**goal_fields(motion))))
+        if not self.goal.accepted:
+            raise RuntimeError(f"Motion {label} rejected")
+        result = self.wait_future(self.goal.get_result_async(), 60)
+        if result.status != GoalStatus.STATUS_SUCCEEDED or not result.result.success:
+            raise RuntimeError(f"Motion {label} failed: {result.result.message}")
+        self.goal = None
 
     def stop_after_error(self):
         # Closing the peer socket also makes the pendant gate halt. Stop is
@@ -229,12 +248,31 @@ def main():
     parser.add_argument("--before-close-pose")
     parser.add_argument("--before-open-pose")
     parser.add_argument("--validated-poses", action="store_true")
+    parser.add_argument("--pick-place", action="store_true",
+                        help="run the full pick_sequence.py plan (needs --pick-xyz/--place-xyz)")
+    parser.add_argument("--pick-xyz", type=float, nargs=3, metavar=("X", "Y", "Z"))
+    parser.add_argument("--place-xyz", type=float, nargs=3, metavar=("X", "Y", "Z"))
+    parser.add_argument("--hover-m", type=float, default=0.25)
     args = parser.parse_args()
     if not args.execute_gripper or not args.supervised:
         parser.error("requires --execute-gripper --supervised; see docs/URCAP_HANDOFF.md")
     if (bool(args.before_close_pose) != bool(args.before_open_pose)
             or (args.before_close_pose and not args.validated_poses)):
         parser.error("both named poses require --validated-poses after physical TCP/pose acceptance")
+    args.segments = None
+    if args.pick_place:
+        if args.before_close_pose:
+            parser.error("--pick-place replaces --before-close-pose/--before-open-pose")
+        if not (args.pick_xyz and args.place_xyz and args.validated_poses):
+            parser.error("--pick-place requires measured --pick-xyz and --place-xyz "
+                         "plus --validated-poses; no default physical poses exist")
+        try:
+            args.segments = split_for_handoff(
+                pick_place_steps(tuple(args.pick_xyz), tuple(args.place_xyz), args.hover_m))
+        except ValueError as error:
+            parser.error(str(error))
+    elif args.pick_xyz or args.place_xyz:
+        parser.error("--pick-xyz/--place-xyz are only used with --pick-place")
     settings = Settings(close_mm=args.close_mm, open_mm=args.open_mm,
                         force_n=args.force_n, expect_object=args.expect_object)
     rclpy.init(args=[])
@@ -263,6 +301,10 @@ def main():
                     raise RuntimeError("Connection peer does not match configured robot")
                 connected = True
                 result = run_session(connection, settings, node)
+                # The pendant's final External Control node keeps ROS in
+                # control, so the retreat/return-home segment runs here.
+                if node.segments is not None:
+                    node.run_motions(node.segments[2])
                 node.report({"event": "handoff_sequence_complete", "results": result})
         return 0
     except (Exception, KeyboardInterrupt) as error:

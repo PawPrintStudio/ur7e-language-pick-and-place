@@ -111,6 +111,36 @@ settings against the ROS model before adding arm motions. Keep depth compensatio
 off initially: that option also moves the robot arm. The handshake itself
 does not configure or validate the physical TCP/payload.
 
+## Combined pick-and-place (one command)
+
+`--pick-place` runs the **same step plan as the simulation demo**
+(`scripts/pick_sequence.py`, also used by `scripts/pick_place_demo.py`), with
+each gripper step replaced by a pendant handoff. The plan is split around the
+two RG Grip phases of the pendant tree above:
+
+| Segment | Arm motions (ROS, `ExecutePrimitive`) | Then |
+|---|---|---|
+| before close | `home` → approach above pick → descend | handoff phase 1: RG Grip close |
+| before open | lift → approach above place → descend | handoff phase 2: RG Grip open |
+| after open | retreat → `observe` → `home` | final External Control node, then Stop |
+
+The plan's initial "open" is satisfied by the pendant's hello check that the
+jaws start at the open width. There are **no default physical coordinates**:
+the pick and place points must be measured (base_link, metres, top-down grasp)
+and passed explicitly, with the same gates as the two-pose rehearsal above.
+
+```sh
+python3 scripts/lab_urcap_handoff.py --execute-gripper --supervised \
+    --pick-place --validated-poses \
+    --pick-xyz 0.45 -0.15 0.08 --place-xyz 0.45 0.20 0.08 --expect-object
+```
+
+(The numbers shown are the simulation placeholders, not lab measurements.)
+Omit `--expect-object` for a first empty-jaw run of the full path. Every
+motion must succeed before the next handoff; any failure stops the program
+without a grip. To rehearse the identical sequence in simulation first, run
+`python3 scripts/pick_place_demo.py` against tier 1 or 3.
+
 ## Failure behavior
 
 - A fresh session nonce and ordered phase IDs reject stale/duplicate completions.

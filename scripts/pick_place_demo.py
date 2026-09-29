@@ -30,6 +30,9 @@ from control_msgs.action import GripperCommand
 from geometry_msgs.msg import PoseStamped
 from ur7e_interfaces.action import ExecutePrimitive
 
+# HOVER_HEIGHT is re-exported: perception_pick_demo imports it from here.
+from pick_sequence import HOVER_HEIGHT, OPEN, Gripper, Motion, pick_place_steps  # noqa: F401
+
 # Must match ur7e_pick_place_bringup/planning_scene.py's `pick_object` /
 # `place_target` collision boxes — see that file for the "why these numbers"
 # comment (PLACEHOLDER, task 1.7's own acceptance criterion: taped pose).
@@ -41,10 +44,6 @@ PLACE_POSE = (0.45, 0.20, 0.08)
 # orientation — the conventional "wrist down" quaternion for a UR tool frame.
 GRASP_ORIENTATION = (1.0, 0.0, 0.0, 0.0)  # x, y, z, w
 
-HOVER_HEIGHT = 0.25       # m above the object before/after descending — tall
-                          # enough that a joint-space plan from here to any
-                          # named pose doesn't need to route around the table
-                          # collision box (ur7e_pick_place_bringup/planning_scene.py)
 GRIPPER_OPEN = 0.10       # m — matches the SRDF `open` group_state (task 1.4)
 GRIPPER_CLOSED = 0.0      # m — SRDF `closed` group_state; real width depends
                           # on the object once 1.1's bench setup exists
@@ -59,6 +58,15 @@ def _pose(xyz):
     (p.pose.orientation.x, p.pose.orientation.y,
      p.pose.orientation.z, p.pose.orientation.w) = GRASP_ORIENTATION
     return p
+
+
+def goal_fields(motion: Motion) -> dict:
+    """Turn a plan step into ``ExecutePrimitive.Goal`` keyword fields."""
+    fields = {"primitive": motion.primitive, "named_pose": motion.named_pose,
+              "z_offset": motion.z_offset}
+    if motion.xyz is not None:
+        fields["target_pose"] = _pose(motion.xyz)
+    return fields
 
 
 class PickPlaceDemo(Node):
@@ -104,44 +112,13 @@ class PickPlaceDemo(Node):
             raise RuntimeError("gripper did not reach goal or stall (unexpected either way)")
 
     def run(self):
-        pick = _pose(PICK_POSE)
-        place = _pose(PLACE_POSE)
-
-        self._run_primitive(primitive=ExecutePrimitive.Goal.PRIMITIVE_GOTO_NAMED, named_pose="home")
-        self._run_gripper(GRIPPER_OPEN)
-
-        self._run_primitive(
-            primitive=ExecutePrimitive.Goal.PRIMITIVE_APPROACH_ABOVE,
-            target_pose=pick, z_offset=HOVER_HEIGHT,
-        )
-        self._run_primitive(
-            primitive=ExecutePrimitive.Goal.PRIMITIVE_CARTESIAN_DESCEND, z_offset=HOVER_HEIGHT,
-        )
-        self._run_gripper(GRIPPER_CLOSED)
-        self._run_primitive(
-            primitive=ExecutePrimitive.Goal.PRIMITIVE_CARTESIAN_LIFT, z_offset=HOVER_HEIGHT,
-        )
-
-        self._run_primitive(
-            primitive=ExecutePrimitive.Goal.PRIMITIVE_APPROACH_ABOVE,
-            target_pose=place, z_offset=HOVER_HEIGHT,
-        )
-        self._run_primitive(
-            primitive=ExecutePrimitive.Goal.PRIMITIVE_CARTESIAN_DESCEND, z_offset=HOVER_HEIGHT,
-        )
-        self._run_gripper(GRIPPER_OPEN)
-        self._run_primitive(
-            primitive=ExecutePrimitive.Goal.PRIMITIVE_RETREAT, z_offset=HOVER_HEIGHT,
-        )
-
-        # Via `observe` (clear of the table by design, task 1.4) rather than
-        # straight to `home`: a direct joint-space plan from a pose right
-        # over the place target to `home` had OMPL routing through the table
-        # collision box and failing to plan at all — observed during
-        # verification. Two short, obviously-clear hops beat one long one
-        # near an obstacle.
-        self._run_primitive(primitive=ExecutePrimitive.Goal.PRIMITIVE_GOTO_NAMED, named_pose="observe")
-        self._run_primitive(primitive=ExecutePrimitive.Goal.PRIMITIVE_GOTO_NAMED, named_pose="home")
+        # The step list lives in pick_sequence.py so the real-hardware
+        # coordinator (lab_urcap_handoff.py --pick-place) runs the same plan.
+        for step in pick_place_steps(PICK_POSE, PLACE_POSE):
+            if isinstance(step, Gripper):
+                self._run_gripper(GRIPPER_OPEN if step.action == OPEN else GRIPPER_CLOSED)
+            else:
+                self._run_primitive(**goal_fields(step))
         self.get_logger().info("pick-place sequence complete")
 
 

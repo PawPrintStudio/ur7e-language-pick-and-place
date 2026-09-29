@@ -23,6 +23,7 @@ from ur_dashboard_msgs.msg import SafetyMode
 from ur7e_interfaces.action import ExecutePrimitive
 
 from lab_urcap_handoff import ARM_JOINTS, Coordinator
+from pick_sequence import pick_place_steps, split_for_handoff
 from urcap_handoff_protocol import Settings, Wire, run_session
 
 
@@ -37,6 +38,7 @@ class FakeRobot(Node):
         self.handbacks = 0
         self.stops = 0
         self.poses = []
+        self.log = []
         self.ready_at = 0.0
         self.inactive_checks = 0
         self.publish_joints = True
@@ -60,6 +62,7 @@ class FakeRobot(Node):
 
     def handback(self, request, response):
         self.handbacks += 1
+        self.log.append("handback")
         response.success = not self.reject
         response.message = "mock rejection" if self.reject else "ok"
         if response.success:
@@ -82,6 +85,7 @@ class FakeRobot(Node):
 
     def motion(self, handle):
         self.poses.append(handle.request.named_pose)
+        self.log.append(handle.request.named_pose or handle.request.primitive)
         result = ExecutePrimitive.Result()
         result.success = not self.reject_motion
         result.message = "mock motion"
@@ -203,7 +207,27 @@ class RosHandoffTest(unittest.TestCase):
     def test_failed_named_move_never_hands_back(self):
         self.fake.reject_motion = True
         self.node.args.before_close_pose = "rejected_pose"
-        with self.assertRaisesRegex(RuntimeError, "Named motion failed"):
+        with self.assertRaisesRegex(RuntimeError, "Motion rejected_pose failed"):
+            self.cycle()
+        self.assertEqual(self.fake.handbacks, 0)
+        self.assertEqual(self.grants, [])
+
+    def test_pick_place_plan_interleaves_motions_and_handoffs(self):
+        self.node.segments = split_for_handoff(
+            pick_place_steps((0.45, -0.15, 0.08), (0.45, 0.20, 0.08)))
+        self.assertEqual(len(self.cycle()), 2)
+        self.node.run_motions(self.node.segments[2])
+        self.assertEqual(self.fake.log, [
+            "home", "approach_above", "cartesian_descend", "handback",
+            "cartesian_lift", "approach_above", "cartesian_descend", "handback",
+            "retreat", "observe", "home",
+        ])
+
+    def test_failed_pick_motion_never_hands_back(self):
+        self.fake.reject_motion = True
+        self.node.segments = split_for_handoff(
+            pick_place_steps((0.45, -0.15, 0.08), (0.45, 0.20, 0.08)))
+        with self.assertRaisesRegex(RuntimeError, "Motion home failed"):
             self.cycle()
         self.assertEqual(self.fake.handbacks, 0)
         self.assertEqual(self.grants, [])

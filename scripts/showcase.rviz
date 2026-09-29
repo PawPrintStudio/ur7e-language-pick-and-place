@@ -1,0 +1,66 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Enabled: true
+  Global Options:
+    Background Color: 35; 39; 46
+    Fixed Frame: world
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Value: true
+      Cell Size: 0.1
+      Plane Cell Count: 20
+      Color: 90; 99; 112
+      Alpha: 0.3
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Name: Simulation — live state
+      Enabled: true
+      Value: true
+      Robot Description: robot_description
+      Planning Scene Topic: /monitored_planning_scene
+      Planning Request:
+        Planning Group: ur_onrobot_manipulator
+        Query Goal State: false
+        Query Start State: false
+        Show Workspace: false
+      Planned Path:
+        Show Robot Visual: false
+        Show Robot Collision: false
+        Show Trail: false
+        Loop Animation: false
+        Trajectory Topic: /display_planned_path
+      Scene Geometry:
+        Show Scene Geometry: true
+        Scene Alpha: 1
+        Scene Color: 75; 140; 175
+      Scene Robot:
+        Robot Alpha: 1
+        Show Robot Visual: true
+        Show Robot Collision: false
+        Attached Body Color: 245; 175; 60
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.9
+      Focal Point:
+        X: 0.32
+        Y: 0
+        Z: 0.3
+      Pitch: 0.42
+      Yaw: 5.35
+      Target Frame: world
+Window Geometry:
+  Width: 1500
+  Height: 950
+  X: 40
+  Y: 40

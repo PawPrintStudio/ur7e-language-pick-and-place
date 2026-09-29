@@ -89,6 +89,14 @@ jobs:
         shell: bash
         run: bash scripts/tier1_smoke_test.sh
 
+      - name: URCap handoff protocol and ROS contract (no hardware)
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          python3 -m unittest discover -s scripts -p test_urcap_handoff_protocol.py
+          ROS_DOMAIN_ID=86 ROS_LOCALHOST_ONLY=1 python3 -m unittest discover -s scripts -p test_urcap_handoff_ros.py
+
       - name: Intent-parser corpus (offline backend)
         # `colcon test` already gates this via test_corpus.py; running the
         # eval again here is for the human-readable table in the CI log — when

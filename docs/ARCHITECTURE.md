@@ -75,12 +75,16 @@ Free-form request → strict JSON: `{action: "pick", target_query: "hammer", mod
 
 ### D6. Gripper: OnRobot RG2 v2 (project hardware)
 
-**The project uses an OnRobot RG2 v2** (decided 2026-09-04): 0–110 mm adjustable stroke, 3–40 N adjustable force, 2 kg force-fit payload, 0.78 kg, mounted via the OnRobot Quick Changer. It holds grip force on power loss — a nice safety property. Both control routes are physically available (the makerspace has an unused Compute Box; the gripper currently runs on the direct tool connector). **Primary route: direct tool connector** — keeps the existing wiring, and the best-fit ROS2 stack is purpose-built for it:
+**The project uses an OnRobot RG2 v2** (decided 2026-09-04): 0–110 mm adjustable stroke, 3–40 N adjustable force, 2 kg force-fit payload, 0.78 kg, mounted via the OnRobot Quick Changer. The physical connection remains the robot's tool connector.
 
-- **Direct tool connector (primary)** — Modbus RTU over the flange RS-485 at 1 M baud (supported by the v2 hardware revision). Requires UR's **RS485 Daemon URCap** (ToolComm Forwarder → virtual `/tmp/ttyUR` on the Jetson) alongside External Control — those two coexist by design. Driver: `tonydle/OnRobot_ROS2_Driver` (serial mode, ros2_control — the gripper appears as a `finger_width` joint in RViz/MoveIt); its companion **`tonydle/UR_OnRobot_ROS2`** ships a combined UR+RG2 URDF, controllers, and MoveIt config (`onrobot_type:=rg2`) — our phase-1 URDF/MoveIt starting point.
-- **Compute Box (fallback / teaching rig)** — Modbus TCP over Ethernet, fully independent of External Control, zero URCap involvement; the gripper can be driven from any laptop without the robot — useful as a standalone teaching/debug station, and the escape hatch if the serial bridge proves flaky. Humble driver: `ABC-iRobotics/onrobot-ros2` (Python) or `tonydle/OnRobot_ROS2_Driver` (TCP mode). Cost: re-cabling the gripper to an external cable along the arm.
+**2026-09-29 decision: use the documented OnRobot URCap / ROS handoff for the next integrated demo.** Leave OnRobot enabled and Tool I/O controlled by OnRobot at 24 V. ROS completes an arm motion, invokes `/io_and_status_controller/hand_back_control`, and lets the pendant run its ordinary RG Grip node. The next External Control node returns arm control to ROS. A nonce/phase acknowledgement and controller-readiness checks distinguish an expected handoff from a fault. See [the exact pendant tree and acceptance procedure](URCAP_HANDOFF.md). This workflow is software-tested, not yet accepted on hardware.
 
-**Either way, the OnRobot URCap must be disabled** — it seizes Tool I/O control and its RS-485 daemon conflicts with the forwarder. Tool I/O is set to "Controlled by User", 24 V. TCP/payload must be configured statically by us (URCap auto-update is off): TCP ≈ [0, 0, 200 mm], CoG ≈ [0, 0, 64 mm], mass 0.78 kg + ~0.2 kg Quick Changer.
+- **Working fallback:** `scripts/lab_rg2_action.py` calls the installed OnRobot XML-RPC service and passed standalone real gripper bench tests. Its external API compatibility is not established by a published vendor contract; retain it while validating the documented handoff. It requires the arm program stopped and must not run concurrently with the handoff coordinator.
+- **Original raw serial plan, deferred:** `tonydle/OnRobot_ROS2_Driver` via the RS485 forwarder. The lab bridge responded but returned invalid width data. The suspected native-daemon conflict was not proven. Raw serial troubleshooting is no longer a prerequisite for the next demo, and the former instruction to disable OnRobot does not apply to the selected workflow.
+- **Model/simulation assets:** the vendored `tonydle/UR_OnRobot_ROS2` description/controllers remain the starting point for combined-model and simulation work. Handoff does not by itself supply continuous gripper joint states to that model; hardware/model state synchronization remains integration work before dynamic grasp planning.
+- **Compute Box:** an alternative only if a compatible box/wiring is actually verified. The earlier assumption that an available lab box was an OnRobot Compute Box was not established by the photos.
+
+Verify actual fingertip TCP, mounting orientation, payload and CoG against the pendant before integrated arm motion. Earlier approximate TCP values are not accepted calibration for this mounting. OnRobot's automatic TCP/payload behavior must be reconciled with the ROS model; keep grip depth compensation off during initial handoff tests because it also moves the arm.
 
 The 2 kg force-fit payload bounds the object set (fine for hand tools; a sledgehammer is out).
 
@@ -112,7 +116,7 @@ Rejected: **Isaac Sim** — RTX GPU per seat, no UR7e asset yet, DIY ros2_contro
 | # | Question | Resolution |
 |---|---|---|
 | Q1 | Native ROS or Docker on the Jetson? | Native Humble for ROS graph; jetson-containers only for the model runtimes (D1). |
-| Q2 | Which gripper? | **OnRobot RG2 v2** (chosen by the team; on hand). Control route: **direct tool RS-485** primary — matches current wiring and the `tonydle` stack; the on-shelf Compute Box is the fallback (D6). |
+| Q2 | Which gripper? | **OnRobot RG2 v2**, physically on the tool connector. Next integration uses documented ROS/OnRobot URCap handoff; retain the tested direct native adapter as fallback (D6). |
 | Q3 | Which depth camera, mounted where? | **ZED 2i** (chosen by the team). Fixed overhead mount at ~1 m — its 0.3 m min depth and 175 mm width rule out the wrist (D4). |
 | Q4 | LLM local or cloud? | Cloud-first behind a swappable service interface (D5). |
 | Q5 | Full 6-DoF grasp planning? | No — fixed top-down grasp strategy for v1 (§1.3). Revisit only if object set demands it. |

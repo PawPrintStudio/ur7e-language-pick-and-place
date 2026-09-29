@@ -26,9 +26,10 @@ def main():
     home = m.home()
     out = dict(home)
     out['wrist_3_joint'] += DELTA
-    m.run([(out, LEG), (home, 2 * LEG)])
+    succeeded = m.run([(out, LEG), (home, 2 * LEG)])
     rclpy.shutdown()
+    return 0 if succeeded else 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

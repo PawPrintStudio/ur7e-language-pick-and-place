@@ -1,0 +1,16 @@
+1790657928.492877 [84]    python3: selected interface "lo" is not multicast-capable: disabling multicast
+[INFO] [1790657928.763270588] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790657928.816678546] [pick_place_demo]: -> goto_named
+[INFO] [1790657929.403216984] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790657929.957048338] [pick_place_demo]: -> approach_above
+[INFO] [1790657938.886897991] [pick_place_demo]: -> cartesian_descend
+[INFO] [1790657941.642253004] [pick_place_demo]: -> gripper to 0.030 m
+[INFO] [1790657941.696551363] [pick_place_demo]: SIMULATION: object attached to gripper for transport
+[INFO] [1790657942.198124667] [pick_place_demo]: -> cartesian_lift
+[INFO] [1790657945.003595308] [pick_place_demo]: -> approach_above
+[INFO] [1790657946.414466217] [pick_place_demo]: -> cartesian_descend
+[INFO] [1790657949.374746711] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790657949.429446395] [pick_place_demo]: SIMULATION: object released at the place location
+[INFO] [1790657949.931003809] [pick_place_demo]: -> retreat
+[INFO] [1790657952.795338664] [pick_place_demo]: -> goto_named
+[ERROR] [1790657952.892741415] [pick_place_demo]: Showcase failed: primitive failed: failed to submit motion to 'observe'

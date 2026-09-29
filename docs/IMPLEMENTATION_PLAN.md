@@ -28,6 +28,30 @@ Goal: the Jetson reliably commands the UR7e with correct kinematics, and the rep
 
 Goal: the arm picks a known object from a hardcoded pose with a real gripper, under MoveIt2, safely. This proves the entire motion+gripper stack.
 
+**2026-09-28 direct-Ethernet follow-up:** laptop-to-robot connection and factory
+calibration are verified. RS485 Daemon is now installed and port 54321 responds,
+but raw RTU width feedback remains invalid. The installed OnRobot 6.5.0 native
+XML-RPC interface provides verified RG2 identity and valid width feedback.
+Empty-jaw open/return commands passed both directly and through the standard
+ROS `GripperCommand` action using the bounded native bench adapter
+(`scripts/lab_rg2_action.py`), at requested forces of 5 N and 10 N.
+This adapter requires the arm program to stay stopped; integration into the
+combined bringup and simultaneous arm/gripper operation remain follow-up work.
+The Humble safety-monitor cancellation defect is repaired and protocol-tested,
+but its physical stop/recovery drill remains open. See the
+[live acceptance record](LAB_2026-09-28_DIRECT_ETHERNET.md).
+Task **1.5 / #12 is closed** against its standalone-primitive/mock-CI criteria
+(current CI green and 7/7 package tests). Arm-only MoveIt wrist and vertical
+execution plus virtual-obstacle rejection also passed on the physical robot.
+Full gripper-TCP and pick/place acceptance remain separate.
+
+**End-of-day:** session software is stopped. #9's standalone real RG2 action
+acceptance passed via the native OnRobot backend; #8's raw-RS485 route remains
+open. One complete RViz mock showcase now transports an attached planning-scene
+object, but a replay failed on the return-to-observe plan. This is neither
+Gazebo grasp-physics acceptance (#30) nor physical pick/place acceptance (#14).
+See the lab record's end-of-day issue table for the remaining criteria.
+
 > **2026-09-24 status (remote session, no lab access):** 1.3–1.5 and the
 > software half of 1.2 are built and **verified against sim tier 1** (mock
 > hardware) — see `src/ur7e_pick_place_bringup`, `src/ur7e_motion`,
@@ -47,8 +71,8 @@ Goal: the arm picks a known object from a hardcoded pose with a real gripper, un
 
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 1.1 | RG2 v2 ROS bench setup on the **direct tool connector** (decided — D6): install UR RS485 Daemon URCap, disable the OnRobot URCap, Tool I/O "Controlled by User" @ 24 V, verify `/tmp/ttyUR` bridge from the Jetson | Gripper opens/closes from a test script over the bridge — **lab-only, not started** |
-| 1.2 | `gripper_node`: `GripperCommand` action wrapping an OnRobot RG2 driver (`tonydle/OnRobot_ROS2_Driver` serial or `ABC-iRobotics/onrobot-ros2` TCP per 1.1) | Open/close/width/force from CLI works on real gripper — **software done & sim-verified** (`gripper_action_controller` in `ur7e_pick_place_bringup`, a stock `position_controllers/GripperActionController` over the vendored Modbus `hardware_interface`); **real-gripper verification is lab-only** |
+| 1.1 | RG2 v2 on the **direct tool connector**, using OnRobot URCap + documented ROS handoff (D6, revised 2026-09-29) | Native standalone control passed. Handoff coordinator and [pendant procedure](URCAP_HANDOFF.md) prepared with offline tests; stationary real handoff/return acceptance remains open. Raw RS485 is deferred, not a prerequisite. |
+| 1.2 | `GripperCommand` action wrapping an RG2 backend; retain the action interface across backends | **Real standalone bench acceptance passed:** native OnRobot adapter, `/gripper_action_controller/gripper_cmd`, metre/newton inputs, open/return at 5/10 N, width feedback, invalid-goal rejection and cancellation. Current lab bounds: 40–80 mm, <=20 mm steps, <=10 N, arm program stopped. Combined-bringup integration is still pending; measured force is unavailable. |
 | 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant — **done & sim-verified** (URDF parses, full kinematic tree confirmed via `check_urdf`; table + pick/place objects added as a MoveIt planning scene, not baked into the URDF — see `ur7e_pick_place_bringup/README.md`); **TCP-vs-pendant check is lab-only** |
 | 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); **`pick_ik` as IK solver** (kinematics.yaml); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test — **done & sim-verified**: `pick_ik/PickIkPlugin` confirmed live via `ros2 param get`, `home`/`observe` both reachable, and the table collision is real (a demo run that got too close to the table failed to plan until the sequence was routed clear of it — see RUNBOOK) |
 | 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) **built on `pymoveit2`** (official `moveit_py` is not available on Humble binaries) | Each primitive callable as an action; unit-tested against mock hardware — **done & sim-verified**: all five primitives exercised individually and as part of the full 1.7 sequence over `ExecutePrimitive` (`ur7e_interfaces`); named poses resolved live from the running SRDF, not hardcoded |
@@ -66,6 +90,8 @@ pick/lift workflow are implemented and tested with both fixture and OWLv2
 backends. See [Task 2 software report](TASK2_SOFTWARE.md) for per-task scope and
 evidence. The original physical acceptance criteria below remain pending;
 synthetic results do not close the Jetson, real-object or touch-point gates.
+Task **2.7 / #31 is closed** based on the committed successful fixture and
+OWLv2 Gazebo pipeline logs (reviewed 2026-09-28).
 
 | # | Task | Acceptance criteria |
 |---|---|---|
@@ -80,6 +106,10 @@ synthetic results do not close the Jetson, real-object or touch-point gates.
 ## Phase 3 — Language front-end
 
 Goal: free-form text becomes a validated structured command.
+
+Task **3.1 / #21 is closed** based on the committed 29/29 live-Claude corpus
+report (reviewed 2026-09-28). This does not close physical language-directed
+pick acceptance or the motion-side guardrails.
 
 > **2026-09-28 status:** 3.1 and the parser-side half of 3.3 are **built,
 > tested, and integrated** — `arm_language`/`arm_interfaces` (built

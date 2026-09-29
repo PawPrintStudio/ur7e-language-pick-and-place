@@ -33,6 +33,7 @@ from sensor_msgs.msg import JointState
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
+from action_msgs.msg import GoalStatus
 
 # Canonical order we COMMAND in. /joint_states may report a different order;
 # we always map by name (see module docstring).
@@ -152,12 +153,13 @@ class MotionClient(Node):
             return False
         rf = gh.get_result_async()
         rclpy.spin_until_future_complete(self, rf)
-        ec = rf.result().result.error_code
-        if ec == 0:
+        response = rf.result()
+        ec = response.result.error_code
+        if response.status == GoalStatus.STATUS_SUCCEEDED and ec == 0:
             self.get_logger().info('SUCCESSFUL (error_code=0)')
             return True
         self.get_logger().error(
-            'ABORTED error_code=%d. Pendant popup said "speed limit"? -> the '
+            'FAILED action_status=%d error_code=%d. Pendant popup said "speed limit"? -> the '
             'session-2 velocity veto; slow it. Protective stop? -> unlock '
-            '(>=5 s), then RESTART the driver before retrying.' % ec)
+            '(>=5 s), then RESTART the driver before retrying.' % (response.status, ec))
         return False

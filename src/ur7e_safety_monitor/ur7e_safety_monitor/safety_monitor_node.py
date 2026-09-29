@@ -16,13 +16,13 @@ the safety system's lock. It does **not** restore control — the trajectory
 controller still holds its stale pre-stop command (RUNBOOK "URSim rehearsal
 session", 2026-09-17: this is exactly the wedge that made a rehearsal
 session's naive recovery loop forever). The service reports the two manual
-steps a person still has to do: press Play (or headless-mode equivalent),
-then restart the driver process. A ROS node cannot restart its own driver's
+steps a person still has to do: restart the driver process, then press Play
+(or headless-mode equivalent). A ROS node cannot restart its own driver's
 process from inside — see docs/SIMULATION.md's tier-2 recovery drill, which
 this service is the sim/lab-tested reference for.
 """
 import rclpy
-from rclpy.action import ActionClient
+from action_msgs.srv import CancelGoal
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
@@ -30,9 +30,6 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from ur_dashboard_msgs.msg import SafetyMode
-
-from control_msgs.action import FollowJointTrajectory, GripperCommand
-from ur7e_interfaces.action import ExecutePrimitive
 
 # SafetyMode values that mean "the robot is not going to keep executing the
 # current trajectory" — everything except NORMAL and the informational
@@ -52,12 +49,9 @@ STOPPED_SAFETY_MODES = {
 # Cancelling is best-effort: a server that isn't up (e.g. motion_node not
 # running yet) is simply skipped.
 CANCELLABLE_ACTIONS = {
-    "motion_node": (ExecutePrimitive, "execute_primitive"),
-    "gripper": (GripperCommand, "gripper_action_controller/gripper_cmd"),
-    "arm_trajectory": (
-        FollowJointTrajectory,
-        "scaled_joint_trajectory_controller/follow_joint_trajectory",
-    ),
+    "motion_node": "execute_primitive",
+    "gripper": "gripper_action_controller/gripper_cmd",
+    "arm_trajectory": "scaled_joint_trajectory_controller/follow_joint_trajectory",
 }
 
 
@@ -82,13 +76,15 @@ class SafetyMonitor(Node):
             Bool,
             "/io_and_status_controller/robot_program_running",
             self._on_program_running,
-            10,
+            qos,
         )
 
         cb = ReentrantCallbackGroup()
         self._action_clients = {
-            name: ActionClient(self, action_type, action_name, callback_group=cb)
-            for name, (action_type, action_name) in CANCELLABLE_ACTIONS.items()
+            name: self.create_client(
+                CancelGoal, f"{action_name}/_action/cancel_goal", callback_group=cb
+            )
+            for name, action_name in CANCELLABLE_ACTIONS.items()
         }
         self._unlock_client = self.create_client(
             Trigger, "/dashboard_client/unlock_protective_stop", callback_group=cb
@@ -121,34 +117,59 @@ class SafetyMonitor(Node):
 
     def _cancel_all(self):
         for name, client in self._action_clients.items():
-            if not client.server_is_ready():
+            if not client.service_is_ready():
                 continue
             try:
-                client.cancel_all_goals()
-                self.get_logger().info(f"cancelled goals on '{name}'")
+                # ROS action protocol: zero UUID + zero stamp cancels all goals.
+                # Humble's ActionClient has no public cancel_all_goals method.
+                future = client.call_async(CancelGoal.Request())
+                future.add_done_callback(
+                    lambda result, action=name: self._cancel_result(action, result)
+                )
             except Exception as error:  # noqa: BLE001 — best-effort, log and continue
                 self.get_logger().warning(f"could not cancel '{name}': {error}")
+
+    def _cancel_result(self, name, future):
+        try:
+            response = future.result()
+            if response.return_code != CancelGoal.Response.ERROR_NONE:
+                self.get_logger().warning(
+                    f"cancel rejected on '{name}': code={response.return_code}"
+                )
+                return
+            self.get_logger().info(
+                f"cancel acknowledged on '{name}': "
+                f"{len(response.goals_canceling)} goal(s) cancelling"
+            )
+        except Exception as error:  # noqa: BLE001 — best-effort, log and continue
+            self.get_logger().warning(f"could not cancel '{name}': {error}")
 
     def _publish_event(self, text):
         self._status_pub.publish(String(data=text))
 
-    def _recover(self, request, response):
+    async def _recover(self, request, response):
         if not self._unlock_client.wait_for_service(timeout_sec=2.0):
             response.success = False
             response.message = "dashboard_client not available (mock hardware has no dashboard)"
             return response
         future = self._unlock_client.call_async(Trigger.Request())
-        rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
-        if not future.done() or not future.result() or not future.result().success:
+        # Await within the executor rather than recursively spinning this node.
+        # A timer bounds the response wait without blocking safety callbacks.
+        timer = self.create_timer(10.0, future.cancel)
+        try:
+            await future
+        finally:
+            self.destroy_timer(timer)
+        if future.cancelled() or not future.result() or not future.result().success:
             response.success = False
             response.message = "unlock_protective_stop failed or timed out"
             return response
         response.success = True
         response.message = (
             "Unlocked. Two manual steps remain, in order (RUNBOOK, "
-            "docs/SIMULATION.md tier-2 recovery drill): (1) press Play on the "
-            "pendant / headless-mode equivalent, (2) RESTART the driver "
-            "process — reconnecting without a restart wedges the arm, the "
+            "docs/SIMULATION.md tier-2 recovery drill): (1) RESTART the driver "
+            "process, (2) press Play on the pendant / headless-mode equivalent "
+            "— reconnecting without a restart wedges the arm, the "
             "trajectory controller holds its stale pre-stop command."
         )
         return response

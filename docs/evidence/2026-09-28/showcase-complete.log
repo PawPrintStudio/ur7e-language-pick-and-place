@@ -1,0 +1,18 @@
+1790640980.853585 [84]    python3: selected interface "lo" is not multicast-capable: disabling multicast
+[INFO] [1790640981.360838626] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790640981.415244334] [pick_place_demo]: -> goto_named
+[INFO] [1790640984.663623255] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790640985.217730322] [pick_place_demo]: -> approach_above
+[INFO] [1790640993.308596800] [pick_place_demo]: -> cartesian_descend
+[INFO] [1790640995.023611699] [pick_place_demo]: -> gripper to 0.030 m
+[INFO] [1790640995.081809445] [pick_place_demo]: SIMULATION: object attached to gripper for transport
+[INFO] [1790640995.583978805] [pick_place_demo]: -> cartesian_lift
+[INFO] [1790640997.443472277] [pick_place_demo]: -> approach_above
+[INFO] [1790640998.951914236] [pick_place_demo]: -> cartesian_descend
+[INFO] [1790641002.319781790] [pick_place_demo]: -> gripper to 0.100 m
+[INFO] [1790641002.376207192] [pick_place_demo]: SIMULATION: object released at the place location
+[INFO] [1790641002.878278473] [pick_place_demo]: -> retreat
+[INFO] [1790641006.549092946] [pick_place_demo]: -> goto_named
+[INFO] [1790641007.798971837] [pick_place_demo]: -> goto_named
+[INFO] [1790641008.789099571] [pick_place_demo]: pick-place sequence complete
+[INFO] [1790641008.795878468] [pick_place_demo]: Placed object frame=world, position=(0.45046888460627776, 0.2005908319738263, 0.04102706520634598)

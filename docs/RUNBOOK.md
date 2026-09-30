@@ -878,6 +878,17 @@ jog entries pass, including the `llm_only` ones: "go up one metre" →
 one miss is `mod-003` ("wooden mallet" → material `wood`, corpus expects
 `wooden`), pre-existing and unrelated.
 
+Later the same session Nikola asked for a way to take the controls himself
+in plain English. Added `teleop` as a jog action: "let me drive it myself",
+"can I control the arm?", "give me manual control", "take over" hand the
+terminal to `scripts/motion/teleop_keyboard.py` (own process, own tty, same
+`MotionClient` envelope) after the usual gates and a `[y/N]`; `q` returns
+to the console, which reports the tool displacement. Claude re-run on the
+47-entry corpus: **46/47**, all teleop entries right, and "let me grab the
+hammer" classified as a low-confidence pick, not a hand-over — the
+distinction the corpus entry exists to pin. Also fixed: Ctrl-C at the
+`arm>` prompt used to print an rclpy double-shutdown traceback.
+
 Side effect to know: the SDK's dependency upgrade (anyio 4) broke the
 container's apt pytest 6.2.5 (`No module named _pytest.scope`, from anyio's
 pytest plugin); `pip install --user "pytest>=7,<9"` restores it. CI uses the

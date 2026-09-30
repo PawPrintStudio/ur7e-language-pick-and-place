@@ -32,3 +32,7 @@ src/vendor/
 
 # lab_console.py taught poses are per-session, per-robot state, not source
 scripts/.console_poses.json
+
+# host-side voice client environment (scripts/voice_input.py)
+.venv-voice/
+scripts/.voice_inbox.txt

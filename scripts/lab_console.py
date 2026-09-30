@@ -42,6 +42,7 @@ move; run it at a low pendant slider with eyes on the arm, then ``/teach home``.
 import argparse
 import json
 import os
+import select
 import subprocess
 import sys
 
@@ -92,6 +93,65 @@ def confirm(prompt, auto_yes):
 
 
 TELEOP_SCRIPT = os.path.join(_HERE, 'motion', 'teleop_keyboard.py')
+DEFAULT_VOICE_INBOX = os.path.join(_HERE, '.voice_inbox.txt')
+
+
+class VoiceInbox:
+    """Tail a file that scripts/voice_input.py appends transcripts to.
+
+    Starts at the current end of the file, so sentences spoken before the
+    console started are never replayed into a live robot.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        open(path, 'a').close()
+        self.offset = os.path.getsize(path)
+        self.pending = []
+
+    def poll(self):
+        """Return the next complete new line, or None."""
+        if self.pending:
+            return self.pending.pop(0)
+        try:
+            size = os.path.getsize(self.path)
+        except OSError:
+            return None
+        if size < self.offset:
+            self.offset = 0  # file was truncated/replaced
+        if size == self.offset:
+            return None
+        with open(self.path) as handle:
+            handle.seek(self.offset)
+            chunk = handle.read()
+        lines = chunk.split('\n')
+        complete, tail = lines[:-1], lines[-1]
+        self.offset = size - len(tail.encode())
+        self.pending.extend(line.strip() for line in complete if line.strip())
+        return self.pending.pop(0) if self.pending else None
+
+
+def read_line(inbox):
+    """Return (text, spoken): the next typed line, or a voice transcript.
+
+    Waits on the terminal with ``select`` so a spoken sentence can arrive
+    while the prompt is showing. Without an inbox this is plain ``input``.
+    """
+    if inbox is None:
+        return input('arm> ').strip(), False
+    sys.stdout.write('arm> ')
+    sys.stdout.flush()
+    while True:
+        ready, _, _ = select.select([sys.stdin], [], [], 0.2)
+        if ready:
+            line = sys.stdin.readline()
+            if not line:
+                raise EOFError
+            return line.strip(), False
+        spoken = inbox.poll()
+        if spoken is not None:
+            sys.stdout.write('\n')
+            return spoken, True
 
 
 def hand_over(result, executor, args):
@@ -128,8 +188,8 @@ def hand_over(result, executor, args):
     say('TELEOP', {'exit_code': completed.returncode})
     try:
         after, _ = executor.where()
-        say('MEASURE', {'tool_delta_mm_xyz': [round((a - b) * 1000, 1)
-                                               for a, b in zip(after, before)]})
+        delta = [round((a - b) * 1000, 1) for a, b in zip(after, before)]
+        say('MEASURE', {'tool_delta_mm_xyz': delta})
     except JogError as error:
         say('WAIT', str(error))
     return completed.returncode == 0
@@ -213,6 +273,11 @@ def main():
                      help='ignore poses stored from an earlier run')
     cli.add_argument('--say', action='append', default=[], metavar='TEXT',
                      help='run this sentence and exit (repeatable; no REPL)')
+    cli.add_argument('--voice-inbox', metavar='PATH', nargs='?',
+                     const=DEFAULT_VOICE_INBOX, default=None,
+                     help='also take sentences from this file, one per line, as '
+                          'scripts/voice_input.py appends them (default path if '
+                          'given without a value)')
     args = cli.parse_args()
 
     try:
@@ -272,15 +337,21 @@ def main():
             return 1 if failures else 0
 
         print(HELP)
+        inbox = VoiceInbox(args.voice_inbox) if args.voice_inbox else None
+        if inbox:
+            say('VOICE', f'listening on {args.voice_inbox} '
+                         f'(run scripts/voice_input.py on the laptop)')
         while True:
             try:
-                text = input('arm> ').strip()
+                text, spoken = read_line(inbox)
             except (EOFError, KeyboardInterrupt):
                 # Ctrl-D or Ctrl-C at the prompt: leave quietly. (rclpy's own
                 # SIGINT handler has already shut the context down by now, so
                 # the finally below must not shut it down a second time.)
                 print()
                 break
+            if spoken:
+                say('VOICE', text)
             if not text:
                 continue
             if text in ('/quit', '/exit', 'quit', 'exit'):

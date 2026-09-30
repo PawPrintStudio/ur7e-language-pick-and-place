@@ -96,6 +96,30 @@ MEASURE`. Read the `COMMAND` line aloud before pressing `y`.
 Also good if someone asks: `move forward 10 cm`, `rotate clockwise fast by
 45 degrees`, `/where`, `/teach corner` then `go to corner`.
 
+## Voice (optional, same pipeline)
+
+The parser does not know whether a sentence was typed or spoken. Voice is a
+second way to put a line in front of it:
+
+1. On the laptop (not in the container — the microphone is on the laptop):
+
+   ```bash
+   .venv-voice/bin/python scripts/voice_input.py
+   ```
+   First run: `python3 -m venv .venv-voice && .venv-voice/bin/pip install faster-whisper`.
+   Push-to-talk: Enter, speak one sentence, Enter. The transcript is printed
+   and appended to `scripts/.voice_inbox.txt`.
+
+2. Start the console with `--voice-inbox` (in addition to everything else).
+   It tails that file and treats each new line as if it had been typed:
+   `VOICE could you go up a bit?` → PARSE → COMMAND → PLAN → `[y/N]`. The
+   yes is still typed. Sentences spoken before the console started are
+   ignored on purpose.
+
+Why local Whisper on the laptop today: no audio device in the container, no
+GPU needed for a small English model, and the plan's Jetson path
+(whisper.cpp, CUDA) is the same shape — record, transcribe, append a line.
+
 ## If something goes wrong
 
 - `BLOCKED execution gate closed: … program is not running` — press Play.

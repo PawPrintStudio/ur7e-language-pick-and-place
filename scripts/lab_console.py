@@ -275,7 +275,10 @@ def main():
         while True:
             try:
                 text = input('arm> ').strip()
-            except EOFError:
+            except (EOFError, KeyboardInterrupt):
+                # Ctrl-D or Ctrl-C at the prompt: leave quietly. (rclpy's own
+                # SIGINT handler has already shut the context down by now, so
+                # the finally below must not shut it down a second time.)
                 print()
                 break
             if not text:
@@ -312,7 +315,8 @@ def main():
     finally:
         executor.destroy_node()
         executor.motion.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

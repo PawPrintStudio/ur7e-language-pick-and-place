@@ -24,7 +24,9 @@ human."
 ## Setup (before the audience arrives)
 
 1. Robot on, pendant: `ros2_external_control.urp` loaded, speed slider at
-   **10 %** (raise to 50 % only after the first few commands look right).
+   **10 %** for the first command, then **25 %** (the setting the whole
+   script was verified at on 2026-09-30; at 10 % a 30° spin takes three
+   minutes). Start the console with the matching `--max-speed-percent`.
    Workspace clear; someone at the pendant with a hand near the stop.
 2. Laptop on the robot link (`nmcli con up ur-link`, ping `192.168.56.101`).
 3. Three terminals inside the lab container (`docker exec -it ur7e-lab-… bash`,
@@ -41,7 +43,7 @@ human."
    Wait for "You can start planning now!".
 
    ```bash
-   python3 scripts/lab_console.py --execute --max-speed-percent 50
+   python3 scripts/lab_console.py --execute --max-speed-percent 25
    # add  --backend claude  when ANTHROPIC_API_KEY is exported; the offline
    # keyword backend handles every sentence in the script below regardless.
    ```
@@ -65,6 +67,10 @@ human."
    cap is the right one once the arm is open).
 
 ## The script
+
+Verified end to end on the real arm 2026-09-30 from `ready` at 25 %: every
+line below did exactly this, with measured tool displacements matching to
+0.1 mm (see the RUNBOOK entry for the numbers).
 
 Type these, in order. Each one prints `PARSE → COMMAND → PLAN → [y/N] → EXEC →
 MEASURE`. Read the `COMMAND` line aloud before pressing `y`.

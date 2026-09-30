@@ -790,6 +790,38 @@ Nikola approved raising the pendant slider to 25 % after the spins (10 %
 made every command 10× its nominal time); the console's gate takes the
 new ceiling as `--max-speed-percent 25`.
 
+| Sentence (25 %) | Plan | Result |
+|---|---|---|
+| "go to the home pose but 3 cm up" | already at home → offset stage only, 33 waypoints | SUCCESSFUL, **(0.0, 0.0, +30.0) mm** |
+| "go to ready" (`--max-excursion 2.0`) | joint-space OMPL plan, 1.68 rad wrist_1 swing, 981 waypoints, 61 s nominal | SUCCESSFUL, **(−294.6, −33.3, −164.9) mm** → tool at (−0.22, 0.13, 0.50) m, the seeded pose |
+
+The folded-to-open move — the item every session since 2026-09-21 had
+listed as "freedrive first" — ran as a planned, table-checked trajectory
+with a human at the pendant. It is repeatable now: `go to ready`.
+
+**The full demo script, from `ready`, 25 %, one console run, every line
+as it will be shown** (`home` re-taught as `ready`):
+
+| Sentence | Result (tool delta, mm) |
+|---|---|
+| "could you go up a bit?" | (0, 0, **+20.0**) |
+| "go down 2" | (0, 0, **−20.0**) |
+| "go left" | (0, **+50.0**, 0) — 0.21 rad swing here vs 0.63 from the folded pose |
+| "go right" | (0, **−50.0**, 0) — possible now; impossible from the folded pose |
+| "can you spin slowly?" | (−0.1, 0.1, 0.0), wrist +30° |
+| "spin at speed -1" | (0.0, −0.1, −0.1), wrist −30° |
+| "go to the home pose but 3 cm up" | (0, 0, **+30.0**) |
+| "go home" | (−0.1, 0.1, **−30.0**) |
+| "pick up the hammer" | REFUSED — `action_not_allowed` ("understood but not enabled") |
+| "go up 100" | REFUSED — `motion_out_of_bounds` |
+| "what time is it" | REFUSED — `llm_rejected` |
+
+Eleven for eleven; every executed command returned action status
+SUCCEEDED with error_code 0, and every measured displacement matched the
+sentence to 0.1 mm. This is the state the arm was left in: on `ready`
+(tool at about (−0.22, 0.13, 0.50) m), program running, slider 25 %.
+Task 3.2 (#22) is done on hardware.
+
 Two operational lessons:
 
 - **Budget wall time as nominal × (100 / slider %).** The nudge's 20 s

@@ -20,7 +20,11 @@
     // macOS: no X — work headless, see docs/SIMULATION.md.
     "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
-        "QT_X11_NO_MITSHM": "1"
+        "QT_X11_NO_MITSHM": "1",
+        // Language backend credentials: forwarded from the host shell that
+        // started VS Code (export it, or `set -a; source .env; set +a`
+        // first). Empty when unset — the keyword backend needs nothing.
+        "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
     },
     "mounts": [
         "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"

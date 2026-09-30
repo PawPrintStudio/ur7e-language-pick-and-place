@@ -42,6 +42,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nano \
     && rm -rf /var/lib/apt/lists/*
 
+# pip-only dependencies, learned in the lab 2026-09-30 (RUNBOOK):
+#   anthropic  - the language backend's SDK; no rosdep key, so not in any
+#                package.xml (see arm_language/backends/claude.py).
+#   brotli     - Ubuntu 22.04's apt python3-brotli 1.0.9 makes the SDK's HTTP
+#                client fail to decompress responses ("Connection error",
+#                cause "process() takes no keyword arguments"); >=1.1 fixes it.
+#   pytest>=7  - the SDK's anyio pulls a pytest plugin that needs >=7; apt's
+#                6.2.5 then fails to even collect ("No module _pytest.scope").
+# Installed system-wide here (before USER switches) so every user in the
+# image has them; --break-system-packages is not needed on 22.04.
+RUN pip3 install --no-cache-dir "anthropic>=1.10" "brotli>=1.1" "pytest>=7,<9"
+
 # Non-root user: files created in the bind-mounted workspace stay owned by
 # you, not root (the classic Docker-on-Linux paper cut).
 ARG USERNAME=ros

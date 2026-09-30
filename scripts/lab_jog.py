@@ -406,6 +406,8 @@ class JogExecutor(Node):
         """
         if command.action not in schema.JOG_ACTIONS:
             raise JogError(f'"{command.action}" is not a jog action')
+        if command.action == schema.ACTION_TELEOP:
+            raise JogError('teleop is a hand-over, not a plan; the console runs it')
         saved = self.plan_only
         if plan_only is not None:
             self.plan_only = plan_only

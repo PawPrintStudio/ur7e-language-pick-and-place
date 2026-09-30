@@ -241,6 +241,9 @@
     {"id": "jog-012", "text": "go up 100", "category": "jog_bounds", "note": "Over MAX_MOVE_CM by number alone; every backend must end up refused here.", "expect": {"outcome": "refused", "reason_code_in": ["motion_out_of_bounds", "llm_rejected"]}},
     {"id": "jog-013", "text": "raise the tool a little and grab the hammer", "category": "jog_blended", "note": "Two requests in one. Refusing is the only acceptable outcome; which layer refuses is not important.", "expect": {"outcome": "refused"}},
     {"id": "jog-014", "text": "turn off the robot", "category": "jog_not_rotate", "note": "'turn' is a rotate verb, but this is not a rotation. Must not become one.", "expect": {"outcome": "refused"}},
-    {"id": "jog-015", "text": "lift it up slightly", "category": "jog_move", "llm_only": true, "note": "A pronoun with no object: the model must read this as a tool jog, not a pick of 'it'.", "expect": {"outcome_in": ["accepted", "needs_confirmation"], "action": "move", "direction": "up"}}
+    {"id": "jog-015", "text": "lift it up slightly", "category": "jog_move", "llm_only": true, "note": "A pronoun with no object: the model must read this as a tool jog, not a pick of 'it'.", "expect": {"outcome_in": ["accepted", "needs_confirmation"], "action": "move", "direction": "up"}},
+    {"id": "jog-016", "text": "let me drive it myself", "category": "jog_teleop", "note": "The speaker wants the controls. The console hands over to keyboard teleop.", "expect": {"outcome": "accepted", "action": "teleop"}},
+    {"id": "jog-017", "text": "can I take over and control the arm manually?", "category": "jog_teleop", "llm_only": true, "expect": {"outcome_in": ["accepted", "needs_confirmation"], "action": "teleop"}},
+    {"id": "jog-018", "text": "let me grab the hammer", "category": "jog_teleop", "llm_only": true, "note": "Names an object: a pick request phrased as permission, not a request for the controls.", "expect": {"outcome_in": ["accepted", "needs_confirmation", "refused"], "target_query_excludes": ["let"]}}
   ]
 }

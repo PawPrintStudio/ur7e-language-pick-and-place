@@ -11,6 +11,7 @@ Type a sentence; the arm moves -- or explains why it will not.
     go to the home pose but 3 cm up  -> deterministic pose + offset
     pick up the hammer            -> refused: no camera in this session
     go up one metre               -> refused: over the 20 cm bound
+    let me drive it myself        -> keyboard teleop in this terminal, q returns
 
 Three layers, each in its own file, each testable without the others:
 
@@ -41,6 +42,7 @@ move; run it at a low pendant slider with eyes on the arm, then ``/teach home``.
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 import rclpy
@@ -60,7 +62,8 @@ SEED_POSES_FILE = os.path.join(_HERE, 'lab_poses.json')
 DEFAULT_POSES_FILE = os.path.join(_HERE, '.console_poses.json')
 
 HELP = """\
-Say what you want in plain English, or use a slash command:
+Say what you want in plain English ("go up a bit", "spin slowly", "go home",
+"let me drive it myself" for keyboard teleop), or use a slash command:
   /where          tool position (m, base frame) and joint angles
   /teach NAME     remember the current pose as NAME ("go to NAME" later)
   /poses          list taught poses
@@ -88,6 +91,50 @@ def confirm(prompt, auto_yes):
     return answer in ('y', 'yes')
 
 
+TELEOP_SCRIPT = os.path.join(_HERE, 'motion', 'teleop_keyboard.py')
+
+
+def hand_over(result, executor, args):
+    """Run keyboard teleop in this terminal, then take the console back.
+
+    Teleop is its own process on purpose: it owns the raw tty and its own
+    ROS node, and it goes through the same ``MotionClient`` envelope as
+    everything else. The console only checks the gates first, so the
+    hand-over is refused for the same reasons a move would be, and reports
+    where the arm ended up afterwards.
+    """
+    if executor.plan_only:
+        say('PLAN', {'stage': 'teleop', 'executed': False,
+                     'note': 'would hand over to keyboard teleop; plan-only run'})
+        return True
+    try:
+        executor.gate()
+        before, _ = executor.where()
+    except JogError as error:
+        say('BLOCKED', str(error))
+        return False
+    if not sys.stdin.isatty():
+        say('BLOCKED', 'teleop needs an interactive terminal (a raw tty); '
+                       'run the console without --say to use it')
+        return False
+    if result.outcome is Outcome.NEEDS_CONFIRMATION:
+        if not confirm(result.message + ' Keys: 1-6 pick a joint, . and , jog it, '
+                       '[ ] halve/double the step, h back to where teleop started, '
+                       'q returns here.', args.yes):
+            say('SKIPPED', 'not confirmed')
+            return False
+    say('TELEOP', 'yours. q to come back to the console.')
+    completed = subprocess.run([sys.executable, TELEOP_SCRIPT])
+    say('TELEOP', {'exit_code': completed.returncode})
+    try:
+        after, _ = executor.where()
+        say('MEASURE', {'tool_delta_mm_xyz': [round((a - b) * 1000, 1)
+                                               for a, b in zip(after, before)]})
+    except JogError as error:
+        say('WAIT', str(error))
+    return completed.returncode == 0
+
+
 def handle(text, parser, executor, args):
     """Parse one utterance and, if allowed and confirmed, run it."""
     result = parser.parse(text)
@@ -101,6 +148,9 @@ def handle(text, parser, executor, args):
 
     command = result.command
     say('COMMAND', command.echo())
+
+    if command.action == schema.ACTION_TELEOP:
+        return hand_over(result, executor, args)
 
     # Plan first, ask second: the person confirming sees what the plan
     # actually does (joint swing, duration), not only the parsed sentence.

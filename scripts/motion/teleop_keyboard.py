@@ -22,7 +22,9 @@ Requires a real interactive terminal (raw tty). Run on the Jetson console with
 the driver up and Play pressed. Keep the pendant slider low and a hand on the
 e-stop.
 
-STATUS: written 2026-09-21, NOT YET run on hardware — verify before trusting.
+STATUS: written 2026-09-21; first real-hardware run 2026-09-28 (RUNBOOK).
+Also reachable from scripts/lab_console.py by asking for the controls in
+plain English ("let me drive it myself"); q hands the terminal back.
 """
 import os
 import select

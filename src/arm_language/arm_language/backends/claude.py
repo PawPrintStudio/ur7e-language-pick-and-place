@@ -90,9 +90,12 @@ null when unspecified. `angle_deg` only if they said an angle, else null.
    - "go_to": `pose_name` is the bare pose name ("home", "start"). If they \
 add an offset ("go home but 3 cm up"), also fill `direction` and \
 `distance_cm`.
-   Every `motion` key is null for pick, pick_and_place and reject. "Go up" is \
-a move, not a go_to. A request that both moves the tool and names an object \
-("go up and grab the hammer") is "reject" — one command at a time.
+   - "teleop": the speaker wants to control, drive, steer or jog the arm \
+themselves — "let me drive it", "give me manual control", "can I take over?", \
+"switch to keyboard control". No motion fields; all null.
+   Every `motion` key is null for pick, pick_and_place, teleop and reject. \
+"Go up" is a move, not a go_to. A request that both moves the tool and names \
+an object ("go up and grab the hammer") is "reject" — one command at a time.
 """
 
 USER_TEMPLATE = """\

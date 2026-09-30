@@ -256,6 +256,7 @@ before anyone can act on it.
 | "spin at speed -1" | `rotate` speed −1 (clockwise) | |
 | "go home" | `go_to` "home" | poses are taught, never typed |
 | "go to the start pose but 3 cm up" | `go_to` "start" + offset up 3 cm | offset shares `MAX_MOVE_CM` |
+| "let me drive it myself" | `teleop` — the console hands over to keyboard jog | no numbers; a mode, gated like a move |
 | "go up one metre" | **refused**, `motion_out_of_bounds` | |
 | "go up and grab the hammer" | **refused**: one command at a time | |
 

@@ -141,6 +141,26 @@ _GO_TO_RE = re.compile(
     rf'(?P<dir>{_DIRECTION_RE})(?:\s+(?:(?P<bit>{_A_BIT})|{_AMOUNT}))?)?\s*$'
 )
 
+# "let me drive it", "can I control the arm myself?", "give me manual
+# control", "switch to keyboard control", "teleop". Anchored on a control
+# verb/noun so "control the temperature" stays out; a mention of an object
+# to pick ("let me grab the hammer") is not teleop and falls through.
+_TELEOP_RE = re.compile(
+    r'^(?:'
+    rf'{_PREAMBLE}(?:let|allow)\s+me\s+(?:take\s+over|(?:control|drive|steer|move|jog|operate)'
+    r'(?:\s+(?:it|the\s+(?:arm|robot|ur7e|thing))(?:\s+myself|\s+manually|\s+by\s+hand)?)?)'
+    r'|(?:can|could|may)\s+i\s+(?:take\s+over|(?:control|drive|steer|move|jog|operate)'
+    r'(?:\s+(?:it|the\s+(?:arm|robot|ur7e)))?(?:\s+myself|\s+manually|\s+by\s+hand)?)'
+    r'|(?:please\s+)?(?:give|hand)\s+me\s+(?:the\s+)?(?:manual\s+)?'
+    r'(?:control|controls|keyboard|wheel)(?:\s+(?:of|over)\s+(?:it|the\s+(?:arm|robot)))?'
+    r'|i(?:\'d|\s+would)?\s+(?:like|want)\s+to\s+(?:control|drive|steer|jog|operate)\s+'
+    r'(?:it|the\s+(?:arm|robot))(?:\s+myself|\s+manually)?'
+    r'|(?:switch\s+to\s+|enter\s+|go\s+to\s+|start\s+)?(?:manual|keyboard|tele-?op(?:eration)?)'
+    r'(?:\s+(?:control|mode|jog))?'
+    r'|take\s+over|i\s+want\s+(?:the\s+)?controls?'
+    r')\s*$'
+)
+
 _CONFIDENCE_JOG = 0.85
 
 
@@ -171,6 +191,9 @@ def _amount(match) -> object:
 
 def _try_jog(text: str):
     """Return jog JSON for ``text``, or None if it is not a jog request."""
+    if _TELEOP_RE.match(text):
+        return _jog_payload(schema.ACTION_TELEOP, {})
+
     match = _MOVE_RE.match(text)
     if match:
         return _jog_payload(schema.ACTION_MOVE, {

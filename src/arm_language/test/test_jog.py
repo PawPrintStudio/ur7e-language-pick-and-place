@@ -242,6 +242,37 @@ def test_keyword_go_to(parser, text, pose, direction, distance):
     assert result.command.distance_cm == distance
 
 
+@pytest.mark.parametrize('text', [
+    'let me drive it myself',
+    'can I control the arm?',
+    'give me manual control',
+    'switch to keyboard control',
+    'I want to control it myself',
+    'take over',
+    'teleop',
+])
+def test_keyword_teleop(parser, text):
+    result = parser.parse(text)
+    assert result.outcome is Outcome.ACCEPTED, result.message
+    assert result.command.action == 'teleop'
+    assert 'controls' in result.message
+
+
+@pytest.mark.parametrize('text', [
+    'let me grab the hammer',
+    'control the temperature',
+])
+def test_keyword_teleop_does_not_swallow_other_requests(parser, text):
+    result = parser.parse(text)
+    assert result.command is None or result.command.action != 'teleop'
+
+
+def test_teleop_takes_no_motion_fields():
+    assert (reason_of(payload('teleop', direction='up'))
+            is ReasonCode.MOTION_FIELD_UNEXPECTED)
+    assert validate(payload('teleop')).action == 'teleop'
+
+
 def test_keyword_refuses_out_of_bounds_move(parser):
     result = parser.parse('go up 100')
     assert result.outcome is Outcome.REFUSED

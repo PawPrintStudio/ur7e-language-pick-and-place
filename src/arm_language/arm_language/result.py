@@ -158,7 +158,9 @@ class Command:
         return f'pick up the {described}'
 
     def _echo_jog(self) -> str:
-        """Echo for move / rotate / go_to, with every number the arm will use."""
+        """Echo for move / rotate / go_to / teleop, with every number the arm will use."""
+        if self.action == schema.ACTION_TELEOP:
+            return 'hand you the controls: keyboard teleop until you press q'
         if self.action == schema.ACTION_MOVE:
             return f'move the tool {self.direction} by {self.distance_cm:g} cm'
         if self.action == schema.ACTION_ROTATE:

@@ -45,7 +45,11 @@ MOTION_ACTIONS = (ACTION_PICK, ACTION_PICK_AND_PLACE)
 ACTION_MOVE = 'move'
 ACTION_ROTATE = 'rotate'
 ACTION_GO_TO = 'go_to'
-JOG_ACTIONS = (ACTION_MOVE, ACTION_ROTATE, ACTION_GO_TO)
+# teleop - the speaker wants the controls themselves ("let me drive it").
+# The console hands the terminal to the keyboard jog tool and takes it back
+# when that exits. No numbers travel with it; it is a mode, not a motion.
+ACTION_TELEOP = 'teleop'
+JOG_ACTIONS = (ACTION_MOVE, ACTION_ROTATE, ACTION_GO_TO, ACTION_TELEOP)
 
 # Everything that can make the arm move. A GuardrailPolicy picks a subset of
 # this; MOTION_ACTIONS (pick family) stays the default so existing deployments
@@ -152,7 +156,9 @@ COMMAND_SCHEMA = {
                 'named destination. move = translate the robot tool itself a '
                 'short distance in a direction (no object involved). rotate = '
                 'spin the robot wrist. go_to = drive to a named pose such as '
-                '"home". reject = the text is not a request the arm can act on.'
+                '"home". teleop = the speaker asks to control or drive the arm '
+                'themselves, manually, by hand or by keyboard. reject = the '
+                'text is not a request the arm can act on.'
             ),
         },
         'target_query': {

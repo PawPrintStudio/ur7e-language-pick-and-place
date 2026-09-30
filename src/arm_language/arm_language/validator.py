@@ -306,8 +306,8 @@ def _validate_motion(action: str, raw: object) -> Dict[str, object]:
         return {'pose_name': pose_name, 'direction': direction,
                 'distance_cm': distance}
 
-    # pick, pick_and_place, reject: motion parameters are noise at best and
-    # evidence of a confused parse at worst. Refuse rather than ignore.
+    # teleop, pick, pick_and_place, reject: motion parameters are noise at
+    # best and evidence of a confused parse at worst. Refuse rather than ignore.
     only()
     return {}
 

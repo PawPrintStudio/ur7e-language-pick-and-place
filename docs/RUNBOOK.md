@@ -894,6 +894,29 @@ container's apt pytest 6.2.5 (`No module named _pytest.scope`, from anyio's
 pytest plugin); `pip install --user "pytest>=7,<9"` restores it. CI uses the
 plain `ros:humble` image and is unaffected.
 
+### Link loss and recovery (16:59, robot reboot)
+
+While the hands-free voice listener was being started, the laptop's NIC
+logged `enp7s0: Link is Down` and stayed NO-CARRIER; the dashboard timed
+out; the driver logged "Stream is connected but failed to read"; CycloneDDS
+logged multicast write failures. Same signature as the 2026-09-28 power
+outage: carrier is electrical, nothing on the laptop removes it. The robot
+came back (RUNNING / NORMAL, program STOPPED, i.e. it had rebooted) and the
+arm was found in a different pose (pan +0.39, wrist_3 −2.23 rad).
+
+Recovery that worked, in order: `nmcli con up ur-link` (link UP, ping
+0.2 ms) → kill **every** stale ROS process in the container (`ros2 launch`,
+`ur_ros2_control_node`, spawners, `robot_state_publisher`, dashboard and
+URScript clients, `move_group`) → relaunch the driver → relaunch MoveIt →
+Play → small command. The first relaunch attempt failed because a `pkill`
+of the launch alone left the old `ur_ros2_control_node` alive for a few
+seconds: the new spawners could not configure their controllers against
+two controller managers (the two-graph gotcha again, this time within one
+container). The RTDE client also needed one automatic retry while the
+controller finished booting — normal, not a fault. Session-file poses
+(`home`, `ready`) are no longer within the go_to cap after a reboot that
+moved the arm; restart the console with `--forget-poses`.
+
 ### Still open
 
 - Gripper (1.1), TCP-vs-pendant mismatch, protective-stop drill: unchanged

@@ -88,9 +88,40 @@ class Transcriber:
               flush=True)
         self._model = WhisperModel(model, device='cpu', compute_type='int8')
 
+    @staticmethod
+    def load_wav(path):
+        """Decode a 16 kHz mono 16-bit WAV into float32 samples in [-1, 1].
+
+        Done here with the standard library rather than letting faster-whisper
+        decode the file: its decoder goes through PyAV, and the PyAV that pip
+        resolves does not always match (seen 2026-09-30: ``open() got an
+        unexpected keyword argument 'metadata_errors'``). We control the
+        recording format, so we do not need a general-purpose decoder.
+        """
+        import wave
+
+        import numpy as np
+        with wave.open(path, 'rb') as wav:
+            rate, channels, width = wav.getframerate(), wav.getnchannels(), wav.getsampwidth()
+            if (rate, channels, width) != (16000, 1, 2):
+                raise SystemExit(f'{path}: expected 16 kHz mono 16-bit, got '
+                                 f'{rate} Hz, {channels} ch, {8 * width}-bit')
+            frames = wav.readframes(wav.getnframes())
+        return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+
+    #: RMS below this is room noise, not speech; Whisper fed near-silence with
+    #: a command-biased prompt will happily invent "Go up." (seen on a 3 s
+    #: ambient recording, 2026-09-30). The console's typed [y/N] is the real
+    #: guard against a hallucinated command; this just avoids the noise.
+    MIN_RMS = 0.01
+
     def transcribe(self, path):
+        samples = self.load_wav(path)
+        rms = float((samples ** 2).mean() ** 0.5) if len(samples) else 0.0
+        if rms < self.MIN_RMS:
+            return '', {'rms': rms, 'skipped': 'below speech level'}
         segments, info = self._model.transcribe(
-            path, language=self.language, beam_size=5, vad_filter=True,
+            samples, language=self.language, beam_size=5, vad_filter=True,
             # A robot command is one short sentence; bias decoding towards
             # our vocabulary so "go up a bit" is not heard as "go up a bid".
             initial_prompt='Robot arm commands: go up a bit, go down 2 cm, go '
@@ -98,7 +129,7 @@ class Transcriber:
                            'home, go to the ready pose, let me drive it, '
                            'pick up the hammer.')
         text = ' '.join(s.text.strip() for s in segments).strip()
-        return text, info
+        return text, {'rms': rms, 'language_probability': info.language_probability}
 
 
 def clean(text):
@@ -132,8 +163,8 @@ def main():
     if args.file:
         started = time.monotonic()
         text, info = transcriber.transcribe(args.file)
-        print(f'[{time.monotonic() - started:.1f}s, p={info.language_probability:.2f}] '
-              f'{clean(text)!r}')
+        print(f'[{time.monotonic() - started:.1f}s, rms={info["rms"]:.3f}] '
+              f'{clean(text)!r} {info.get("skipped", "")}')
         if not args.no_deliver and clean(text):
             deliver(args.inbox, clean(text))
         return 0
@@ -157,13 +188,14 @@ def main():
                 print('too short, ignored')
                 continue
             started = time.monotonic()
-            text, _ = transcriber.transcribe(path)
+            text, info = transcriber.transcribe(path)
             text = clean(text)
             elapsed = time.monotonic() - started
             if not text:
-                print(f'[{seconds:.1f}s audio, {elapsed:.1f}s] heard nothing')
+                print(f'[{seconds:.1f}s audio, {elapsed:.1f}s, rms={info["rms"]:.3f}] '
+                      f'heard nothing {info.get("skipped", "")}')
                 continue
-            print(f'[{seconds:.1f}s audio, {elapsed:.1f}s] {text}')
+            print(f'[{seconds:.1f}s audio, {elapsed:.1f}s, rms={info["rms"]:.3f}] {text}')
             if not args.no_deliver:
                 deliver(args.inbox, text)
         finally:

@@ -70,4 +70,4 @@ Beyond the demo itself, this repo is a **learning platform** for makerspace memb
 
 ## Status
 
-Phase 0 in progress: robot link verified through first commanded motion (tasks 0.1–0.4 done); dev loop landing — bringup package, sim tiers 1+2, CI, devcontainer. See the project board for live task status.
+Phase 0 complete (robot link, calibration, first motion, bringup package, sim tiers, CI, devcontainer). Phase 1 motion stack runs on the real arm; gripper bridge and camera work are the open hardware items. **Live demo available today without a camera:** the language console — "could you go up a bit?" → bounded, collision-checked motion on the UR7e. See [docs/DEMO_CONSOLE.md](docs/DEMO_CONSOLE.md). Issues are the task tracker (no project board yet).

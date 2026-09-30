@@ -226,6 +226,21 @@
       "category": "malformed_input",
       "note": "Over the 300-character utterance cap. Refused before any backend is called, which also bounds cost.",
       "expect": {"outcome": "refused", "reason_code_in": ["utterance_too_long"]}
-    }
+    },
+    {"id": "jog-001", "text": "could you go up a bit?", "category": "jog_move", "note": "The lab demo's opening line. 'a bit' is SMALL_MOVE_CM; a trailing question mark is politeness, not a question.", "expect": {"outcome": "accepted", "action": "move", "direction": "up", "distance_cm": 2.0}},
+    {"id": "jog-002", "text": "could you go down by 2?", "category": "jog_move", "expect": {"outcome": "accepted", "action": "move", "direction": "down", "distance_cm": 2.0}},
+    {"id": "jog-003", "text": "go right", "category": "jog_move", "expect": {"outcome": "accepted", "action": "move", "direction": "right", "distance_cm": 5.0}},
+    {"id": "jog-004", "text": "go left", "category": "jog_move", "expect": {"outcome": "accepted", "action": "move", "direction": "left", "distance_cm": 5.0}},
+    {"id": "jog-005", "text": "move forward 10 cm", "category": "jog_move", "expect": {"outcome": "accepted", "action": "move", "direction": "forward", "distance_cm": 10.0}},
+    {"id": "jog-006", "text": "can you spin slowly?", "category": "jog_rotate", "expect": {"outcome": "accepted", "action": "rotate", "speed_level": 1}},
+    {"id": "jog-007", "text": "spin at speed -1", "category": "jog_rotate", "expect": {"outcome": "accepted", "action": "rotate", "speed_level": -1}},
+    {"id": "jog-008", "text": "rotate the wrist clockwise, fast", "category": "jog_rotate", "expect": {"outcome": "accepted", "action": "rotate", "speed_level": -3}},
+    {"id": "jog-009", "text": "go home", "category": "jog_go_to", "expect": {"outcome": "accepted", "action": "go_to", "pose_name": "home"}},
+    {"id": "jog-010", "text": "go to the start pose but 3 cm up", "category": "jog_go_to", "note": "Deterministic named pose plus a user-supplied offset - the demo's closing move.", "expect": {"outcome": "accepted", "action": "go_to", "pose_name": "start", "direction": "up", "distance_cm": 3.0}},
+    {"id": "jog-011", "text": "go up one metre", "category": "jog_bounds", "llm_only": true, "note": "Over MAX_MOVE_CM. The model writes what was said; the validator refuses. The keyword grammar has no unit conversion, so this is llm_only.", "expect": {"outcome": "refused", "reason_code_in": ["motion_out_of_bounds", "llm_rejected"]}},
+    {"id": "jog-012", "text": "go up 100", "category": "jog_bounds", "note": "Over MAX_MOVE_CM by number alone; every backend must end up refused here.", "expect": {"outcome": "refused", "reason_code_in": ["motion_out_of_bounds", "llm_rejected"]}},
+    {"id": "jog-013", "text": "raise the tool a little and grab the hammer", "category": "jog_blended", "note": "Two requests in one. Refusing is the only acceptable outcome; which layer refuses is not important.", "expect": {"outcome": "refused"}},
+    {"id": "jog-014", "text": "turn off the robot", "category": "jog_not_rotate", "note": "'turn' is a rotate verb, but this is not a rotation. Must not become one.", "expect": {"outcome": "refused"}},
+    {"id": "jog-015", "text": "lift it up slightly", "category": "jog_move", "llm_only": true, "note": "A pronoun with no object: the model must read this as a tool jog, not a pick of 'it'.", "expect": {"outcome_in": ["accepted", "needs_confirmation"], "action": "move", "direction": "up"}}
   ]
 }

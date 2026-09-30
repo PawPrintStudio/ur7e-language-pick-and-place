@@ -17,7 +17,7 @@ import pytest
 
 from arm_language.backends.keyword import KeywordBackend
 from arm_language.eval import (
-    check_contract, load_corpus, run,
+    check_contract, corpus_policy, load_corpus, run,
 )
 from arm_language.guardrails import DEFAULT_POLICY, GuardrailPolicy
 from arm_language.parser import IntentParser
@@ -31,7 +31,7 @@ def corpus():
 
 @pytest.fixture(scope='module')
 def offline_report(corpus):
-    parser = IntentParser(KeywordBackend(), DEFAULT_POLICY)
+    parser = IntentParser(KeywordBackend(), corpus_policy())
     return run(parser, corpus, include_llm_only=False)
 
 

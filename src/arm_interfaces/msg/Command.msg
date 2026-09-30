@@ -12,6 +12,10 @@
 # widen it by inventing a verb.
 string ACTION_PICK=pick
 string ACTION_PICK_AND_PLACE=pick_and_place
+# Jog actions (task 3.2 command console): the tool moves, no object involved.
+string ACTION_MOVE=move
+string ACTION_ROTATE=rotate
+string ACTION_GO_TO=go_to
 
 string action
 
@@ -37,3 +41,13 @@ string modifiers_json
 # The backend's self-reported confidence, 0.0–1.0. Coarse ambiguity signal
 # only — see the confidence discussion in the arm_language README.
 float32 confidence
+
+# --- jog parameters (only meaningful for ACTION_MOVE / ROTATE / GO_TO) ---
+# Already validated and bounded by arm_language (schema.MAX_MOVE_CM etc.) and
+# defaults already applied: a consumer never has to guess a missing number.
+# Empty string / 0 when the action does not use the field.
+string direction        # up, down, left, right, forward, backward (base frame)
+float32 distance_cm     # move length, or go_to offset length
+int8 speed_level        # rotate: -3..3, sign = spin direction, never 0
+float32 angle_deg       # rotate: bounded turn angle
+string pose_name        # go_to: taught pose name, e.g. "home"

@@ -75,6 +75,21 @@ def check_contract(result: ParseResult,
             f'{policy.allowed_actions}'
         )
 
+    if command.action in schema.JOG_ACTIONS:
+        # A jog names no object; its contract is the bounds instead.
+        if command.target_query:
+            problems.append(f'jog carries target_query "{command.target_query}"')
+        if command.distance_cm is not None and not (
+                0.0 < command.distance_cm <= schema.MAX_MOVE_CM):
+            problems.append(f'distance_cm out of bounds: {command.distance_cm}')
+        if command.angle_deg is not None and not (
+                0.0 < command.angle_deg <= schema.MAX_ROTATE_DEG):
+            problems.append(f'angle_deg out of bounds: {command.angle_deg}')
+        if command.speed_level is not None and not (
+                0 < abs(command.speed_level) <= schema.MAX_SPEED_LEVEL):
+            problems.append(f'speed_level out of bounds: {command.speed_level}')
+        return problems
+
     try:
         validator.check_noun_phrase(command.target_query, 'target_query')
     except validator.ValidationError as exc:
@@ -128,7 +143,9 @@ def check_expectation(entry: dict, result: ParseResult) -> List[str]:
         # outcome checks above already caught "we expected one and got none".
         return problems
 
-    for field_name in ('action', 'target_query', 'place_target'):
+    for field_name in ('action', 'target_query', 'place_target',
+                       'direction', 'distance_cm', 'speed_level',
+                       'angle_deg', 'pose_name'):
         if field_name in expect and getattr(command, field_name) != expect[field_name]:
             problems.append(f'{field_name} "{getattr(command, field_name)}" != '
                             f'"{expect[field_name]}"')
@@ -142,6 +159,19 @@ def check_expectation(entry: dict, result: ParseResult) -> List[str]:
             problems.append(f'target_query contains forbidden "{banned}"')
 
     return problems
+
+
+def corpus_policy(**kwargs) -> guardrails.GuardrailPolicy:
+    """
+    The policy the corpus is scored under: every motion action enabled.
+
+    The corpus measures whether the parser *understood* a sentence, so it must
+    not be narrowed by a deployment's whitelist — a jog entry scored under the
+    pick-only default would fail as ``action_not_allowed`` and say nothing
+    about the parse. Deployments still narrow; see ``GuardrailPolicy``.
+    """
+    kwargs.setdefault('allowed_actions', schema.ALL_MOTION_ACTIONS)
+    return guardrails.GuardrailPolicy(**kwargs)
 
 
 def run(parser: IntentParser, entries: List[dict],
@@ -276,12 +306,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                      help='force-run llm_only entries (default: automatic)')
     args = cli.parse_args(argv)
 
-    policy_kwargs: Dict[str, float] = {}
+    policy_kwargs: Dict[str, object] = {}
     if args.accept_threshold is not None:
         policy_kwargs['accept_threshold'] = args.accept_threshold
     if args.confirm_threshold is not None:
         policy_kwargs['confirm_threshold'] = args.confirm_threshold
-    policy = guardrails.GuardrailPolicy(**policy_kwargs)
+    policy = corpus_policy(**policy_kwargs)
 
     backend_kwargs = {'model': args.model} if args.model else {}
     try:

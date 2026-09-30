@@ -36,13 +36,58 @@ ACTION_PICK = 'pick'
 ACTION_PICK_AND_PLACE = 'pick_and_place'
 MOTION_ACTIONS = (ACTION_PICK, ACTION_PICK_AND_PLACE)
 
+# Jog actions (task 3.2, the command console): motion that needs NO camera.
+# The speaker moves the tool itself, not an object. These are the vocabulary
+# of the lab demo "go up a bit / go down 2 / spin slowly / go home".
+#   move   - translate the tool a bounded distance along one base-frame axis
+#   rotate - spin the wrist a bounded angle at a signed speed level
+#   go_to  - a named, previously taught pose, optionally plus a move offset
+ACTION_MOVE = 'move'
+ACTION_ROTATE = 'rotate'
+ACTION_GO_TO = 'go_to'
+JOG_ACTIONS = (ACTION_MOVE, ACTION_ROTATE, ACTION_GO_TO)
+
+# Everything that can make the arm move. A GuardrailPolicy picks a subset of
+# this; MOTION_ACTIONS (pick family) stays the default so existing deployments
+# do not silently gain jog commands.
+ALL_MOTION_ACTIONS = MOTION_ACTIONS + JOG_ACTIONS
+
 # Not a motion action: the backend's way of saying "this was not a request to
 # move an object". Letting the model say so explicitly is much safer than
 # forcing it to choose a motion action for "what time is it" and hoping the
 # confidence score saves us.
 ACTION_REJECT = 'reject'
 
-BACKEND_ACTIONS = MOTION_ACTIONS + (ACTION_REJECT,)
+BACKEND_ACTIONS = ALL_MOTION_ACTIONS + (ACTION_REJECT,)
+
+# --- jog vocabulary and bounds ---------------------------------------------
+# Directions are in the robot's base frame (base_link): up/down = +/-Z,
+# forward/backward = +/-X, left/right = +/-Y. "Left" is the robot's left, not
+# the audience's — the console has a flag to mirror it for a demo.
+DIRECTIONS = ('up', 'down', 'left', 'right', 'forward', 'backward')
+
+# Distances in centimetres because that is how people say them ("go down 2").
+# The bounds are the safety story: no sentence can move the tool further than
+# MAX_MOVE_CM in one command, whatever the model wrote.
+DEFAULT_MOVE_CM = 5.0     # "go up" with no amount
+SMALL_MOVE_CM = 2.0       # "go up a bit"
+MAX_MOVE_CM = 20.0
+
+# Speed levels are small signed integers: magnitude 1 (slow) to 3 (fast), sign
+# is the direction of spin (+ = counter-clockwise looking at the tool flange,
+# i.e. wrist_3 increasing; - = clockwise). The console maps them to joint
+# rates well under the driver's velocity ceiling.
+MAX_SPEED_LEVEL = 3
+DEFAULT_SPEED_LEVEL = 1
+
+# One rotate command turns the wrist a bounded angle, never "forever".
+DEFAULT_ROTATE_DEG = 30.0
+MAX_ROTATE_DEG = 90.0
+
+# Fields of the `motion` object, in one place so backends, validator and the
+# ROS message agree on the names.
+MOTION_KEYS = ('direction', 'distance_cm', 'speed_level', 'angle_deg',
+               'pose_name')
 
 # --- modifier vocabulary ---------------------------------------------------
 # Descriptive attributes we let the speaker attach to a target. Closed on
@@ -104,8 +149,10 @@ COMMAND_SCHEMA = {
             'enum': list(BACKEND_ACTIONS),
             'description': (
                 'pick = move one object. pick_and_place = move one object to a '
-                'named destination. reject = the text is not a request to move '
-                'a physical object.'
+                'named destination. move = translate the robot tool itself a '
+                'short distance in a direction (no object involved). rotate = '
+                'spin the robot wrist. go_to = drive to a named pose such as '
+                '"home". reject = the text is not a request the arm can act on.'
             ),
         },
         'target_query': {
@@ -113,7 +160,58 @@ COMMAND_SCHEMA = {
             'description': (
                 'The object to grasp, as a bare noun phrase with no verb and no '
                 'article: "hammer", "red screwdriver", "blue block". Empty '
-                'string when action is reject.'
+                'string when action is reject, move, rotate or go_to.'
+            ),
+        },
+        'motion': {
+            'type': 'object',
+            'properties': {
+                'direction': {
+                    'type': ['string', 'null'],
+                    'enum': list(DIRECTIONS) + [None],
+                    'description': (
+                        'For move: which way the tool travels. For go_to: an '
+                        'optional offset direction from the named pose. Null '
+                        'otherwise.'
+                    ),
+                },
+                'distance_cm': {
+                    'type': ['number', 'null'],
+                    'description': (
+                        'How far, in centimetres. "a bit"/"a little" = '
+                        f'{SMALL_MOVE_CM}. Null when the speaker gave no '
+                        'amount (a default applies); "go down 2" means 2 cm.'
+                    ),
+                },
+                'speed_level': {
+                    'type': ['integer', 'null'],
+                    'description': (
+                        'For rotate: signed integer, magnitude 1 (slow) to '
+                        f'{MAX_SPEED_LEVEL} (fast); negative spins the other '
+                        'way. "slowly" = 1, "fast" = 3, "at speed -1" = -1. '
+                        'Null when unspecified or for other actions.'
+                    ),
+                },
+                'angle_deg': {
+                    'type': ['number', 'null'],
+                    'description': (
+                        'For rotate: how many degrees to turn, if the speaker '
+                        'said. Null when unspecified or for other actions.'
+                    ),
+                },
+                'pose_name': dict(
+                    _nullable_string(),
+                    description=(
+                        'For go_to: the named pose as a bare noun phrase '
+                        '("home", "start", "observe"). Null otherwise.'
+                    ),
+                ),
+            },
+            'required': list(MOTION_KEYS),
+            'additionalProperties': False,
+            'description': (
+                'Parameters of a move, rotate or go_to action. Every key is '
+                'null for pick, pick_and_place and reject.'
             ),
         },
         'place_target': dict(
@@ -150,6 +248,6 @@ COMMAND_SCHEMA = {
         ),
     },
     'required': ['action', 'target_query', 'place_target', 'modifiers',
-                 'confidence', 'reason'],
+                 'motion', 'confidence', 'reason'],
     'additionalProperties': False,
 }

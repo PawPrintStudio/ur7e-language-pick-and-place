@@ -8,8 +8,14 @@
 # renamed per ur_type, see that file's own comment on why.
 ur_onrobot_manipulator:
   kinematics_solver: pick_ik/PickIkPlugin
-  kinematics_solver_timeout: 0.05
-  kinematics_solver_attempts: 3
+  # 0.05 s was enough for vertical Cartesian steps but made lateral ones
+  # (more joint motion per mm, so more gradient-descent iterations at
+  # gd_step_size) succeed only about one try in three on the laptop
+  # (2026-09-30 lab, path stopping at its very first 1 mm step). Each step
+  # is solved once, so a generous per-solve budget costs nothing when the
+  # solve is quick and rescues it when it is not.
+  kinematics_solver_timeout: 0.5
+  kinematics_solver_attempts: 5
   # pick_ik-specific tuning.
   #
   # Found the hard way (2026-09-24, remote sim session): the first version of
@@ -31,11 +37,24 @@ ur_onrobot_manipulator:
   # penalizes solutions that move joints further than necessary — together,
   # the solver now prefers the smallest motion that reaches the target,
   # which is what every one of our primitives actually wants.
+  #
+  # Weight tuned on the real arm (2026-09-30, lab): with weight 1.0 a
+  # Cartesian path along base Y (the console's "go left/right") reached 2%
+  # from EVERY pose tried, while Z and X moves reached 100%. A millimetre of
+  # lateral tool motion costs ~3x more shoulder_pan rotation than a
+  # millimetre of vertical motion costs the elbow, so at weight 1.0 the
+  # displacement penalty outweighed the 1 mm position error and gradient
+  # descent settled short of position_threshold. In `local` mode the seed
+  # already keeps solutions nearby; the weight only needs to break ties.
   mode: local
   position_scale: 1.0
   rotation_scale: 0.5
+  # Do NOT tighten this for millimetre Cartesian stepping: at 0.0002 the
+  # gradient descent never converged at all (0% paths, 2026-09-30). The
+  # lab console plans its Cartesian jogs with KDL instead
+  # (scripts/lab_arm_moveit.launch.py ik:=kdl) -- see that file for why.
   position_threshold: 0.001
   orientation_threshold: 0.01
   cost_threshold: 0.001
-  minimal_displacement_weight: 1.0
+  minimal_displacement_weight: 0.001
   gd_step_size: 0.0001

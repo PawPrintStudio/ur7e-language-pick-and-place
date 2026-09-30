@@ -703,3 +703,81 @@ session end.
    `robot_state_publisher`.
 5. The devcontainer-on-laptop pattern above is proven and reusable next time
    the Jetson is unavailable.
+
+## 2026-09-30 — lab session: the language console on the real arm (task 3.2)
+
+Goal of the day: a live-demonstrable, camera-free demo — natural language
+("could you go up a bit?", "go down 2", "spin at speed -1", "go to the home
+pose but 3 cm up") to bounded, collision-checked motion on the real UR7e.
+Same laptop-as-Jetson pattern as 2026-09-28 (`ur-link` on `enp7s0`,
+container `ur7e-lab-20260930` from `ur7e-dev:latest`, host networking,
+domain 42). Driver up first try: calibration checksum matched, all
+controllers active, `/joint_states` live; robot RUNNING / NORMAL, program
+`ros2_external_control.urp` loaded. Arm started in the cold folded pose
+(tool at about (0.075, 0.118, 0.634) m in `base_link`).
+
+### What got built (all of it rehearsed against the live stack, plan-only)
+
+- **Jog vocabulary in `arm_language`** (`move` / `rotate` / `go_to`), same
+  backend → validator → guardrails pipeline, bounded in the validator
+  (`MAX_MOVE_CM` 20, `MAX_ROTATE_DEG` 90, speed levels ±1..3), defaults
+  applied there too so a `Command` never has a missing number; off by
+  default in `GuardrailPolicy`, opted into by the console. Keyword grammar
+  covers the whole demo script offline; the Claude prompt and schema carry
+  the same vocabulary (untested today — no API key on this laptop).
+  `Command.msg` gained the jog fields. 157 tests pass, corpus 40/40 offline
+  with 15 new jog entries.
+- **`scripts/lab_jog.py`** — MoveIt planning (Cartesian path for moves,
+  joint-space for rotate/go_to, lab-table collision box) → re-timed at a
+  nominal joint rate → `MotionClient.run()` with its envelope and the t=0
+  anchor. Execution gates: safety NORMAL, program running, live speed
+  scaling under the approved ceiling, fresh stationary joint state.
+- **`scripts/lab_console.py`** — REPL and `--say` batch mode; plan-only by
+  default, `--execute` to move; plans before it asks, so the `[y/N]` shows
+  joint swing and duration; `/teach`, `/where`, `/poses`; `home` taught at
+  startup, `ready` seeded from `scripts/lab_poses.json`.
+- `docs/DEMO_CONSOLE.md` — the show script and the answers for afterwards.
+
+### Findings that cost time (read before touching the IK config)
+
+1. **pick_ik is the wrong solver for millimetre Cartesian stepping.** With
+   the committed `minimal_displacement_weight: 1.0`, a 5 cm *lateral*
+   Cartesian path reached 2 % from every pose tried, while Z/X paths reached
+   100 % (a millimetre sideways costs more shoulder_pan than a millimetre up
+   costs the elbow, so the displacement penalty beat the 1 mm position error).
+   Weight 0.001 fixed the standalone probe — but the console then planned
+   the *same* move to 100 % or 4 % depending on which joint-state sample it
+   started from (encoder noise vs a 1 mm `position_threshold`). Tightening
+   the threshold to 0.2 mm gave 0 % everywhere: the gradient descent does
+   not converge that far. **Resolution: `lab_arm_moveit.launch.py ik:=kdl`**
+   for the console (18/18 lateral probes at 100 %, deterministic); the pick
+   pipeline keeps pick_ik. The yaml keeps the lower weight and a longer solve
+   budget, with the history in comments.
+2. **`max_step` for `compute_cartesian_path` must be 1 mm.** 2 mm → 9 %,
+   5 mm → 0 % of the same 2 cm lift, before any of the above. Each step is an
+   IK solve seeded by the previous; bigger steps are not faster, they fail.
+3. **"Go right" is impossible from the folded pose — physics.** The wrist
+   centre sits at the shoulder-singularity radius (`d4`); moving toward the
+   base axis has no solution, moving away (left) does. A `ready` pose
+   (shoulder_lift −1.40, elbow −1.70, wrist_1 +1.53, wrist_2 −π/2, pan and
+   wrist_3 unchanged; tool pointing down at about (−0.22, 0.13, 0.50) m)
+   was searched for on the live description: valid, plannable from the
+   folded pose (1.85 rad wrist_1 swing), and reaches 5 cm in all six
+   directions. Seeded in `scripts/lab_poses.json`. This is the answer to the
+   2026-09-28 "freedrive-to-open-posture" item: a planned, collision-checked,
+   slow joint move with `--max-excursion 2.0`, instead of a blind
+   `goto_named`.
+
+### Hardware execution
+
+_Pending Play on the pendant at the time of writing — results appended
+below when run._
+
+### Still open
+
+- Claude backend on the jog vocabulary: run
+  `python3 -m arm_language.eval --backend claude` with a key; the 4 `llm_only`
+  jog entries are the ones that matter ("go up one metre" must refuse via
+  `motion_out_of_bounds`).
+- Gripper (1.1), TCP-vs-pendant mismatch, protective-stop drill: unchanged
+  from 2026-09-28.

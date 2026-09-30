@@ -68,6 +68,13 @@ class ValidatedIntent:
     confidence: float = 0.0
     reason: Optional[str] = None
 
+    # Jog parameters, defaults already applied (see _validate_motion).
+    direction: Optional[str] = None
+    distance_cm: Optional[float] = None
+    speed_level: Optional[int] = None
+    angle_deg: Optional[float] = None
+    pose_name: Optional[str] = None
+
 
 def normalize_phrase(raw: str) -> str:
     """
@@ -193,6 +200,118 @@ def _validate_modifiers(raw: object) -> Dict[str, str]:
     return cleaned
 
 
+def _number(raw: object, name: str) -> Optional[float]:
+    """Return ``raw`` as a float, or None; refuse bools and non-numbers."""
+    if raw is None:
+        return None
+    _require(isinstance(raw, (int, float)) and not isinstance(raw, bool),
+             ReasonCode.SCHEMA_VIOLATION, f'`motion.{name}` must be a number or null.')
+    return float(raw)
+
+
+def _validate_motion(action: str, raw: object) -> Dict[str, object]:
+    """
+    Check the ``motion`` object against the action, and apply defaults.
+
+    The cross-field rules live here for the same reason ``place_target``'s do:
+    "a move needs a direction, a rotate must not have one" is one line of
+    Python and a thicket of ``oneOf`` in JSON Schema.
+
+    The bounds checks are the load-bearing part. A language model can be
+    talked into writing ``distance_cm: 100``; nothing can talk this function
+    into passing it through. Refusing (rather than clamping to the maximum)
+    is deliberate: a clamped value moves the arm somewhere the speaker did not
+    ask for, while a refusal tells them what the limit is.
+    """
+    # Absent entirely is tolerated (older backends and fixtures never send
+    # it) and means "no motion parameters" — identical to all-null.
+    if raw is None:
+        raw = {}
+    _require(isinstance(raw, dict), ReasonCode.SCHEMA_VIOLATION,
+             '`motion` must be an object.')
+    unknown = sorted(set(raw) - set(schema.MOTION_KEYS))
+    _require(not unknown, ReasonCode.SCHEMA_VIOLATION,
+             f'Unknown motion key(s): {", ".join(unknown)}.')
+
+    direction = raw.get('direction')
+    _require(direction is None or isinstance(direction, str),
+             ReasonCode.SCHEMA_VIOLATION, '`motion.direction` must be a string or null.')
+    if direction is not None:
+        direction = direction.strip().lower()
+        _require(direction in schema.DIRECTIONS, ReasonCode.SCHEMA_VIOLATION,
+                 f'`motion.direction` must be one of {", ".join(schema.DIRECTIONS)}; '
+                 f'got "{direction}".')
+    distance = _number(raw.get('distance_cm'), 'distance_cm')
+    angle = _number(raw.get('angle_deg'), 'angle_deg')
+    speed = raw.get('speed_level')
+    _require(speed is None or (isinstance(speed, int) and not isinstance(speed, bool)),
+             ReasonCode.SCHEMA_VIOLATION, '`motion.speed_level` must be an integer or null.')
+    pose_raw = raw.get('pose_name')
+    _require(pose_raw is None or isinstance(pose_raw, str),
+             ReasonCode.SCHEMA_VIOLATION, '`motion.pose_name` must be a string or null.')
+    pose_name = normalize_phrase(pose_raw) if pose_raw else None
+
+    given = {key: value for key, value in [
+        ('direction', direction), ('distance_cm', distance),
+        ('speed_level', speed), ('angle_deg', angle), ('pose_name', pose_name),
+    ] if value is not None}
+
+    def only(*allowed: str) -> None:
+        stray = sorted(set(given) - set(allowed))
+        _require(not stray, ReasonCode.MOTION_FIELD_UNEXPECTED,
+                 f'`{action}` does not use motion.{", motion.".join(stray)}.')
+
+    def check_distance(value: float) -> None:
+        _require(0.0 < value <= schema.MAX_MOVE_CM, ReasonCode.MOTION_OUT_OF_BOUNDS,
+                 f'A move must be between 0 and {schema.MAX_MOVE_CM:g} cm; '
+                 f'got {value:g} cm.')
+
+    if action == schema.ACTION_MOVE:
+        only('direction', 'distance_cm')
+        _require(direction is not None, ReasonCode.MOTION_FIELD_MISSING,
+                 'A move needs a direction (up, down, left, right, forward, backward).')
+        if distance is None:
+            distance = schema.DEFAULT_MOVE_CM
+        check_distance(distance)
+        return {'direction': direction, 'distance_cm': distance}
+
+    if action == schema.ACTION_ROTATE:
+        only('speed_level', 'angle_deg')
+        if speed is None:
+            speed = schema.DEFAULT_SPEED_LEVEL
+        _require(speed != 0 and abs(speed) <= schema.MAX_SPEED_LEVEL,
+                 ReasonCode.MOTION_OUT_OF_BOUNDS,
+                 f'Speed level must be between -{schema.MAX_SPEED_LEVEL} and '
+                 f'{schema.MAX_SPEED_LEVEL}, not zero; got {speed}.')
+        if angle is None:
+            angle = schema.DEFAULT_ROTATE_DEG
+        _require(0.0 < angle <= schema.MAX_ROTATE_DEG, ReasonCode.MOTION_OUT_OF_BOUNDS,
+                 f'A rotation must be between 0 and {schema.MAX_ROTATE_DEG:g} degrees; '
+                 f'got {angle:g}.')
+        return {'speed_level': speed, 'angle_deg': angle}
+
+    if action == schema.ACTION_GO_TO:
+        only('pose_name', 'direction', 'distance_cm')
+        _require(pose_name is not None, ReasonCode.MOTION_FIELD_MISSING,
+                 'A go_to needs the name of a pose ("home").')
+        check_noun_phrase(pose_name, 'motion.pose_name')
+        # An offset is optional, but it is all-or-nothing: a distance with no
+        # direction is not a move anyone asked for.
+        if direction is not None or distance is not None:
+            _require(direction is not None, ReasonCode.MOTION_FIELD_MISSING,
+                     'A go_to offset needs a direction as well as a distance.')
+            if distance is None:
+                distance = schema.DEFAULT_MOVE_CM
+            check_distance(distance)
+        return {'pose_name': pose_name, 'direction': direction,
+                'distance_cm': distance}
+
+    # pick, pick_and_place, reject: motion parameters are noise at best and
+    # evidence of a confused parse at worst. Refuse rather than ignore.
+    only()
+    return {}
+
+
 def validate(raw_text: str) -> ValidatedIntent:
     """
     Parse and validate one backend response.
@@ -212,7 +331,11 @@ def validate(raw_text: str) -> ValidatedIntent:
     _require(isinstance(payload, dict), ReasonCode.SCHEMA_VIOLATION,
              'The backend returned JSON, but not a JSON object.')
 
-    missing = sorted(set(schema.COMMAND_SCHEMA['required']) - set(payload))
+    # `motion` is required on the wire (strict structured outputs) but
+    # tolerated when absent here, so a backend that predates the jog actions
+    # keeps working. Absent means "no motion parameters".
+    missing = sorted(set(schema.COMMAND_SCHEMA['required']) - set(payload)
+                     - {'motion'})
     _require(not missing, ReasonCode.SCHEMA_VIOLATION,
              f'Missing required field(s): {", ".join(missing)}.')
 
@@ -258,8 +381,21 @@ def validate(raw_text: str) -> ValidatedIntent:
              '`place_target` must be a string or null.')
     place_target = normalize_phrase(place_raw) if place_raw else None
 
-    # A rejection carries no object, so the noun-phrase rules do not apply.
-    if action != schema.ACTION_REJECT:
+    motion = _validate_motion(action, payload.get('motion'))
+
+    if action in schema.JOG_ACTIONS:
+        # A jog moves the tool, not an object: a named target here means the
+        # model blended two requests ("move up and grab the hammer").
+        _require(not target_query, ReasonCode.SCHEMA_VIOLATION,
+                 f'`{action}` moves the tool itself; `target_query` must be '
+                 f'empty, got "{target_query}".')
+        _require(place_target is None, ReasonCode.PLACE_TARGET_UNEXPECTED,
+                 f'`{action}` has no destination object; `place_target` must be null.')
+        _require(not modifiers, ReasonCode.SCHEMA_VIOLATION,
+                 f'`{action}` takes no object modifiers.')
+
+    # A rejection or jog carries no object, so the noun-phrase rules do not apply.
+    if action not in (schema.ACTION_REJECT,) + schema.JOG_ACTIONS:
         check_noun_phrase(target_query, 'target_query')
 
         # Cross-field rule: the destination exists if and only if the action
@@ -285,4 +421,5 @@ def validate(raw_text: str) -> ValidatedIntent:
         modifiers=modifiers,
         confidence=confidence,
         reason=reason,
+        **motion,
     )

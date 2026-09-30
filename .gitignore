@@ -29,3 +29,6 @@ sim/ursim/urcaps/*.urcap
 # Vendored third-party ROS packages: fetched by scripts/vendor_import.sh
 # (ur7e.repos), not committed — same treatment as apt-installed deps.
 src/vendor/
+
+# lab_console.py taught poses are per-session, per-robot state, not source
+scripts/.console_poses.json

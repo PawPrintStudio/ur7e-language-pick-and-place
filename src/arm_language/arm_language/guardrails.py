@@ -62,7 +62,10 @@ class GuardrailPolicy:
     """
 
     allowed_actions: Tuple[str, ...] = schema.MOTION_ACTIONS
-    """Actions this deployment permits. Narrow it to stage a rollout."""
+    """Actions this deployment permits. Narrow it to stage a rollout, or widen
+    it to ``schema.JOG_ACTIONS`` for a camera-free console session. The jog
+    actions are *not* on by default: a deployment must opt in to the arm
+    moving on a sentence with no object in it."""
 
     accept_threshold: float = 0.75
     """At or above this confidence, act without asking."""
@@ -83,12 +86,12 @@ class GuardrailPolicy:
                 f'confirm={self.confirm_threshold}, '
                 f'accept={self.accept_threshold}.'
             )
-        unknown = sorted(set(self.allowed_actions) - set(schema.MOTION_ACTIONS))
+        unknown = sorted(set(self.allowed_actions) - set(schema.ALL_MOTION_ACTIONS))
         if unknown:
             raise ValueError(
                 f'allowed_actions contains non-motion action(s): '
                 f'{", ".join(unknown)}. Valid: '
-                f'{", ".join(schema.MOTION_ACTIONS)}.'
+                f'{", ".join(schema.ALL_MOTION_ACTIONS)}.'
             )
 
 
@@ -128,6 +131,11 @@ def apply(intent: ValidatedIntent,
         place_target=intent.place_target,
         modifiers=dict(intent.modifiers),
         confidence=intent.confidence,
+        direction=intent.direction,
+        distance_cm=intent.distance_cm,
+        speed_level=intent.speed_level,
+        angle_deg=intent.angle_deg,
+        pose_name=intent.pose_name,
     )
 
     # 3. Confidence bands. Built last so the refusal below still gets to

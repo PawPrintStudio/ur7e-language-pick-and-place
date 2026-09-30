@@ -241,6 +241,49 @@ model got wrong — a corpus entry that the cloud backend fails is either a
 prompt bug or a corpus bug, and which one it is should be argued in the issue
 rather than silently fixed.
 
+## Jog vocabulary: move / rotate / go_to (task 3.2, [#22])
+
+The pick vocabulary needs a camera to mean anything. The jog vocabulary does
+not: the speaker moves the *tool*, and every number in the command is bounded
+before anyone can act on it.
+
+| Sentence | Command | Bound |
+|---|---|---|
+| "could you go up a bit?" | `move` up, 2 cm | `MAX_MOVE_CM` = 20 |
+| "go down 2" | `move` down, 2 cm | |
+| "go left" | `move` left, 5 cm (default) | |
+| "can you spin slowly?" | `rotate` speed +1, 30° | `MAX_SPEED_LEVEL` = 3, `MAX_ROTATE_DEG` = 90 |
+| "spin at speed -1" | `rotate` speed −1 (clockwise) | |
+| "go home" | `go_to` "home" | poses are taught, never typed |
+| "go to the start pose but 3 cm up" | `go_to` "start" + offset up 3 cm | offset shares `MAX_MOVE_CM` |
+| "go up one metre" | **refused**, `motion_out_of_bounds` | |
+| "go up and grab the hammer" | **refused**: one command at a time | |
+
+Directions are the *robot's* (`base_link`): up/down = ±Z, forward/backward =
+±X, left/right = ±Y. The console has `--mirror-lr` for an audience facing the
+arm.
+
+Three things worth knowing about how it was added:
+
+- **Same pipeline, same trust boundary.** The backend fills a `motion` object
+  (`schema.MOTION_KEYS`); `validator._validate_motion` applies the cross-field
+  rules ("a move needs a direction, a rotate must not have one") and the
+  bounds, and applies the defaults — so a `Command` never carries a missing
+  number. Refusing an out-of-bounds value instead of clamping is deliberate:
+  a clamped value moves the arm somewhere the speaker did not ask for.
+- **Off by default.** `GuardrailPolicy.allowed_actions` still defaults to the
+  pick family. A deployment opts in with `allowed_actions=schema.JOG_ACTIONS`
+  (which is what `scripts/lab_console.py` does, and it refuses picks in
+  return — a camera-free session should say so out loud).
+- **Corpus scoring uses `eval.corpus_policy()`**, which enables every motion
+  action, because the corpus measures understanding and the whitelist is a
+  deployment choice. `unsupported_action` entries still refuse through the
+  backend's `reject`, not through the whitelist.
+
+The execution half — MoveIt planning against the lab table, re-timing, the
+pendant gates — lives in `scripts/lab_jog.py`; the ask-before-moving loop that
+the "Known limitations" below used to list as missing is `scripts/lab_console.py`.
+
 ## Known limitations
 
 - **Objects whose names begin with a verb are refused.** `drop cloth` and
@@ -254,10 +297,10 @@ rather than silently fixed.
   (architecture §1.3).
 - **Unknown modifier keys are refused** rather than dropped. Strict schema, per
   the issue; widening the vocabulary is a one-line change in `schema.py`.
-- **The confirmation echo has no UI yet.** `ParseResult.message` carries the
-  "did you mean…?" string, but the ask-and-wait loop belongs to the command
-  console ([#22]) and the orchestrator ([#24]). Until one of those lands,
-  `NEEDS_CONFIRMATION` simply means "do not move".
+- **The confirmation echo has one UI: the lab console.** `ParseResult.message`
+  carries the "did you mean…?" string; `scripts/lab_console.py` ([#22]) asks
+  and waits. The orchestrator ([#24]) has no equivalent yet, so there
+  `NEEDS_CONFIRMATION` still simply means "do not move".
 
 [#21]: https://github.com/PawPrintStudio/ur7e-language-pick-and-place/issues/21
 [#22]: https://github.com/PawPrintStudio/ur7e-language-pick-and-place/issues/22

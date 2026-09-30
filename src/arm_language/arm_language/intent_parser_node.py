@@ -110,6 +110,12 @@ class IntentParserNode(Node):
             response.command.place_target = result.command.place_target or ''
             response.command.modifiers_json = result.command.modifiers_json()
             response.command.confidence = float(result.command.confidence)
+            command = result.command
+            response.command.direction = command.direction or ''
+            response.command.distance_cm = float(command.distance_cm or 0.0)
+            response.command.speed_level = int(command.speed_level or 0)
+            response.command.angle_deg = float(command.angle_deg or 0.0)
+            response.command.pose_name = command.pose_name or ''
 
         # One structured line per parse. The orchestrator's run records
         # (architecture §1.2) need to answer "which stage failed and why"

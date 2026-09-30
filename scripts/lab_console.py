@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Natural-language command console for the arm-only UR7e (task 3.2, issue #22).
+
+Type a sentence; the arm moves -- or explains why it will not.
+
+    could you go up a bit?        -> move the tool up by 2 cm
+    go down 2                     -> move the tool down by 2 cm
+    can you spin slowly?          -> rotate the wrist 30 degrees, speed +1
+    spin at speed -1              -> ... clockwise, speed -1
+    go home                       -> the pose the console started in
+    go to the home pose but 3 cm up  -> deterministic pose + offset
+    pick up the hammer            -> refused: no camera in this session
+    go up one metre               -> refused: over the 20 cm bound
+
+Three layers, each in its own file, each testable without the others:
+
+1. ``arm_language`` parses the text into a *validated, bounded* command or a
+   refusal (backend -> validator -> guardrails). The console never sees raw
+   model output.
+2. ``lab_jog.JogExecutor`` plans the command with MoveIt (collision-checked
+   against the lab table) and executes it through the proven
+   ``MotionClient`` path with its safety envelope.
+3. This file: argument parsing, the confirmation prompt, and printing.
+
+Rehearse first, move second::
+
+    python3 scripts/lab_console.py                       # plan-only, offline parser
+    python3 scripts/lab_console.py --execute             # real motion (needs Play)
+    python3 scripts/lab_console.py --execute --backend claude   # the LLM front end
+
+Prerequisites (two other terminals):
+    ros2 launch ur7e_bringup ur7e_bringup.launch.py
+    ros2 launch scripts/lab_arm_moveit.launch.py ik:=kdl   # KDL: see that file
+
+Start posture matters. From the cold folded resting pose the wrist sits on the
+shoulder singularity: up/down/left/forward plan, "right" cannot (physics, not
+a bug). ``go to ready`` (a seed pose in ``lab_poses.json``, all six directions
+reachable) needs ``--max-excursion 2.0`` because it is a large, deliberate
+move; run it at a low pendant slider with eyes on the arm, then ``/teach home``.
+"""
+import argparse
+import json
+import os
+import sys
+
+import rclpy
+
+from arm_language import schema
+from arm_language.backends import BackendError, available, create
+from arm_language.guardrails import GuardrailPolicy
+from arm_language.parser import IntentParser
+from arm_language.result import Outcome
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lab_jog import JogError, JogExecutor  # noqa: E402
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# Committed seed poses (e.g. `ready`), then the per-session taught poses.
+SEED_POSES_FILE = os.path.join(_HERE, 'lab_poses.json')
+DEFAULT_POSES_FILE = os.path.join(_HERE, '.console_poses.json')
+
+HELP = """\
+Say what you want in plain English, or use a slash command:
+  /where          tool position (m, base frame) and joint angles
+  /teach NAME     remember the current pose as NAME ("go to NAME" later)
+  /poses          list taught poses
+  /help           this text
+  /quit           leave (Ctrl-D works too)
+"""
+
+
+def say(tag, payload):
+    """One line per stage, machine-readable, so a run log explains itself."""
+    if isinstance(payload, str):
+        print(f'{tag:8} {payload}', flush=True)
+    else:
+        print(f'{tag:8} {json.dumps(payload, default=str)}', flush=True)
+
+
+def confirm(prompt, auto_yes):
+    if auto_yes:
+        say('CONFIRM', 'auto-yes')
+        return True
+    try:
+        answer = input(f'{prompt} [y/N] ').strip().lower()
+    except EOFError:
+        return False
+    return answer in ('y', 'yes')
+
+
+def handle(text, parser, executor, args):
+    """Parse one utterance and, if allowed and confirmed, run it."""
+    result = parser.parse(text)
+    diag = {k: v for k, v in result.detail.items() if k != 'raw_response'}
+    say('PARSE', {'outcome': result.outcome.value, 'reason': result.reason_code.value,
+                  'backend': diag.get('backend'), 'latency_ms': diag.get('latency_ms'),
+                  'confidence': diag.get('confidence')})
+    if result.outcome is Outcome.REFUSED:
+        say('REFUSED', result.message)
+        return False
+
+    command = result.command
+    say('COMMAND', command.echo())
+
+    # Plan first, ask second: the person confirming sees what the plan
+    # actually does (joint swing, duration), not only the parsed sentence.
+    try:
+        preview = executor.run_command(command, plan_only=True)
+    except JogError as error:
+        say('BLOCKED', str(error))
+        return False
+    for stage in preview['stages']:
+        say('PLAN', stage)
+    if executor.plan_only:
+        return True
+
+    if result.outcome is Outcome.NEEDS_CONFIRMATION:
+        swing = max(stage['max_joint_excursion_rad'] for stage in preview['stages'])
+        seconds = sum(stage['nominal_seconds'] for stage in preview['stages'])
+        prompt = (f'{result.message} Plan: {swing:.2f} rad max joint swing, '
+                  f'~{seconds:.0f} s nominal before the pendant slider.')
+        if not confirm(prompt, args.yes):
+            say('SKIPPED', 'not confirmed')
+            return False
+
+    try:
+        report = executor.run_command(command)
+    except JogError as error:
+        say('BLOCKED', str(error))
+        return False
+    for stage in report['stages']:
+        say('EXEC', stage)
+    say('MEASURE', {'tool_delta_mm_xyz': report['measured_delta_mm']})
+    return True
+
+
+def main():
+    cli = argparse.ArgumentParser(description=__doc__,
+                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    cli.add_argument('--backend', default='keyword', choices=available(),
+                     help='intent-parser backend (keyword = offline rules; claude = LLM)')
+    cli.add_argument('--model', default='', help='backend model override')
+    cli.add_argument('--execute', action='store_true',
+                     help='really move the arm (default: plan only and report)')
+    cli.add_argument('--max-speed-percent', type=float, default=50.0,
+                     help='refuse to move if the pendant slider is above this')
+    cli.add_argument('--joint-rate', type=float, default=0.05,
+                     help='nominal rad/s for moves and go_to (before the pendant slider)')
+    cli.add_argument('--max-excursion', type=float, default=0.6,
+                     help='largest single-joint change a go_to may ask for, rad')
+    cli.add_argument('--mirror-lr', action='store_true',
+                     help="swap left/right so they match an audience facing the robot")
+    cli.add_argument('--yes', action='store_true',
+                     help='auto-confirm instead of prompting (scripted runs only)')
+    cli.add_argument('--no-confirm', action='store_true',
+                     help='do not ask before confident commands (default: always ask)')
+    cli.add_argument('--poses-file', default=DEFAULT_POSES_FILE,
+                     help='where taught poses are stored between runs')
+    cli.add_argument('--forget-poses', action='store_true',
+                     help='ignore poses stored from an earlier run')
+    cli.add_argument('--say', action='append', default=[], metavar='TEXT',
+                     help='run this sentence and exit (repeatable; no REPL)')
+    args = cli.parse_args()
+
+    try:
+        backend = create(args.backend, **({'model': args.model} if args.model else {}))
+    except BackendError as error:
+        cli.error(f'could not start backend "{args.backend}": {error}')
+
+    # Camera-free session: only the jog actions are enabled. A pick request is
+    # parsed fine and refused by *policy* -- which is the point worth showing.
+    policy = GuardrailPolicy(allowed_actions=schema.JOG_ACTIONS,
+                             require_confirmation=not args.no_confirm)
+    parser = IntentParser(backend, policy)
+
+    rclpy.init()
+    executor = JogExecutor(max_speed_percent=args.max_speed_percent,
+                           joint_rate=args.joint_rate, max_excursion=args.max_excursion,
+                           mirror_lr=args.mirror_lr, plan_only=not args.execute,
+                           poses_file=args.poses_file)
+    try:
+        executor.load_poses(SEED_POSES_FILE)
+        if not args.forget_poses:
+            executor.load_poses()
+        # "home" is wherever the arm is when the console starts: deterministic
+        # for the session, and never a typed absolute target.
+        home = executor.teach('home')
+        position, _ = executor.where()
+        say('READY', {'mode': 'EXECUTE' if args.execute else 'PLAN-ONLY',
+                      'backend': args.backend, 'confirm': not args.no_confirm,
+                      'max_speed_percent': args.max_speed_percent,
+                      'tool_xyz_m': [round(v, 4) for v in position],
+                      'home_joints': {k: round(v, 3) for k, v in home.items()},
+                      'poses': sorted(executor.poses)})
+
+        if args.say:
+            failures = 0
+            for text in args.say:
+                say('SAY', text)
+                if not handle(text, parser, executor, args):
+                    failures += 1
+            return 1 if failures else 0
+
+        print(HELP)
+        while True:
+            try:
+                text = input('arm> ').strip()
+            except EOFError:
+                print()
+                break
+            if not text:
+                continue
+            if text in ('/quit', '/exit', 'quit', 'exit'):
+                break
+            if text == '/help':
+                print(HELP)
+            elif text == '/where':
+                try:
+                    position, joints = executor.where()
+                    say('WHERE', {'tool_xyz_m': [round(v, 4) for v in position],
+                                  'joints': {k: round(v, 3) for k, v in joints.items()}})
+                except JogError as error:
+                    say('BLOCKED', str(error))
+            elif text.startswith('/teach'):
+                parts = text.split(maxsplit=1)
+                if len(parts) != 2 or not parts[1].replace(' ', '').isalnum():
+                    say('USAGE', '/teach NAME')
+                    continue
+                try:
+                    executor.teach(parts[1].lower())
+                    say('TAUGHT', {'pose': parts[1].lower(), 'poses': sorted(executor.poses)})
+                except JogError as error:
+                    say('BLOCKED', str(error))
+            elif text == '/poses':
+                say('POSES', {name: {k: round(v, 3) for k, v in joints.items()}
+                              for name, joints in executor.poses.items()})
+            elif text.startswith('/'):
+                say('USAGE', f'unknown command {text.split()[0]}; try /help')
+            else:
+                handle(text, parser, executor, args)
+        return 0
+    finally:
+        executor.destroy_node()
+        executor.motion.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    sys.exit(main())

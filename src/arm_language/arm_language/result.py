@@ -69,6 +69,15 @@ class ReasonCode(str, Enum):
     PLACE_TARGET_MISSING = 'place_target_missing'
     PLACE_TARGET_UNEXPECTED = 'place_target_unexpected'
 
+    # --- jog actions (move / rotate / go_to) ---
+    MOTION_FIELD_MISSING = 'motion_field_missing'
+    """A jog action without the parameter it needs (a move with no direction)."""
+    MOTION_FIELD_UNEXPECTED = 'motion_field_unexpected'
+    """A motion parameter on an action that has no use for it."""
+    MOTION_OUT_OF_BOUNDS = 'motion_out_of_bounds'
+    """Distance, angle or speed outside the bounds in :mod:`arm_language.schema`.
+    This is the refusal that makes "go up one metre" impossible by construction."""
+
     # --- semantic checks ---
     TARGET_EMPTY = 'target_empty'
     TARGET_NOT_NOUN_PHRASE = 'target_not_noun_phrase'
@@ -104,6 +113,15 @@ class Command:
     modifiers: Dict[str, str] = field(default_factory=dict)
     confidence: float = 0.0
 
+    # Jog parameters (schema.JOG_ACTIONS). After validation these are never
+    # None on the action that uses them: defaults have already been applied,
+    # so the executor reads numbers, not "maybe a number".
+    direction: Optional[str] = None
+    distance_cm: Optional[float] = None
+    speed_level: Optional[int] = None
+    angle_deg: Optional[float] = None
+    pose_name: Optional[str] = None
+
     def modifiers_json(self) -> str:
         """
         Return ``modifiers`` as the JSON string the ROS message carries.
@@ -123,6 +141,9 @@ class Command:
         utterance back would confirm nothing: the misparse is precisely the
         difference between the two.
         """
+        if self.action in schema.JOG_ACTIONS:
+            return self._echo_jog()
+
         # Modifiers the speaker used to identify the object normally survive
         # in `target_query` too ("red screwdriver"), so only the ones missing
         # from it are worth prepending — otherwise the echo reads "the red red
@@ -135,6 +156,21 @@ class Command:
         if self.action == schema.ACTION_PICK_AND_PLACE and self.place_target:
             return f'pick up the {described} and place it in the {self.place_target}'
         return f'pick up the {described}'
+
+    def _echo_jog(self) -> str:
+        """Echo for move / rotate / go_to, with every number the arm will use."""
+        if self.action == schema.ACTION_MOVE:
+            return f'move the tool {self.direction} by {self.distance_cm:g} cm'
+        if self.action == schema.ACTION_ROTATE:
+            level = self.speed_level or 0
+            spin = 'counter-clockwise' if level > 0 else 'clockwise'
+            pace = {1: 'slowly', 2: 'at medium speed', 3: 'fast'}.get(abs(level), '')
+            return (f'rotate the wrist {self.angle_deg:g} degrees {spin} '
+                    f'{pace} (speed {level:+d})')
+        offset = ''
+        if self.direction and self.distance_cm:
+            offset = f', then {self.direction} by {self.distance_cm:g} cm'
+        return f'go to the "{self.pose_name}" pose{offset}'
 
 
 @dataclass(frozen=True)

@@ -12,7 +12,8 @@ import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import rclpy
 from rcl_interfaces.srv import GetParameters
@@ -81,6 +82,21 @@ def setup(context):
     repo = Path(__file__).resolve().parents[1]
     config = repo / 'src/ur7e_pick_place_bringup/config'
     ik = yaml.safe_load((config / 'ur7e_kinematics.yaml').read_text())
+    if LaunchConfiguration('ik').perform(context) == 'kdl':
+        # The console's Cartesian jogs are 1 mm IK steps seeded from the
+        # previous one. Measured on the real arm 2026-09-30: pick_ik's local
+        # gradient descent planned the same 5 cm lateral move to 100% or 4%
+        # depending on encoder noise in the start sample, and to 0% once its
+        # accept threshold was tightened below the step. KDL's Newton-Raphson
+        # from the seed is the right tool for tiny steps; the path's
+        # revolute_jump_threshold still guards the wrist singularities that
+        # motivated pick_ik for the pick pipeline (task 1.4).
+        ik = {'ur_onrobot_manipulator': {
+            'kinematics_solver': 'kdl_kinematics_plugin/KDLKinematicsPlugin',
+            'kinematics_solver_search_resolution': 0.005,
+            'kinematics_solver_timeout': 0.05,
+            'kinematics_solver_attempts': 3,
+        }}
     controllers = yaml.safe_load((config / 'ur7e_moveit_controllers.yaml').read_text())
     ompl = yaml.safe_load((share / 'config/ompl_planning.yaml').read_text())
     ompl.update({
@@ -115,4 +131,11 @@ def setup(context):
 
 
 def generate_launch_description():
-    return LaunchDescription([OpaqueFunction(function=setup)])
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'ik', default_value='pick_ik', choices=['pick_ik', 'kdl'],
+            description='IK plugin for the arm group. kdl for the lab console '
+                        '(millimetre Cartesian jogs); pick_ik matches the pick '
+                        'pipeline configuration.'),
+        OpaqueFunction(function=setup),
+    ])

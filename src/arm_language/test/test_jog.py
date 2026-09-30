@@ -18,7 +18,7 @@ from arm_language.validator import ValidationError, validate
 
 
 def payload(action, **motion):
-    """A schema-shaped backend response for a jog action."""
+    """Return a schema-shaped backend response for a jog action."""
     body = {
         'action': action,
         'target_query': '',

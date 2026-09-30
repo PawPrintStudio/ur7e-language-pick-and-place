@@ -126,7 +126,8 @@ _ROTATE_SPEED_RE = re.compile(r'(?:at\s+)?speed\s+(?P<lvl>[+-]?\s*\d)')
 # "degrees" and leave "rees" behind as unexplained text.
 _ROTATE_ANGLE_RE = re.compile(r'(?:by\s+)?(?P<deg>\d+(?:\.\d+)?)\s*(?:degrees?|deg|°)')
 _ROTATE_CW_RE = re.compile(r'\b(?:clockwise|cw|to\s+the\s+right)\b')
-_ROTATE_CCW_RE = re.compile(r'\b(?:counter-?\s?clockwise|anti-?\s?clockwise|ccw|to\s+the\s+left)\b')
+_ROTATE_CCW_RE = re.compile(
+    r'\b(?:counter-?\s?clockwise|anti-?\s?clockwise|ccw|to\s+the\s+left)\b')
 
 # A pose request needs "to" after the verb ("go to the start pose", "return
 # to home") or the bare word "home" ("go home"). Without that anchor, "move

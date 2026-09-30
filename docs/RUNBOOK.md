@@ -768,10 +768,41 @@ controllers active, `/joint_states` live; robot RUNNING / NORMAL, program
    slow joint move with `--max-excursion 2.0`, instead of a blind
    `goto_named`.
 
-### Hardware execution
+### Hardware execution (pendant slider 10 %, Nikola at the pendant)
 
-_Pending Play on the pendant at the time of writing — results appended
-below when run._
+Every command below went through `lab_console.py --execute`: sentence →
+parse → MoveIt plan → re-time → `MotionClient.run()` → FK before/after.
+`MEASURE` is the tool displacement from joint feedback, in `base_link`.
+
+| Sentence | Plan | Result |
+|---|---|---|
+| `demo_01_nudge.py` (liveness) | wrist_3 ±0.05 rad | SUCCESSFUL; see the timeout note below |
+| "could you go up a bit?" | 25 waypoints, 0.056 rad swing | SUCCESSFUL, **(0.0, 0.0, +20.0) mm** |
+| "go down 2" | 25 waypoints | SUCCESSFUL, **(0.0, 0.0, −20.0) mm** |
+| "go left" | 210 waypoints, 0.63 rad swing (near-singular pose) | SUCCESSFUL, **(0.0, +50.0, 0.0) mm** |
+| "go home" (first try) | — | BLOCKED by the 0.6 rad per-command cap → default raised to 1.0 rad |
+| "go right" | 210 waypoints | SUCCESSFUL, **(0.0, −50.0, 0.0) mm** |
+| "go home" (joint-space plan) | 210 waypoints | SUCCESSFUL, **(−0.1, +50.1, +0.1) mm** — back on the taught pose |
+| "can you spin slowly?" | wrist_3 +30°, 174 waypoints, 0.03 rad/s nominal | SUCCESSFUL, tool moved (0.2, −0.1, 0.0) mm — pure rotation |
+| "spin at speed -1" | wrist_3 −30° | SUCCESSFUL, (0.0, 0.0, −0.1) mm |
+
+Nikola approved raising the pendant slider to 25 % after the spins (10 %
+made every command 10× its nominal time); the console's gate takes the
+new ceiling as `--max-speed-percent 25`.
+
+Two operational lessons:
+
+- **Budget wall time as nominal × (100 / slider %).** The nudge's 20 s
+  nominal trajectory takes ~200 s at 10 %; a 120 s client timeout killed the
+  client mid-goal. The robot kept executing the goal to completion (the
+  driver does not cancel on client death) — harmless here, but a console
+  must never assume a dead client means a stopped arm. `lab_console.py` now
+  waits for a stationary arm at startup instead of exiting.
+- **A restarted console must not re-teach `home`.** The first version taught
+  `home` at every start, so a restart after "go left" quietly redefined home
+  as the left pose and "go home" went the wrong way (correctly, to the wrong
+  place). Now `home` is kept from the session file; `--forget-poses` or
+  `/teach home` redefines it on purpose.
 
 ### Still open
 

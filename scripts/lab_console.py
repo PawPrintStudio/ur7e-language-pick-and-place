@@ -146,7 +146,10 @@ def main():
                      help='refuse to move if the pendant slider is above this')
     cli.add_argument('--joint-rate', type=float, default=0.05,
                      help='nominal rad/s for moves and go_to (before the pendant slider)')
-    cli.add_argument('--max-excursion', type=float, default=0.6,
+    # 1.0 rad: a 5 cm jog near the folded pose's singularity already costs
+    # 0.63 rad of shoulder_pan (measured 2026-09-30), and "go home" after it
+    # must not be refused; the folded-to-ready swing (1.85 rad) still is.
+    cli.add_argument('--max-excursion', type=float, default=1.0,
                      help='largest single-joint change a go_to may ask for, rad')
     cli.add_argument('--mirror-lr', action='store_true',
                      help="swap left/right so they match an audience facing the robot")
@@ -183,9 +186,26 @@ def main():
         if not args.forget_poses:
             executor.load_poses()
         # "home" is wherever the arm is when the console starts: deterministic
-        # for the session, and never a typed absolute target.
-        home = executor.teach('home')
-        position, _ = executor.where()
+        # for the session, and never a typed absolute target. The arm may
+        # still be settling from a previous command, so be patient here.
+        # A restarted console keeps the `home` it taught earlier (it is in
+        # the session file), so "go home" still means the pose the session
+        # started in, not wherever the arm happened to stop. --forget-poses
+        # or `/teach home` re-teaches it here and now.
+        for attempt in range(10):
+            try:
+                if 'home' in executor.poses:
+                    home = executor.poses['home']
+                    say('HOME', 'kept from the session file; /teach home to redefine')
+                else:
+                    home = executor.teach('home')
+                position, _ = executor.where()
+                break
+            except JogError as error:
+                say('WAIT', str(error))
+        else:
+            say('BLOCKED', 'could not read a stationary arm; is the driver up?')
+            return 2
         say('READY', {'mode': 'EXECUTE' if args.execute else 'PLAN-ONLY',
                       'backend': args.backend, 'confirm': not args.no_confirm,
                       'max_speed_percent': args.max_speed_percent,

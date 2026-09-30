@@ -163,7 +163,7 @@ def check_expectation(entry: dict, result: ParseResult) -> List[str]:
 
 def corpus_policy(**kwargs) -> guardrails.GuardrailPolicy:
     """
-    The policy the corpus is scored under: every motion action enabled.
+    Return the policy the corpus is scored under: every motion action enabled.
 
     The corpus measures whether the parser *understood* a sentence, so it must
     not be narrowed by a deployment's whitelist — a jog entry scored under the

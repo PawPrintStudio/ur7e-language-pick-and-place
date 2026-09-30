@@ -167,8 +167,13 @@ COMMAND_SCHEMA = {
             'type': 'object',
             'properties': {
                 'direction': {
-                    'type': ['string', 'null'],
-                    'enum': list(DIRECTIONS) + [None],
+                    # The API rejects `enum` next to a `["string", "null"]`
+                    # type list ("Enum value 'up' does not match declared
+                    # type", 2026-09-30), so nullable-enum is spelled anyOf.
+                    'anyOf': [
+                        {'type': 'string', 'enum': list(DIRECTIONS)},
+                        {'type': 'null'},
+                    ],
                     'description': (
                         'For move: which way the tool travels. For go_to: an '
                         'optional offset direction from the named pose. Null '

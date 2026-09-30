@@ -850,11 +850,42 @@ Two operational lessons:
   place). Now `home` is kept from the session file; `--forget-poses` or
   `/teach home` redefines it on purpose.
 
+### Claude backend on the jog vocabulary — 43/44, all 15 jog entries pass
+
+Nikola supplied a key (root `.env`, gitignored; passed to the container with
+`docker exec --env-file .env`, never on a command line). Three things had
+to be fixed before a single request succeeded, each of which would have
+looked like "the API is down" from the console:
+
+1. **No SDK in `ur7e-dev:latest`** — `pip install --user anthropic` (1.10.0).
+2. **`APIConnectionError: Connection error`, cause `TypeError: process()
+   takes no keyword arguments`.** `curl` to the API returned 200, so not the
+   network. The SDK's HTTP client (`httpx2`) decompresses responses with the
+   `brotli` module, and Ubuntu 22.04's apt `python3-brotli` 1.0.9 predates
+   the keyword it is called with. `pip install --user --upgrade brotli`
+   (1.2.0) fixed it. Worth remembering for the Jetson image too.
+3. **HTTP 400 `Invalid schema: Enum value 'up' does not match declared type
+   ['string', 'null']`** — the structured-output validator refuses `enum`
+   beside a type *list*. `motion.direction` is now spelled
+   `anyOf: [{string enum}, {null}]` in `schema.py`. The offline validator
+   never read the enum from the schema, so nothing else moved.
+
+Result (`docs/language-evidence/claude-corpus-acceptance-2026-09-30-jog.json`,
+model `claude-opus-5`, effort low): **43/44, 0 contract violations**. All 15
+jog entries pass, including the `llm_only` ones: "go up one metre" →
+`motion_out_of_bounds` (the model wrote 100 cm; the validator refused it),
+"lift it up slightly" → move up 2 cm, "turn off the robot" → reject. The
+one miss is `mod-003` ("wooden mallet" → material `wood`, corpus expects
+`wooden`), pre-existing and unrelated.
+
+Side effect to know: the SDK's dependency upgrade (anyio 4) broke the
+container's apt pytest 6.2.5 (`No module named _pytest.scope`, from anyio's
+pytest plugin); `pip install --user "pytest>=7,<9"` restores it. CI uses the
+plain `ros:humble` image and is unaffected.
+
 ### Still open
 
-- Claude backend on the jog vocabulary: run
-  `python3 -m arm_language.eval --backend claude` with a key; the 4 `llm_only`
-  jog entries are the ones that matter ("go up one metre" must refuse via
-  `motion_out_of_bounds`).
 - Gripper (1.1), TCP-vs-pendant mismatch, protective-stop drill: unchanged
   from 2026-09-28.
+- `mod-003` modifier normalisation (`wooden` vs `wood`) — decide whether the
+  corpus or the normaliser is right.

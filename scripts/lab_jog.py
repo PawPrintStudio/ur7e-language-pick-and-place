@@ -147,8 +147,16 @@ class JogExecutor(Node):
         """name -> position dict. NEVER index by position (see ur_motion)."""
         return dict(zip(state.joint_state.name, state.joint_state.position))
 
-    def gate(self):
-        """Raise unless the robot is in a state we are willing to move."""
+    def gate(self, listen_s=0.5):
+        """Raise unless the robot is in a state we are willing to move.
+
+        Spins first: subscriptions only deliver while the node spins, and a
+        gate that reads stale fields refuses a healthy robot with "no live
+        telemetry" (the teleop hand-over did exactly that, 2026-09-30).
+        """
+        until = time.monotonic() + listen_s
+        while time.monotonic() < until:
+            rclpy.spin_once(self, timeout_sec=0.05)
         problems = []
         if self.safety != SafetyMode.NORMAL:
             problems.append(f'safety mode is {self.safety}, not NORMAL')

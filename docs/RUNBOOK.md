@@ -818,9 +818,23 @@ as it will be shown** (`home` re-taught as `ready`):
 
 Eleven for eleven; every executed command returned action status
 SUCCEEDED with error_code 0, and every measured displacement matched the
-sentence to 0.1 mm. This is the state the arm was left in: on `ready`
-(tool at about (−0.22, 0.13, 0.50) m), program running, slider 25 %.
-Task 3.2 (#22) is done on hardware.
+sentence to 0.1 mm. Task 3.2 (#22) is done on hardware.
+
+**Replay at higher speed.** Nikola then approved 50 %, and the script was
+replayed: the first three moves landed identically (+20.0, −20.0, +50.0
+mm). Mid-run the pendant slider was moved to 67–70 %, and the console's
+execution gate refused the remaining five motion commands ("pendant speed
+70.0% is outside the approved 0-50% window") — the intended behaviour: the
+ceiling is an argument the operator gives the console, and a slider above
+it is treated as a changed agreement, not a faster demo. After explicit
+approval the rest ran at **70 %** with `--max-speed-percent 70`: go right
+−50.0 mm, both 30° spins (tool within 0.1 mm), home + 3 cm +30.0 mm, home
+−30.0 mm (0.3 mm residual). No speed veto, no protective stop, at any of
+10 / 25 / 50 / 70 % — the nominal joint rates (0.03–0.05 rad/s) are far
+enough inside the driver's guard that the slider alone sets the pace.
+
+State the arm was left in: on `ready` (tool at about (−0.22, 0.13, 0.50)
+m), program running, slider 70 %.
 
 Two operational lessons:
 

@@ -24,10 +24,13 @@ human."
 ## Setup (before the audience arrives)
 
 1. Robot on, pendant: `ros2_external_control.urp` loaded, speed slider at
-   **10 %** for the first command, then **25 %** (the setting the whole
-   script was verified at on 2026-09-30; at 10 % a 30° spin takes three
-   minutes). Start the console with the matching `--max-speed-percent`.
-   Workspace clear; someone at the pendant with a hand near the stop.
+   **10 %** for the first command, then whatever the operator approves —
+   the script was verified at 25 %, 50 % and 70 % on 2026-09-30 (at 10 % a
+   30° spin takes three minutes; at 70 % about 25 s). Start the console with
+   the matching `--max-speed-percent`: if the slider is moved above it
+   mid-show, the next command is refused until the console is restarted
+   with the new ceiling. That is deliberate. Workspace clear; someone at
+   the pendant with a hand near the stop.
 2. Laptop on the robot link (`nmcli con up ur-link`, ping `192.168.56.101`).
 3. Three terminals inside the lab container (`docker exec -it ur7e-lab-… bash`,
    `source install/setup.bash` in each):

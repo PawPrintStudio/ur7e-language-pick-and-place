@@ -60,6 +60,8 @@ A VSCode devcontainer (`.devcontainer/`) gives any member the full stack from `g
 - [Architecture & decisions](docs/ARCHITECTURE.md) — the full stack, resolved open questions, risks
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — phased plan; mirrors the GitHub issues/project board
 - [Runbook](docs/RUNBOOK.md) — verified lab procedures, session by session
+- [Live demo: talk to the arm](docs/DEMO_CONSOLE.md) — the camera-free language console, show script, voice and teleop
+- [Lab record 2026-09-30](docs/LAB_2026-09-30_LANGUAGE_CONSOLE.md) — what the console demo proved on hardware, findings, what is not yet verified
 - [Simulation & remote development](docs/SIMULATION.md) — devcontainer, mock hardware, URSim: working without the robot
 - [Task 2 software workflow](docs/TASK2_SOFTWARE.md) — camera-free perception, Gazebo pick, calibration tools, and validation
 - [References](docs/REFERENCES.md) — UR7e/RG2/ZED/Jetson key facts, links, and local vendor PDFs

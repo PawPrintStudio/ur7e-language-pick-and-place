@@ -130,7 +130,7 @@ pick acceptance or the motion-side guardrails.
 | # | Task | Acceptance criteria |
 |---|---|---|
 | 3.1 | `intent_parser` service: LLM → strict JSON schema (`action`, `target_query`, `modifiers`, `place_target`); cloud backend first, backend interface swappable (D5) | 20-utterance test set parses correctly incl. rejections of non-pick requests |
-| 3.2 | Command console: CLI node to submit text commands + watch workflow stage progress | Usable end-to-end entry point for demos |
+| 3.2 | Command console: CLI node to submit text commands + watch workflow stage progress — **done 2026-09-30** as `scripts/lab_console.py` with the camera-free jog vocabulary (move / rotate / go_to / teleop), verified on the real arm; pick commands join it when perception and the orchestrator land | Usable end-to-end entry point for demos |
 | 3.3 | Guardrails: whitelist of actions, confidence threshold, "did you mean" echo before motion (configurable) | Unknown/unsafe requests refused with clear message; no motion on parse failure |
 
 ## Phase 4 — Orchestration: the standardized workflow
@@ -149,7 +149,11 @@ Goal: "pick up the hammer" works end-to-end, repeatably, with defined failure be
 
 Not scheduled; pull in as capacity allows.
 
-- Voice input via whisper.cpp (CUDA) feeding the same `intent_parser`
+- Voice input via whisper.cpp (CUDA) feeding the same `intent_parser` —
+  **laptop prototype built 2026-09-30** (`scripts/voice_input.py`,
+  faster-whisper on CPU, file bridge into `lab_console.py --voice-inbox`);
+  the Jetson/whisper.cpp path and a recorded spoken command on hardware
+  remain
 - "Place it in/on X" — place-target detection reusing the perception path
 - Local LLM backend (Llama 3.2 3B via ollama) for offline operation
 - Multi-object disambiguation ("the *red* screwdriver") using modifier-aware re-ranking

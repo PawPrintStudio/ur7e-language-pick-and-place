@@ -110,6 +110,16 @@ second way to put a line in front of it:
    Push-to-talk: Enter, speak one sentence, Enter. The transcript is printed
    and appended to `scripts/.voice_inbox.txt`.
 
+   For a show, use hands-free instead — nobody has to touch that terminal:
+
+   ```bash
+   .venv-voice/bin/python scripts/voice_input.py --auto --wake robot
+   ```
+   It listens continuously and cuts an utterance after 0.8 s of quiet. With
+   `--wake robot` only sentences that start with "robot" are passed on
+   ("robot, go up a bit"), which keeps audience chatter out of the console.
+   Raise `--threshold` (default 0.02) in a loud room.
+
 2. Start the console with `--voice-inbox` (in addition to everything else).
    It tails that file and treats each new line as if it had been typed:
    `VOICE could you go up a bit?` → PARSE → COMMAND → PLAN → `[y/N]`. The
@@ -119,6 +129,10 @@ second way to put a line in front of it:
 Why local Whisper on the laptop today: no audio device in the container, no
 GPU needed for a small English model, and the plan's Jetson path
 (whisper.cpp, CUDA) is the same shape — record, transcribe, append a line.
+
+Status, honestly: capture, transcription and the bridge into the console
+were verified on 2026-09-30; a spoken command moving the arm was not
+recorded that day. Rehearse it before relying on it in front of people.
 
 ## If something goes wrong
 

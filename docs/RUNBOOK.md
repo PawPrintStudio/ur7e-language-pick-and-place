@@ -917,8 +917,65 @@ controller finished booting — normal, not a fault. Session-file poses
 (`home`, `ready`) are no longer within the go_to cap after a reboot that
 moved the arm; restart the console with `--forget-poses`.
 
+### Voice input (built late in the session; not recorded on hardware)
+
+`scripts/voice_input.py` runs on the laptop — the container has no sound
+device — and appends one transcript per line to `scripts/.voice_inbox.txt`,
+which `lab_console.py --voice-inbox` tails beside stdin. Push-to-talk
+(Enter / speak / Enter) and hands-free (`--auto`: 100 ms frames, utterance
+starts above `--threshold`, ends after 0.8 s of quiet).
+
+Verified: ALSA capture at 16 kHz mono; faster-whisper `small.en` on the
+laptop CPU at about a second per short utterance; an inbox line parsed and
+planned by the console through the bind mount (plan-only); the hands-free
+loop segmenting and transcribing live speech.
+
+Found on the way:
+
+- faster-whisper's PyAV decoder did not match the pip-resolved `av`
+  (`open() got an unexpected keyword argument 'metadata_errors'`). We record
+  the format ourselves, so the client decodes WAV with the standard library.
+- **3 s of room noise transcribed as "Go up."** — the vocabulary-biased
+  prompt makes Whisper hallucinate commands from near-silence. An RMS floor
+  drops quiet audio; the console's typed `[y/N]` is what actually stands
+  between a mis-hearing and motion.
+- The hands-free listener's first live utterance was a bystander talking
+  about Isaac ROS, transcribed faithfully. Hence `--wake WORD`.
+- A terminal tab that needs keystrokes was the wrong interface (the
+  push-to-talk tab went unused); hands-free replaced it for the demo.
+
+Not verified: a spoken command executed on the arm. The inbox at session
+end held only the two plan-only test lines.
+
+### Teleop hand-over (built; first live attempt hit a gate bug)
+
+"let me drive it" parsed correctly on the Claude backend (0.92) and was
+refused with "no live speed-scaling telemetry" while the robot was healthy:
+`hand_over()` called `gate()` before anything had spun the node. Fixed in
+`gate()` itself (listens for 0.5 s first) and verified against live
+telemetry — which then, correctly, refused because the slider was at 100 %
+against a 70 % ceiling. Nikola approved 100 % and ran typed commands at
+100 % (5 cm and 1 cm moves, exact). The hand-over to
+`teleop_keyboard.py` itself was not recorded after the fix.
+
+### Session end
+
+Summary and acceptance table: `docs/LAB_2026-09-30_LANGUAGE_CONSOLE.md`.
+The laptop then left the lab; link down and container exited afterwards
+(the robot's state at departure was not recorded from the laptop side).
+The session pose file predates the reboot — start the
+next console with `--forget-poses`.
+
 ### Still open
 
+- **First five minutes next time:** one spoken command confirmed and
+  executed (`voice_input.py --auto --wake robot`), and one teleop hand-over
+  with a joint jogged. Both are built and unrecorded.
+- **`ur7e_motion`'s Cartesian primitives on pick_ik** — today's finding says
+  they will not plan reliably at millimetre steps on the real description;
+  test them against KDL before the first physical pick.
+- Rebuild `ur7e-dev:latest` from the updated Dockerfile (SDK, brotli,
+  pytest 7).
 - Gripper (1.1), TCP-vs-pendant mismatch, protective-stop drill: unchanged
   from 2026-09-28.
 - `mod-003` modifier normalisation (`wooden` vs `wood`) — decide whether the

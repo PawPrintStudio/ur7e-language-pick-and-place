@@ -6,10 +6,12 @@ This is the explainer and operator guide for the single-camera path in `ur7e_per
 relates to the depth-camera path, start with the
 [package README](../src/ur7e_perception/README.md).
 
-> Status, 2026-10-02: the geometry is unit-tested on **rendered images** only. No accuracy has
-> been measured with a real camera on the real arm. Every number in this document is either a
-> default read from the code or a bound asserted by a test on rendered scenes, and is labelled.
-> `TODO(verify in lab)`: add the measured touch-verification results here once they exist.
+> Status before the 2026-10-02 lab session: the geometry is unit-tested on **rendered images**
+> only. Every number in the explanation below is either a default read from the code or a bound
+> asserted by a test on rendered scenes, and is labelled. **Update, 2026-10-02 evening:** the
+> path ran on the real arm with a real camera, in a variant without a printed board — one
+> object, one placement, 0.8 cm. See [What ran in the lab on 2026-10-02](#what-ran-in-the-lab-on-2026-10-02);
+> the board-based explanation is unchanged and still describes what the code does.
 
 ## The idea in one paragraph
 
@@ -664,9 +666,76 @@ node's heights still come from `lab_objects.yaml`. Once it is wired in, the heig
 a fallback and the rest of this path (board, touches, ray-plane intersection, shadow removal)
 stays the same.
 
+## What ran in the lab on 2026-10-02
+
+The explanation above is built around a printed board. In the lab no board could be printed, so
+the same geometry was fed differently — and this is what actually located an object for the
+first real pick. Chronology and every number: [RUNBOOK.md](RUNBOOK.md) (2026-10-02 entry);
+acceptance record: [LAB_2026-10-02_WEBCAM_PICK.md](LAB_2026-10-02_WEBCAM_PICK.md); the commands
+in order: [COLD_START.md](COLD_START.md) §3.
+
+- **The camera.** A ZED 2i on the laptop's USB port, used as a plain webcam (`/dev/video2`,
+  3840×1080 side by side, left half only, ~19 fps). No SDK, no GPU. Its factory intrinsics for
+  FHD (`fx` 1065.5 px, 8-coefficient rational distortion) came from
+  `calib.stereolabs.com/?SN=35717973` into [calibration/zed2i_SN35717973.conf](calibration/zed2i_SN35717973.conf)
+  and were loaded with `scripts/lab_table_calibration.py zed --conf …`. So the
+  [focal length section](#the-focal-length-why-one-view-is-not-enough) was not needed: the
+  factory file is better than anything a board sweep would estimate.
+- **Camera-to-robot without a board** (`scripts/lab_camera_calibration.py`). The gripper holds a
+  coloured object; `wave` moves it through a box grid of 27 poses at 3 heights (4–6 min at
+  50–70 % slider); in each frame the camera finds the object by colour (a strict and a loose
+  threshold, "lowest moving blob"); `solve` runs `solvePnPRansac` on the (robot pose, pixel)
+  pairs with the factory intrinsics. The robot's own kinematics replace the printed grid: the
+  arm *is* the board. Results over the day — the camera was bumped twice and recalibrated each
+  time (about 6 min): 0.68 px RMS over 11 poses (white plug, first position); 5.0 px over 24 of
+  27 (plug, second position); **3.2 px RMS over 15 of 17 poses** (blue toy hard hat, final
+  position; the three lowest poses nearest the base were skipped — wrist flip or platform
+  collision). `map` draws the `base_link` grid on a frame as a visual check: (0,0) landed on the
+  base foot and the clamps on their grid cells.
+- **The table plane by force, not by touching corners.** `touchdown --kind tips` lowers the
+  closed fingertips in 3 mm steps and watches the wrist force/torque sensor (baseline noise
+  ~0.1 N): the contact step went 0.82 → 39 N between tool0 z 0.150 and 0.147, so the plate is at
+  **tool0 z = 0.1485 m**. This number is independent of the camera and survives camera bumps.
+- **`--table-z`, the one number fixed by hand.** The wave records heights as "tool0 height when
+  the held object's centre is at the plate", so the unknown distance from flange to object
+  cancels out of the pose fit — but it reappears as the table height in that frame. A force
+  touchdown of the *held* object failed (a 10 N grip lets the object slide at 0.2 N), so the
+  value was fixed by setting the object down at a known point and comparing the camera's answer
+  (`scripts/lab_detect.py`): **0.2025** for the hat held by its brim. The first guesses
+  (0.1785 / 0.177) put objects 4–6 cm too far from the camera and one of them drove the jaws
+  onto the platform edge. Get this right before any pick.
+- **Fixed-camera mode.** `finish` writes `scripts/lab_table.json` with the camera pose stored in
+  it (`source: physical`); `webcam_node.py` then trusts that pose instead of re-solving a board
+  in every capture (`TableCalibration.fixed_view`). The trade is the one described in
+  [the frames section](#the-frames-and-the-chain): bump the camera and the stored pose is wrong,
+  so recalibrate. There is no board to hide, so the "board not visible" refusals do not apply.
+- **The near-edge estimator replaces the height list for compact objects.** The
+  [shadow-removal method](#5-the-height-problem) needs the object's height and, on the round hat,
+  eroded too much. `localize_on_table(..., object_height=None)` instead takes the silhouette's
+  edge nearest the camera (where the object meets the table, no shadow) and its width across the
+  viewing direction (not smeared at all), and puts the centre half that width behind the near
+  edge. No height needed; about 1 cm on rendered scenes. It is now the default
+  (`default_height_m: -1` in `scripts/lab_objects.yaml`); a listed height switches an object
+  back to shadow removal, which remains better for flat, box-like things of known height. The
+  hat's footprint came out as 8.0 × 7.4 cm.
+- **Detectors.** `backend:=auto` runs OWLv2 on the laptop CPU (~8 s per query; "blue helmet"
+  scored 0.13–0.20, "blue hat" fell below the 0.10 threshold) and falls back to the colour
+  detector. `blue` needed a saturation floor of 150: the black anodised breadboard reads as dark
+  navy and was once segmented whole as "blue".
+- **Accuracy observed:** camera (0.2356, 0.057) m vs the robot-placed hat at (0.24, 0.05) m —
+  **0.8 cm**. One object, one placement, one day. It is a data point, not a characterisation;
+  the ~10-object validation (task 2.6) is still to do.
+- **Caveats.** The benchmark that followed showed the weak spot is not this measurement but what
+  happens between measurements: the object is located once, then approached, grasped and set
+  down without the camera checking again, and a round object rolls after release. At the plate's
+  corner the hat's silhouette read as elongated (axis ratio 7.8) and the grasp yaw followed it.
+  Re-locating before APPROACH and confirming departure on LIFT are the next items. The stereo
+  height module below is still not wired into the node.
+
 ## Limits
 
-- **No real-world accuracy has been measured.** See the status note at the top.
+- **Real-world accuracy has been measured once** — 0.8 cm, one object, one placement, with the
+  print-free variant above. That is a data point, not a characterisation.
 - **Height is assumed, not measured,** and the X/Y answer depends on it.
 - **Upright, convex-ish shapes only.** The shadow removal assumes vertical sides. Overhangs,
   leaning objects and objects lying on other objects are outside the model.

@@ -980,3 +980,199 @@ next console with `--forget-poses`.
   from 2026-09-28.
 - `mod-003` modifier normalisation (`wooden` vs `wood`) — decide whether the
   corpus or the normaliser is right.
+
+## 2026-10-02 — lab session: webcam-only language pick (first end-to-end success)
+
+Goal of the day: the whole chain on the real robot — sentence → camera → grasp pose → planned
+motion → real gripper → object in the air — with the laptop running everything (Jetson absent)
+and whatever camera was at hand. Times below are approximate wall clock; the evidence files
+under `docs/evidence/` and the stamps in `scripts/lab_table.json` are in UTC. Summary and
+acceptance table: [LAB_2026-10-02_WEBCAM_PICK.md](LAB_2026-10-02_WEBCAM_PICK.md). The
+copy-paste bring-up distilled from this day: [COLD_START.md](COLD_START.md).
+
+### ~15:30 — bring-up (laptop, direct Ethernet, new container)
+
+- Robot over `nmcli con up ur-link` (192.168.56.1 ↔ .101), PolyScope 5.23.
+- Container `ur7e-lab-20261002` from `ur7e-task2:visual` (has torch and the OWLv2 weights),
+  `--network host --init`, `/dev/video*` passed through. A stale `build/install` from an old
+  mount path had to be deleted as root and rebuilt: 16 packages, 15 s.
+- The laptop webcam gave only black frames (privacy shutter). The **ZED 2i was plugged into the
+  laptop as a plain USB camera** — no SDK, no GPU: `/dev/video2`, 3840×1080 YUYV side by side at
+  ~19 fps, left half = left lens. Factory calibration fetched from
+  `https://calib.stereolabs.com/?SN=35717973` into `docs/calibration/zed2i_SN35717973.conf`
+  (FHD fx 1065.5 px, 8-coefficient rational distortion, baseline 119.891 mm) and loaded with
+  `scripts/lab_table_calibration.py zed --conf …`.
+- **CycloneDDS participant index.** The 11th node failed with "Failed to find a free participant
+  index for domain 42": discovery here goes over loopback by unicast and the default range is
+  about ten participants per host. Fix: `scripts/lab_env.sh` sets `CYCLONEDDS_URI` with
+  `MaxAutoParticipantIndex` 120 — source it in **every** container shell; the driver had to be
+  restarted to pick it up.
+
+### 15:5x — RG2 over XML-RPC with the External Control program running
+
+`rg_grip` / `rg_get_all_variables` on the OnRobot URCap's XML-RPC server, 60 → 80 → 60 mm,
+**program stayed running**. This is the thing every earlier session assumed impossible (the
+2026-09-28 adapter required the program stopped). The pendant hand-off program
+([URCAP_HANDOFF.md](URCAP_HANDOFF.md)) is therefore not needed; it stays as an alternative.
+
+Gripper lessons collected over the day, in the order they bit:
+
+1. **Never command empty jaws below ~5 mm.** The stall at the mechanical stop registers as a
+   grip; when the jaws open again the URCap's "grip lost" guard stops the program. Happened once.
+   Recovery: dismiss the popup, Play.
+2. **Fingertip safety latch** (`s1_triggered`, `safety_failed`) tripped once while an object was
+   being pushed between the pads. Reset only from the pendant's OnRobot toolbar (a tool power
+   cycle also works). Afterwards the width read −17 mm until the jaws had moved once.
+3. **`busy` stays on while the jaws squeeze an object that settles**, and `width` shrinks
+   although the object is still held — the hat went 74 → 51 mm as it slid from dome to brim.
+   The first drop detector read that as a drop and aborted a run with the hat in the air. Now a
+   drop means width < miss width + 2 mm (`lab_pick.py`), and `gripper_busy` is waited out.
+4. RG2 `depth` is the fingertip retraction at the current width: 7 mm at 59 mm, 14.8 mm at
+   80 mm.
+5. Flange (tool0) to closed fingertips ≈ 0.258 m, derived from the touchdown and the base-foot
+   pixel check — not from the pendant (#10 stays open).
+
+### ~16:15–17:55 — camera calibration without a printed board, and finding the table
+
+No board could be printed, so `scripts/lab_camera_calibration.py` does it the other way round:
+the gripper holds an object, the arm moves it through a box grid (`wave`: 27 poses, 3 heights,
+~4–6 min at 50–70 % slider), the camera finds the object in each frame (strict + loose colour
+thresholds, "lowest moving blob"), `solve` runs `solvePnPRansac` with the factory intrinsics,
+`touchdown --kind tips` finds the plate by force, `finish --table-z` writes
+`scripts/lab_table.json` in fixed-camera mode, and `map` draws the base grid on a frame.
+
+| Attempt | Object | Camera position | Result |
+|---|---|---|---|
+| 1 | white plug | first | **0.68 px RMS, 11 poses** — then the camera was bumped |
+| 2 | white plug | second | 5.0 px, 24 of 27 poses |
+| 3 | blue toy hard hat | final (~0.72 m from the base, about (0.72, 0.43) m, looking down ~29°) | **3.2 px RMS, 15 of 17 poses** — the three lowest poses nearest the base were skipped (wrist flip / platform collision) |
+
+The camera was moved by accident three times during the day; each time the calibration was
+redone (about 6 min). `map` was checked by eye each time: (0,0) on the base foot, the clamps on
+their grid cells.
+
+**The table geometry, which cost the most time.** The robot sits on a raised platform; the pick
+plate in front is a *second* piece about 11 cm below the robot's mounting plane (Nikola: "I added
+a piece of table… offset the end by 10 cm up"), and the clamp area behind it is lower still.
+Measured by force with the closed fingertips (wrist F/T, baseline noise ~0.1 N, 3 mm steps):
+contact step 0.82 → 39 N between tool0 z 0.150 and 0.147, so **the plate is at tool0 z =
+0.1485 m**. Earlier probes at (0.30, 0.12) and (0.33, 0.10) found nothing because those points
+are *beyond the plate's front edge* (x ≈ 0.30) — the white plug released there fell on the
+floor. Plate usable area in `base_link` ≈ x 0.14–0.30, y −0.07–0.22, now the default
+`workspace` in `lab_pick.py`. `scripts/lab_obstacles.yaml` gives the planner the platform
+(x ≤ 0.14, z −0.12..0), both toggle clamps, and a keep-out box around the camera.
+
+**`--table-z`.** The wave heights live in the frame "tool0 height when the held object's centre
+is at the plate", so the unknown flange-to-object distance cancels. The one number that must be
+fixed empirically is the table height in that frame. A touchdown of the *held* plug by force did
+not work (a 10 N grip lets the object slide at 0.2 N). What worked: set the object down at a
+known point, compare with `scripts/lab_detect.py`. Result **0.2025** for the hat held by its
+brim; the first guesses (0.1785 / 0.177) put objects 4–6 cm too far from the camera, and one of
+those errors put the jaws onto the platform edge (protective stop, below).
+
+### Perception (`webcam_perception_node`, fixed-camera mode)
+
+Same two services as the RGB-D node. `backend:=auto` = OWLv2 on the CPU (~8 s per query; "blue
+helmet" 0.13–0.20 confidence, "blue hat" below the 0.10 threshold) with a colour-blob fallback.
+`blue` needed a saturation floor of 150: the black anodised breadboard reads as dark navy and
+was once segmented whole as "blue". The original "shadow erosion" height model needs the object
+height and over-eroded the round hat; the **near-edge estimator**
+(`localize_on_table(..., object_height=None)`: nearest silhouette edge plus the width across the
+view, no height needed, ~1 cm on rendered scenes) is now the default and gave the hat's
+footprint as 8.0 × 7.4 cm. Accuracy observed, one object, one placement: camera (0.2356, 0.057)
+vs robot-placed (0.24, 0.05) — **0.8 cm**. Tests: `test_monocular.py` 16, `test_stereo.py` 15
+(stereo height exists, not wired into the node), `test_lab_pick.py` 14, orchestrator 39.
+
+### ~18:05 — "pick up the blue hat"
+
+All picks at 70 % slider, 15 N, jaws open to 108 mm, grasp 25 mm up the dome
+(`--open-mm 108 --force 15 --tip-clearance 0.025`). Path: `scripts/lab_pick.py` → keyword
+parser → `ur7e_orchestrator` → `LabAdapters` (MoveIt via `lab_jog`, RG2 via XML-RPC,
+perception services).
+
+Failures on the way there, each with its lesson:
+
+- 100 mm jaws and 8 mm tip clearance → **protective stop**: the RG2's fingers slope inward above
+  the pads and the 85 mm dome met them. Hence 108 mm and 25 mm.
+- A 6 cm perception error (the too-low `--table-z`) put the jaws onto the raised platform edge →
+  **protective stop**.
+- The white plug, released beyond the plate's front edge, dropped to the floor.
+- Plan-only rehearsal passed; the first real run went APPROACH ok, GRASP 74.2 mm grip detected,
+  LIFT ok — then the over-strict drop check aborted it with the hat in the air, held (gripper
+  lesson 3).
+
+After the drop-check fix: **full run succeeded** — PARSE / OBSERVE / DETECT (8 s) / LOCATE /
+PLAN / APPROACH (27 s) / GRASP (71.4 mm) / LIFT / RETREAT (set down) / HOME, **87 s**. The
+first complete language-directed pick on the real robot, with a webcam and no Jetson.
+
+**Protective stop recovery used today (three times):** Unlock on the pendant → kill and relaunch
+the driver → Play. After a driver restart with the program stopped, Play alone left
+`scaled_joint_trajectory_controller` inactive ("Can't accept new action goals. Controller is not
+running"); this fixed it:
+
+```bash
+ros2 service call /controller_manager/switch_controller controller_manager_msgs/srv/SwitchController \
+  "{activate_controllers: [scaled_joint_trajectory_controller], strictness: 1, activate_asap: true}"
+```
+
+The controller_stopper logged "Could not activate requested controllers" once. On the software
+side each protective stop became a clean abort (`abort()` → dashboard stop); motion goals now
+time out and cancel instead of hanging.
+
+### ~18:15 — benchmark (`lab_benchmark.py pick --area …`)
+
+The object is set down at a new random spot inside `--area` after each run. Three launches:
+
+1. Failed at run 1: `gripper_busy` — fixed by waiting out `busy`.
+2. Failed at run 2: `motion_blocked`, "arm still moving" right after a release — `fresh()` now
+   waits up to 4 s for the arm to settle.
+3. Four software-reported successes (99–102 s each), then **run 5 aborted** (`stage_timeout`):
+   the hat had rolled to the plate's left-front corner, the silhouette there looked elongated
+   (axis ratio 7.8), the planner turned the wrist 75° to align, the lift stalled near the
+   wrist_3 limit, and the orchestrator stopped the program after 120 s.
+
+**Operator verdict (Nikola, watching): only the first pick of the day was a clean grasp; in the
+later runs the gripper grazed, gripped the hat badly, or missed it, while the software still
+reported success because its criterion was only "jaws closed on something".** The benchmark does
+NOT demonstrate ≥ 80 % success. `docs/evidence/pick-benchmark-2026-10-02-blue-hat.{md,json}`
+are the software's view and say so at the top.
+
+Two root causes named by Nikola, now the next work items: (1) nothing re-checks the object's
+position before or during a run — after a release the object can roll; the camera should confirm
+the object left the table on LIFT and re-locate before APPROACH; (2) every object is grasped the
+same way (top-down, fixed heights and widths) — irregular shapes need a per-object grasp and
+approach estimate (where to close, how wide, how high, which yaw), ideally from the camera.
+
+### Other evidence produced today
+
+- `docs/evidence/ik-solver-comparison-2026-10-02.{md,json}` (#38): mock hardware with the
+  calibrated description. KDL and pick_ik both 30/30 at every step size with the retuned yaml;
+  pick_ik accuracy ~1 mm / 3 mrad vs KDL 0.01 mm; weight 1.0 reproduces the lab's 2 %.
+  Recommendation: KDL for the Cartesian segments, keep the retuned values.
+  `revolute_jump_threshold` is ignored by this MoveIt — only `lab_jog.audit` guards joint jumps.
+- `src/ur7e_orchestrator` (#24 / #25) with README; `docs/COLD_START.md` (#28).
+
+### ~18:40 — session end
+
+Program stopped after run 5's abort; hat at the plate's left-front corner. Issue dispositions
+and what was not done are in the lab record.
+
+### Recovery sequences that worked today (quick reference)
+
+| Symptom | What worked |
+|---|---|
+| Protective stop | pendant Unlock → kill and relaunch the driver → Play → `switch_controller` activation if a goal is REJECTED |
+| "grip lost" popup, program stopped | dismiss, Play; cause: empty jaws commanded to 0 mm |
+| RG2 `safety_failed` / `s1_triggered` | pendant OnRobot toolbar reset (or tool power cycle), then move the jaws once |
+| "Failed to find a free participant index" | the process was started without `scripts/lab_env.sh`; source it, restart that process (the driver too if it was the one) |
+| "Controller is not running" after Play | `switch_controller` activation (command above) |
+| Camera moved | calibration §3 of [COLD_START.md](COLD_START.md) again; the tips touchdown can be skipped |
+
+### Still open
+
+- Root causes 1 and 2 above, then a benchmark judged by a human, not by jaw width.
+- Not-found / grasp-miss retries on hardware (#25); `safety_monitor` drill (#13); voice + teleop
+  recording (#39); ~10-object validation (#20); three-object demo (#26); 1.7 ten runs (#14);
+  2.5 five-touch verification (#19); TCP vs pendant (#10).
+- Stereo height from the ZED's second lens: tested on rendered pairs, not wired into the node.
+- Jetson / ZED SDK (#15, #16): today's USB-ZED path is a documented alternative; decision pending.

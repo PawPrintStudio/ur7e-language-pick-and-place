@@ -28,6 +28,20 @@ Goal: the Jetson reliably commands the UR7e with correct kinematics, and the rep
 
 Goal: the arm picks a known object from a hardcoded pose with a real gripper, under MoveIt2, safely. This proves the entire motion+gripper stack.
 
+**2026-10-02 status (lab, laptop in place of the Jetson):** the gripper question is settled —
+the RG2 answers XML-RPC grip commands **while the External Control program is running**, so arm
+and gripper work in one session without the pendant hand-off (the
+[hand-off procedure](URCAP_HANDOFF.md) stays as an alternative; #8's raw-RS485 route is closed
+as deferred). The combined stack executed a real, camera-located pick: "pick up the blue hat",
+PARSE → … → HOME in 87 s at 70 % slider, 15 N, jaws 108 mm. The pick plate was measured by force
+(closed fingertips meet it at tool0 z = 0.1485 m; it is a separate piece ~11 cm below the robot's
+mounting plane) and `scripts/lab_obstacles.yaml` gives the planner the platform, the clamps and
+the camera. Protective stop → clean abort was exercised three times through the orchestrator;
+the `safety_monitor` drill as such (1.6 / #13) was not performed. 1.7's ten-run series was not
+attempted; TCP vs pendant (#10) was not compared. Solver evidence for the Cartesian segments:
+[ik-solver-comparison-2026-10-02.md](evidence/ik-solver-comparison-2026-10-02.md) (#38,
+recommends KDL). Record: [LAB_2026-10-02_WEBCAM_PICK.md](LAB_2026-10-02_WEBCAM_PICK.md).
+
 **2026-09-28 direct-Ethernet follow-up:** laptop-to-robot connection and factory
 calibration are verified. RS485 Daemon is now installed and port 54321 responds,
 but raw RTU width feedback remains invalid. The installed OnRobot 6.5.0 native
@@ -71,18 +85,32 @@ See the lab record's end-of-day issue table for the remaining criteria.
 
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 1.1 | RG2 v2 on the **direct tool connector**, using OnRobot URCap + documented ROS handoff (D6, revised 2026-09-29) | Native standalone control passed. Handoff coordinator and [pendant procedure](URCAP_HANDOFF.md) prepared with offline tests; stationary real handoff/return acceptance remains open. Raw RS485 is deferred, not a prerequisite. |
-| 1.2 | `GripperCommand` action wrapping an RG2 backend; retain the action interface across backends | **Real standalone bench acceptance passed:** native OnRobot adapter, `/gripper_action_controller/gripper_cmd`, metre/newton inputs, open/return at 5/10 N, width feedback, invalid-goal rejection and cancellation. Current lab bounds: 40–80 mm, <=20 mm steps, <=10 N, arm program stopped. Combined-bringup integration is still pending; measured force is unavailable. |
+| 1.1 | RG2 v2 on the **direct tool connector**, using OnRobot URCap + documented ROS handoff (D6, revised 2026-09-29) | Native standalone control passed. Handoff coordinator and [pendant procedure](URCAP_HANDOFF.md) prepared with offline tests. **2026-10-02: the hand-off is not needed** — XML-RPC grip commands worked with the External Control program running; the pendant procedure is kept as an alternative. Raw RS485 is deferred, not a prerequisite (#8 closed). |
+| 1.2 | `GripperCommand` action wrapping an RG2 backend; retain the action interface across backends | **Real standalone bench acceptance passed:** native OnRobot adapter, `/gripper_action_controller/gripper_cmd`, metre/newton inputs, open/return at 5/10 N, width feedback, invalid-goal rejection and cancellation. Current lab bounds: 40–80 mm, <=20 mm steps, <=10 N, arm program stopped. **Combined operation done 2026-10-02:** real picks at 15 N, jaws to 108 mm, with the arm program running (`scripts/lab_pick.py` adapters over XML-RPC); measured force is still unavailable. |
 | 1.3 | Combined URDF/xacro: UR7e + RG2 (start from `tonydle/UR_OnRobot_ROS2`) + table collision geometry + static overhead-camera frame; static TCP/payload set (≈[0,0,200 mm], 0.78 kg + 0.2 kg QC) | `robot_state_publisher` + RViz shows correct model; TCP verified against pendant — **done & sim-verified** (URDF parses, full kinematic tree confirmed via `check_urdf`; table + pick/place objects added as a MoveIt planning scene, not baked into the URDF — see `ur7e_pick_place_bringup/README.md`); **TCP-vs-pendant check is lab-only** |
-| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); **`pick_ik` as IK solver** (kinematics.yaml); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test — **done & sim-verified**: `pick_ik/PickIkPlugin` confirmed live via `ros2 param get`, `home`/`observe` both reachable, and the table collision is real (a demo run that got too close to the table failed to plan until the sequence was routed clear of it — see RUNBOOK) |
+| 1.4 | MoveIt2 config for combined model (base: `UR_OnRobot_ROS2` / `ur_moveit_config`); **`pick_ik` as IK solver** (kinematics.yaml); named poses: `home`, `observe` (clear of camera view) | Plans execute on robot via scaled JTC; collision with table prevented in test — **done & sim-verified**: `pick_ik/PickIkPlugin` confirmed live via `ros2 param get`, `home`/`observe` both reachable, and the table collision is real (a demo run that got too close to the table failed to plan until the sequence was routed clear of it — see RUNBOOK). **2026-10-02:** on mock hardware with the calibrated description, KDL and pick_ik both plan 30/30 with the retuned yaml, but KDL follows the line to 0.01 mm against pick_ik's ~1 mm / 3 mrad; the evidence (#38) recommends KDL for the Cartesian segments |
 | 1.5 | `motion_node`: motion primitives (goto named pose, approach-above(pose), cartesian descend/lift, retreat) **built on `pymoveit2`** (official `moveit_py` is not available on Humble binaries) | Each primitive callable as an action; unit-tested against mock hardware — **done & sim-verified**: all five primitives exercised individually and as part of the full 1.7 sequence over `ExecutePrimitive` (`ur7e_interfaces`); named poses resolved live from the running SRDF, not hardcoded |
-| 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" — **written, not yet run**: needs tier 2 (URSim) or the real robot, since mock hardware has no dashboard/safety system to watch |
-| 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs — **sim leg done**: `scripts/pick_place_demo.py` runs the full sequence end-to-end against tier 1 (exit 0); **the ≥9/10-real-runs acceptance is lab-only** |
-| 1.8 | Gazebo sim world (D7 tier 3, motion half): `ur_simulation_gz` (`ur_type:=ur7e`) + RG2 xacro attached with sim inertials/mimic joints + DetachableJoint grasp latch + table/objects world | The 1.7 scripted pick sequence runs end-to-end in Gazebo on a machine with no lab access — **motion half done & verified** (`src/ur7e_gazebo`: MoveIt2 → motion_node → real Gazebo physics confirmed end-to-end, arm moves under actual dynamics); **grasp latch (DetachableJoint) and reliable gripper actuation in sim are open** — root-caused in detail, not yet resolved, see `src/ur7e_gazebo/README.md` |
+| 1.6 | `safety_monitor`: watch `safety_mode`/`robot_program_running`/speed scaling; abort-to-IDLE on protective stop; assisted recovery service (Q8) | Induced protective stop → clean abort, logged; recovery service restores "ready" — **written, not yet run**: needs tier 2 (URSim) or the real robot, since mock hardware has no dashboard/safety system to watch. **2026-10-02:** three protective stops on hardware each became a clean abort through the orchestrator's `abort()` → dashboard stop; recovery was manual (Unlock → driver restart → Play). The `safety_monitor` package's own drill (#13) is still not performed |
+| 1.7 | **Demo: scripted pick** of one object at a taped, hardcoded pose → lift → place at second pose → home | ≥ 9/10 success over 10 consecutive runs — **sim leg done**: `scripts/pick_place_demo.py` runs the full sequence end-to-end against tier 1 (exit 0); **the ≥9/10-real-runs acceptance is lab-only** — a first complete physical pick (camera-located rather than taped) ran 2026-10-02; the ten-run series was not attempted (#14 open) |
+| 1.8 | Gazebo sim world (D7 tier 3, motion half): `ur_simulation_gz` (`ur_type:=ur7e`) + RG2 xacro attached with sim inertials/mimic joints + DetachableJoint grasp latch + table/objects world | The 1.7 scripted pick sequence runs end-to-end in Gazebo on a machine with no lab access — **motion half done & verified** (`src/ur7e_gazebo`: MoveIt2 → motion_node → real Gazebo physics confirmed end-to-end, arm moves under actual dynamics); **grasp latch verified** — the full fresh-start Gazebo sequence ("close, latch and 10 cm lift succeeded") is recorded in [TASK2_SOFTWARE.md](TASK2_SOFTWARE.md); #30 closed 2026-10-02 against that reference. Sim results do not sign off physical contact quality |
 
 ## Phase 2 — Perception (see and locate)
 
 Goal: given a noun phrase, return an accurate grasp pose in `base_link`.
+
+**2026-10-02 status (first real camera on the real arm):** the ZED 2i was used as a plain USB
+camera on the laptop (no SDK, no Jetson, left lens only, factory intrinsics from
+`docs/calibration/zed2i_SN35717973.conf`). Calibration without a printed board
+(`scripts/lab_camera_calibration.py`: the gripper waves an object, `solvePnPRansac`, table by
+force): **3.2 px RMS over 15 of 17 poses**. `webcam_perception_node` in fixed-camera mode,
+OWLv2 on the CPU (~8 s per query) with a colour fallback, and the height-free near-edge
+estimator located a robot-placed object to **0.8 cm** — one object, one placement. On that
+evidence 2.4 / #18 and 2.3 / #17 are closed (OWLv2 on the laptop is the deployed detector;
+NanoOWL on a Jetson stays an adapter for later). Not done: the five-touch verification
+(2.5 / #19), the ~10-object validation (2.6 / #20). 2.1 / 2.2 (#15 / #16) are pending a
+decision — the USB-ZED path is a documented alternative. The stereo height module
+(`stereo.py`) is tested on rendered pairs but not wired into the node. Explainer and lab
+section: [SINGLE_CAMERA_PERCEPTION.md](SINGLE_CAMERA_PERCEPTION.md).
 
 **Software milestone (2026-09-25):** camera-free RGB-D/replay, detection and
 localization services, calibration/evaluation tools, and the complete Gazebo
@@ -95,11 +123,11 @@ OWLv2 Gazebo pipeline logs (reviewed 2026-09-28).
 
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 2.1 | ZED 2i platform setup: ZED SDK 5.2+/JetPack 6.2 install, pre-optimize neural-depth TensorRT models (slow first run), build rigid overhead mount ~1 m over the table | `ZED_Diagnostic` clean; camera streams; mount doesn't flex |
+| 2.1 | ZED 2i platform setup: ZED SDK 5.2+/JetPack 6.2 install, pre-optimize neural-depth TensorRT models (slow first run), build rigid overhead mount ~1 m over the table | `ZED_Diagnostic` clean; camera streams; mount doesn't flex — **2026-10-02:** the ZED was instead used as a USB camera on the laptop (no SDK, no Jetson) from a front-left mount ~0.72 m from the base; decision between the two paths pending (#15 / #16 open) |
 | 2.2 | `zed-ros2-wrapper` bringup tuned for the 8GB Nano: HD720@15, `NEURAL_LIGHT`, positional tracking off + `depth_stabilization: 0`, point cloud off; rosbag capture tooling | Registered RGB-D topics ≥ 15 FPS; GPU ≤ ~40% during capture (`tegrastats`); bags recorded for offline dev |
-| 2.3 | NanoOWL + NanoSAM runtime via jetson-containers; `perception_node` `DetectObject` service (D3) | Query "hammer" on live capture → correct mask; latency and `tegrastats` memory recorded |
-| 2.4 | `locator_node`: mask + depth → centroid + principal axis → top-down grasp `PoseStamped`; workspace-bounds rejection | On a marker of known position: localization error measured and < 1 cm |
-| 2.5 | Hand-eye calibration: ChArUco board on the gripper + easy_handeye2 **eye-to-hand**; publish static camera→base transform; touch-point verification gate + workspace calibration-check marker (D4) | Arm touches detected marker within 1 cm, 5/5 attempts |
+| 2.3 | NanoOWL + NanoSAM runtime via jetson-containers; `perception_node` `DetectObject` service (D3) | Query "hammer" on live capture → correct mask; latency and `tegrastats` memory recorded — **2026-10-02:** OWLv2 on the laptop CPU is the deployed detector (~8 s per query, "blue helmet" 0.13–0.20) with a colour-blob fallback; NanoOWL on a Jetson stays an adapter for later (#17 closed) |
+| 2.4 | `locator_node`: mask + depth → centroid + principal axis → top-down grasp `PoseStamped`; workspace-bounds rejection | On a marker of known position: localization error measured and < 1 cm — **2026-10-02:** 0.8 cm against a robot-placed object with the single-camera node's near-edge estimator (#18 closed); the marker protocol itself was not run |
+| 2.5 | Hand-eye calibration: ChArUco board on the gripper + easy_handeye2 **eye-to-hand**; publish static camera→base transform; touch-point verification gate + workspace calibration-check marker (D4) | Arm touches detected marker within 1 cm, 5/5 attempts — **2026-10-02:** a print-free alternative ran on hardware (`scripts/lab_camera_calibration.py`, 3.2 px RMS, 15 of 17 poses, table by force); the five-touch verification is not done (#19 open) |
 | 2.6 | Perception validation harness: scripted eval over ~10 makerspace objects (tools, blocks) with success/latency report | Detection ≥ 8/10 objects; report committed |
 | 2.7 | Sim camera + dev perception backend (D7 tier 3, vision half): Fortress `rgbd_camera` at the overhead pose bridged via `ros_gz_bridge` (optical-frame TF, sensor QoS); pluggable `perception_node` backend — HuggingFace OWLv2 on dev machines, NanoOWL on Jetson, same service | Full PARSE→…→GRASP pipeline dry-runs in Gazebo without lab or Jetson |
 
@@ -130,20 +158,33 @@ pick acceptance or the motion-side guardrails.
 | # | Task | Acceptance criteria |
 |---|---|---|
 | 3.1 | `intent_parser` service: LLM → strict JSON schema (`action`, `target_query`, `modifiers`, `place_target`); cloud backend first, backend interface swappable (D5) | 20-utterance test set parses correctly incl. rejections of non-pick requests |
-| 3.2 | Command console: CLI node to submit text commands + watch workflow stage progress — **done 2026-09-30** as `scripts/lab_console.py` with the camera-free jog vocabulary (move / rotate / go_to / teleop), verified on the real arm; pick commands join it when perception and the orchestrator land | Usable end-to-end entry point for demos |
+| 3.2 | Command console: CLI node to submit text commands + watch workflow stage progress — **done 2026-09-30** as `scripts/lab_console.py` with the camera-free jog vocabulary (move / rotate / go_to / teleop), verified on the real arm; **2026-10-02:** `--pick` adds the pick actions (webcam perception node + orchestrator) and was the entry point for the first real pick | Usable end-to-end entry point for demos |
 | 3.3 | Guardrails: whitelist of actions, confidence threshold, "did you mean" echo before motion (configurable) | Unknown/unsafe requests refused with clear message; no motion on parse failure |
 
 ## Phase 4 — Orchestration: the standardized workflow
 
 Goal: "pick up the hammer" works end-to-end, repeatably, with defined failure behavior.
 
+**2026-10-02 status:** 4.1 is built (`src/ur7e_orchestrator`: state machine, adapter interface,
+retry policy, 39 tests; #24 closed) and drove the **first complete language-directed pick on the
+real robot** — "pick up the blue hat", 87 s, webcam, no Jetson. 4.2: protective stop → abort
+(3×) and stage timeout → abort (1×) were exercised on hardware; the not-found and grasp-miss
+retries were not (#25 open). 4.3: one object, no video (#26 open). 4.4: `scripts/lab_benchmark.py
+pick` ran five runs; the software counted 4 successes, **the operator counted one clean grasp**
+(the other three grazed, gripped badly or missed while the jaw-width criterion still said
+"success") — the ≥ 80 % bar is not demonstrated (#27 open). 4.5: [COLD_START.md](COLD_START.md)
+is written; a teammate run would close #28. Next work, from the operator's two root causes:
+re-locate the object before APPROACH and confirm departure on LIFT from the camera; estimate a
+grasp per object instead of one fixed top-down grasp. Record:
+[LAB_2026-10-02_WEBCAM_PICK.md](LAB_2026-10-02_WEBCAM_PICK.md).
+
 | # | Task | Acceptance criteria |
 |---|---|---|
-| 4.1 | `orchestrator` state machine implementing the stage pipeline with per-stage timeouts, run IDs, structured logging (§1.2 of architecture) | Dry-run mode traverses all stages against mocks in CI |
-| 4.2 | Failure/retry policy: not-found → re-observe once; grasp-miss detection (gripper closed to min width) → single retry; protective stop → abort (Q8). If retry logic outgrows the flat FSM, migrate the orchestrator to `py_trees_ros` (Humble apt — the sanctioned upgrade path, architecture §5) | Each failure path exercised on hardware and logged |
-| 4.3 | **End-to-end demo**: 3 distinct objects by name, from voice-of-user text | Video + logs committed |
-| 4.4 | Repeatability benchmark: 20-run protocol per object, success rate + per-stage timing dashboard/report | ≥ 80% end-to-end success; report in repo |
-| 4.5 | `docs/RUNBOOK.md` final: cold-start to demo in one page (power-on order, pendant steps, launch commands, recovery) | A teammate reproduces the demo from the runbook alone |
+| 4.1 | `orchestrator` state machine implementing the stage pipeline with per-stage timeouts, run IDs, structured logging (§1.2 of architecture) | Dry-run mode traverses all stages against mocks in CI — **done 2026-10-02** (`src/ur7e_orchestrator`, 39 tests; drove the real pick) |
+| 4.2 | Failure/retry policy: not-found → re-observe once; grasp-miss detection (gripper closed to min width) → single retry; protective stop → abort (Q8). If retry logic outgrows the flat FSM, migrate the orchestrator to `py_trees_ros` (Humble apt — the sanctioned upgrade path, architecture §5) | Each failure path exercised on hardware and logged — **2026-10-02:** protective stop → abort 3×, stage timeout → abort 1×; not-found and grasp-miss retries not yet on hardware (#25 open) |
+| 4.3 | **End-to-end demo**: 3 distinct objects by name, from voice-of-user text | Video + logs committed — **2026-10-02:** one object ("blue hat"), typed, no video (#26 open) |
+| 4.4 | Repeatability benchmark: 20-run protocol per object, success rate + per-stage timing dashboard/report | ≥ 80% end-to-end success; report in repo — **2026-10-02:** `scripts/lab_benchmark.py pick`, 5 runs, report in `docs/evidence/`; the software's 4/5 is not the operator's count (one clean grasp) — not ≥ 80 % (#27 open) |
+| 4.5 | `docs/RUNBOOK.md` final: cold-start to demo in one page (power-on order, pendant steps, launch commands, recovery) | A teammate reproduces the demo from the runbook alone — **2026-10-02:** [COLD_START.md](COLD_START.md) written; the teammate run is pending (#28 open) |
 
 ## Phase 5 — Stretch / hardening
 

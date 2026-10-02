@@ -526,13 +526,14 @@ def main():
     # Defaults: the clear front plate of the lab stand, in front of the two
     # toggle clamps (2026-10-02). The lowest layer carries the held object a
     # few centimetres above the table, so keep the grid off anything taller.
-    wave.add_argument('--xs', type=float, nargs='+', default=[0.27, 0.33, 0.39],
-                      help='tool0 x positions, m, base_link')
-    wave.add_argument('--ys', type=float, nargs='+', default=[0.02, 0.13, 0.24],
+    wave.add_argument('--xs', type=float, nargs='+', default=[0.19, 0.24, 0.29],
+                      help='tool0 x positions, m, base_link (the plate ends at x ~0.30)')
+    wave.add_argument('--ys', type=float, nargs='+', default=[-0.02, 0.08, 0.18],
                       help='tool0 y positions, m, base_link')
-    wave.add_argument('--heights', type=float, nargs='+', default=[0.34, 0.41, 0.48],
-                      help='tool0 heights, m (fingertips are about 0.26 m lower)')
-    wave.add_argument('--target-color', choices=sorted(TARGET_COLORS), default='white',
+    wave.add_argument('--heights', type=float, nargs='+', default=[0.27, 0.36, 0.45],
+                      help='tool0 heights, m (fingertips are about 0.26 m lower; the '
+                           'plate is at tool0 0.1485)')
+    wave.add_argument('--target-color', choices=sorted(TARGET_COLORS), default='blue',
                       help='colour of the held object')
     wave.set_defaults(run=command_wave)
     solve = commands.add_parser('solve', help='camera pose from the wave observations')
@@ -552,12 +553,13 @@ def main():
                        help='or an image point to come down at')
     touch.add_argument('--guess-z', type=float, default=0.245,
                        help='rough tool0 height with the object on the table, m')
-    touch.add_argument('--travel-z', type=float, default=0.42)
-    touch.add_argument('--start-z', type=float, default=0.30,
+    touch.add_argument('--travel-z', type=float, default=0.40)
+    touch.add_argument('--start-z', type=float, default=0.22,
                        help='tool0 height where the slow probing starts, m')
-    touch.add_argument('--floor-z', type=float, default=0.215,
-                       help='never probe below this tool0 height, m')
-    touch.add_argument('--step', type=float, default=0.002)
+    touch.add_argument('--floor-z', type=float, default=0.10,
+                       help='never probe below this tool0 height, m (the lab plate was '
+                            'found at 0.1485)')
+    touch.add_argument('--step', type=float, default=0.003)
     touch.add_argument('--contact-force', type=float, default=5.0, help='N')
     touch.add_argument('--release-width', type=float, default=80.0)
     touch.set_defaults(run=command_touchdown)

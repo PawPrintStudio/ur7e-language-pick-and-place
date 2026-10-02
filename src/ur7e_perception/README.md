@@ -12,9 +12,12 @@ downstream (the orchestrator, MoveIt, the gripper) works from that one pose.
 The package never moves the robot and never decides how to grasp. It only looks, measures, and
 either answers or refuses with a reason.
 
-> Status, 2026-10-02: everything here is verified in software only (seeded synthetic scenes,
-> Gazebo renders, and rendered single-camera scenes). **No accuracy has been measured with a real
-> camera on the real arm yet.** Numbers quoted below come from rendered images and say so.
+> Status before the 2026-10-02 lab session: everything here is verified in software only (seeded
+> synthetic scenes, Gazebo renders, and rendered single-camera scenes); numbers quoted below come
+> from rendered images and say so. **Update, 2026-10-02 evening:** the single-camera path located
+> a real object on the real arm to 0.8 cm — one object, one placement — and that pose was picked.
+> See [What ran in the lab on 2026-10-02](#what-ran-in-the-lab-on-2026-10-02). The depth path
+> still has no hardware result.
 
 ## The concept: an image is not a place
 
@@ -347,11 +350,46 @@ These numbers bound the *arithmetic*. They say nothing about a real lens, a real
 lighting, or the robot. Recorded results for the depth path (also software-only) are in
 [`docs/TASK2_SOFTWARE.md`](../../docs/TASK2_SOFTWARE.md).
 
+## What ran in the lab on 2026-10-02
+
+The single-camera path ran on the real arm for the first time, in a variant that needs no printed
+board. The record with every number is [`docs/LAB_2026-10-02_WEBCAM_PICK.md`](../../docs/LAB_2026-10-02_WEBCAM_PICK.md);
+the commands, in order, are §3 of [`docs/COLD_START.md`](../../docs/COLD_START.md); the geometry
+is explained in [`docs/SINGLE_CAMERA_PERCEPTION.md`](../../docs/SINGLE_CAMERA_PERCEPTION.md).
+
+- **Camera:** the lab's ZED 2i, plugged into the laptop and read as a plain USB camera by
+  `camera.py` (left half of the 3840×1080 side-by-side frame, ~19 fps). No Stereolabs SDK, no
+  GPU. Factory intrinsics from `docs/calibration/zed2i_SN35717973.conf` instead of a board sweep.
+- **Print-free calibration** (`scripts/lab_camera_calibration.py`): the gripper holds a coloured
+  object, the arm waves it through 27 known poses, the camera finds it in each frame, and
+  `solvePnPRansac` gives the camera pose from the (robot pose, pixel) pairs — the arm plays the
+  part of the board. Best fit of the day **3.2 px RMS over 15 of 17 poses**. The table plane came
+  from a force touchdown of the closed fingertips (tool0 z = 0.1485 m), and the one remaining
+  number, the table height in the wave's frame (`--table-z`), had to be fixed by setting the
+  object down at a known point and comparing with `scripts/lab_detect.py` (0.2025 for the hat
+  held by its brim; guesses 2 cm off put objects 4–6 cm off).
+- **Fixed-camera mode:** `webcam_node.py` trusts the camera pose stored in `scripts/lab_table.json`
+  rather than re-solving a board in every capture. Bump the camera, recalibrate.
+- **Near-edge estimator** (`monocular.localize_on_table(..., object_height=None)`): for a compact
+  object the centre is half the silhouette's cross-view width behind its near edge; no height
+  needed. It is now the default (`default_height_m: -1` in `scripts/lab_objects.yaml`) because
+  the shadow-removal method over-eroded the round hat. A listed height still selects shadow
+  removal.
+- **Detectors:** `backend:=auto` — OWLv2 on the CPU (~8 s per query, "blue helmet" 0.13–0.20)
+  with the colour detector as fallback; `blue` got a saturation floor of 150 after a black
+  anodised breadboard was segmented as navy.
+- **Observed:** camera (0.2356, 0.057) m vs robot-placed hat (0.24, 0.05) m — **0.8 cm**. One
+  object, one placement. The hat's footprint read 8.0 × 7.4 cm.
+- **Caveats:** a single data point, not a characterisation (task 2.6's ~10 objects is still to
+  do); the pose is measured once per run and not re-checked before the grasp, which is where the
+  later benchmark runs went wrong (a round object rolls after release); `stereo.py` is still not
+  wired into the node; the depth path has no hardware result.
+
 ## Limits
 
-- **Nothing here has been validated on hardware yet.** No real-camera, real-robot accuracy has
-  been measured for either path. `TODO(verify in lab)`: record the touch-verification results
-  (`scripts/lab_pick.py --verify-marker`) and link them here.
+- **One hardware data point exists for the single-camera path** (0.8 cm, one object, 2026-10-02,
+  see above); the depth path has none. `TODO(verify in lab)`: record the touch-verification
+  results (`scripts/lab_pick.py --verify-marker`) and link them here.
 - **Top-down grasps on a table only.** One pose per object, tool straight down. No stacked
   objects, no grasping from the side, no 6-DoF grasp planning. This is architecture decision Q5.
 - **One object per query.** Two candidates is a refusal. Touching objects are not separated by

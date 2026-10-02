@@ -62,6 +62,9 @@ A VSCode devcontainer (`.devcontainer/`) gives any member the full stack from `g
 - [Runbook](docs/RUNBOOK.md) — verified lab procedures, session by session
 - [Live demo: talk to the arm](docs/DEMO_CONSOLE.md) — the camera-free language console, show script, voice and teleop
 - [Lab record 2026-09-30](docs/LAB_2026-09-30_LANGUAGE_CONSOLE.md) — what the console demo proved on hardware, findings, what is not yet verified
+- [Cold start (one page)](docs/COLD_START.md) — power-on to a language-directed pick on the laptop: container, driver, camera calibration, the demo commands, recovery
+- [Single-camera perception](docs/SINGLE_CAMERA_PERCEPTION.md) — locating objects on a table with one ordinary camera: the geometry, the calibration, and what ran in the lab
+- [Lab record 2026-10-02](docs/LAB_2026-10-02_WEBCAM_PICK.md) — the first webcam-only language-directed pick on hardware, the operator's verdict on the benchmark, open issues
 - [Simulation & remote development](docs/SIMULATION.md) — devcontainer, mock hardware, URSim: working without the robot
 - [Task 2 software workflow](docs/TASK2_SOFTWARE.md) — camera-free perception, Gazebo pick, calibration tools, and validation
 - [References](docs/REFERENCES.md) — UR7e/RG2/ZED/Jetson key facts, links, and local vendor PDFs
@@ -72,4 +75,4 @@ Beyond the demo itself, this repo is a **learning platform** for makerspace memb
 
 ## Status
 
-Phase 0 complete (robot link, calibration, first motion, bringup package, sim tiers, CI, devcontainer). Phase 1 motion stack runs on the real arm; gripper bridge and camera work are the open hardware items. **Live demo available today without a camera:** the language console — "could you go up a bit?" → bounded, collision-checked motion on the UR7e. See [docs/DEMO_CONSOLE.md](docs/DEMO_CONSOLE.md). Issues are the task tracker (no project board yet).
+Phase 0 complete (robot link, calibration, first motion, bringup package, sim tiers, CI, devcontainer). Phase 1 motion stack runs on the real arm, and the RG2 is driven over the OnRobot URCap's XML-RPC interface while the arm program runs. **2026-10-02: the first complete language-directed pick ran on the real robot** — "pick up the blue hat" → ZED 2i used as a plain USB camera on the laptop (no Jetson, no SDK) → print-free camera calibration → orchestrator → MoveIt → RG2, 87 s. That is one clean pick of one object: the five-run benchmark that followed does **not** show ≥ 80 % success (the operator counted one clean grasp against the software's four), and the two causes — no re-check of the object's position between stages, one fixed top-down grasp for every shape — are the next work. See [docs/LAB_2026-10-02_WEBCAM_PICK.md](docs/LAB_2026-10-02_WEBCAM_PICK.md); bring-up in [docs/COLD_START.md](docs/COLD_START.md). The camera-free language console demo ([docs/DEMO_CONSOLE.md](docs/DEMO_CONSOLE.md)) still stands on its own. Issues are the task tracker (no project board yet).

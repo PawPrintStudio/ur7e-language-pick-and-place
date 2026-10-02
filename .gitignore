@@ -36,3 +36,9 @@ scripts/.console_poses.json
 # host-side voice client environment (scripts/voice_input.py)
 .venv-voice/
 scripts/.voice_inbox.txt
+
+# lab calibration session files (per camera position / per day); the
+# calibrations that produced recorded results live under docs/evidence/
+scripts/.lab_camera.json
+scripts/.lab_touches.json
+scripts/lab_table.json

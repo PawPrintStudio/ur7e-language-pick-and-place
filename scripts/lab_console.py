@@ -195,7 +195,28 @@ def hand_over(result, executor, args):
     return completed.returncode == 0
 
 
-def handle(text, parser, executor, args):
+def run_pick(text, result, pick, args):
+    """Hand a pick sentence to the orchestrator (camera sessions, --pick).
+
+    The console has already parsed the sentence and shown the echo; the
+    orchestrator runs the fixed stage sequence from there and prints each
+    stage as it ends. The typed confirmation happens here, on the main
+    thread, so the orchestrator's PARSE stage never waits on a keyboard.
+    """
+    adapters, orchestrator = pick
+    if result.outcome is Outcome.NEEDS_CONFIRMATION:
+        if not confirm(result.message, args.yes):
+            say('SKIPPED', 'not confirmed')
+            return False
+    adapters.remember(text, result, confirmed=True)
+    record = orchestrator.run(text)
+    say('RESULT', {'run_id': record.run_id, 'outcome': record.outcome,
+                   'reason': record.reason, 'message': record.message,
+                   'duration_s': round(record.duration_s, 1), 'retries': record.retries})
+    return record.outcome == 'succeeded'
+
+
+def handle(text, parser, executor, args, pick=None):
     """Parse one utterance and, if allowed and confirmed, run it."""
     result = parser.parse(text)
     diag = {k: v for k, v in result.detail.items() if k != 'raw_response'}
@@ -211,6 +232,8 @@ def handle(text, parser, executor, args):
 
     if command.action == schema.ACTION_TELEOP:
         return hand_over(result, executor, args)
+    if command.action in schema.MOTION_ACTIONS:
+        return run_pick(text, result, pick, args)
 
     # Plan first, ask second: the person confirming sees what the plan
     # actually does (joint swing, duration), not only the parsed sentence.
@@ -278,7 +301,28 @@ def main():
                      help='also take sentences from this file, one per line, as '
                           'scripts/voice_input.py appends them (default path if '
                           'given without a value)')
+    cli.add_argument('--pick', action='store_true',
+                     help='camera + gripper session: also accept "pick up the ..." and '
+                          'run it through the orchestrator (needs the webcam perception '
+                          'node and a table calibration; see scripts/lab_pick.py)')
+    cli.add_argument('--calibration', default=os.path.join(_HERE, 'lab_table.json'),
+                     help='table calibration from scripts/lab_table_calibration.py')
+    cli.add_argument('--robot-ip', default='192.168.56.101')
+    cli.add_argument('--drop-xy', type=float, nargs=2, metavar=('X', 'Y'),
+                     help='where a plain "pick" sets the object down (default: in place)')
+    cli.add_argument('--log-dir', default=os.path.join(_HERE, '..', 'log', 'runs'),
+                     help='one JSONL file per pick run')
+    cli.add_argument('--open-mm', type=float, default=80.0, help='jaw opening before a grasp')
+    cli.add_argument('--force', type=float, default=20.0, help='grip force, N')
+    cli.add_argument('--tip-clearance', type=float, default=0.008,
+                     help='lowest fingertip height above the table when grasping, m')
+    cli.add_argument('--hover', type=float, default=0.12,
+                     help='fingertip height above the object while travelling, m')
     args = cli.parse_args()
+    if args.pick and args.max_excursion < 2.5:
+        # A pick run is a sequence of large, planned moves (observe -> hover ->
+        # place); the jog cap is sized for single nudges.
+        args.max_excursion = 2.5
 
     try:
         backend = create(args.backend, **({'model': args.model} if args.model else {}))
@@ -287,15 +331,29 @@ def main():
 
     # Camera-free session: only the jog actions are enabled. A pick request is
     # parsed fine and refused by *policy* -- which is the point worth showing.
-    policy = GuardrailPolicy(allowed_actions=schema.JOG_ACTIONS,
+    # With --pick (webcam + gripper session) the pick actions are added and
+    # go to the orchestrator; the policy is the only thing that changed.
+    allowed = schema.JOG_ACTIONS + (schema.MOTION_ACTIONS if args.pick else ())
+    policy = GuardrailPolicy(allowed_actions=allowed,
                              require_confirmation=not args.no_confirm)
     parser = IntentParser(backend, policy)
 
     rclpy.init()
-    executor = JogExecutor(max_speed_percent=args.max_speed_percent,
-                           joint_rate=args.joint_rate, max_excursion=args.max_excursion,
-                           mirror_lr=args.mirror_lr, plan_only=not args.execute,
-                           poses_file=args.poses_file)
+    pick = None
+    if args.pick:
+        import lab_pick
+        from ur7e_orchestrator.workflow import Orchestrator
+        from ur7e_perception.monocular import TableCalibration
+        executor = lab_pick.PickExecutor(
+            TableCalibration.load(args.calibration), hover=args.hover,
+            max_speed_percent=args.max_speed_percent, joint_rate=args.joint_rate,
+            max_excursion=args.max_excursion, mirror_lr=args.mirror_lr,
+            plan_only=not args.execute, poses_file=args.poses_file)
+    else:
+        executor = JogExecutor(max_speed_percent=args.max_speed_percent,
+                               joint_rate=args.joint_rate, max_excursion=args.max_excursion,
+                               mirror_lr=args.mirror_lr, plan_only=not args.execute,
+                               poses_file=args.poses_file)
     try:
         executor.load_poses(SEED_POSES_FILE)
         if not args.forget_poses:
@@ -321,7 +379,21 @@ def main():
         else:
             say('BLOCKED', 'could not read a stationary arm; is the driver up?')
             return 2
+        if args.pick:
+            config = dict(lab_pick.DEFAULT_CONFIG)
+            if 'observe' not in executor.poses:
+                config['observe_pose'] = config['home_pose'] = 'ready'
+            if args.drop_xy:
+                config['drop_xy'] = tuple(args.drop_xy)
+            config.update(open_mm=args.open_mm, force_n=args.force,
+                          min_tip_clearance=args.tip_clearance)
+            gripper = lab_pick.Rg2(args.robot_ip) if args.execute else lab_pick.FakeRg2()
+            adapters = lab_pick.LabAdapters(executor, gripper, parser, args.robot_ip,
+                                            config, notify=say)
+            pick = (adapters, Orchestrator(adapters, log_dir=args.log_dir,
+                                           on_event=lab_pick.on_event))
         say('READY', {'mode': 'EXECUTE' if args.execute else 'PLAN-ONLY',
+                      'pick': bool(args.pick),
                       'backend': args.backend, 'confirm': not args.no_confirm,
                       'max_speed_percent': args.max_speed_percent,
                       'tool_xyz_m': [round(v, 4) for v in position],
@@ -332,7 +404,7 @@ def main():
             failures = 0
             for text in args.say:
                 say('SAY', text)
-                if not handle(text, parser, executor, args):
+                if not handle(text, parser, executor, args, pick):
                     failures += 1
             return 1 if failures else 0
 
@@ -381,7 +453,7 @@ def main():
             elif text.startswith('/'):
                 say('USAGE', f'unknown command {text.split()[0]}; try /help')
             else:
-                handle(text, parser, executor, args)
+                handle(text, parser, executor, args, pick)
         return 0
     finally:
         executor.destroy_node()

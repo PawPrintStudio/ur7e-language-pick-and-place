@@ -1,0 +1,11 @@
+# Things on and around the lab stand that the planner must steer around.
+# Axis-aligned boxes in base_link metres: [x_min, x_max, y_min, y_max, z_min, z_max].
+# z = 0 is the robot's mounting surface; the pick plate is about 0.11 below it
+# (measured by fingertip touch, 2026-10-02). Be generous: these are keep-out
+# volumes, not CAD.
+boxes:
+  # The raised platform the robot is bolted to (the gripper hit its edge once).
+  base_platform: [-0.40, 0.14, -0.35, 0.35, -0.12, 0.0]
+  # Toggle clamps bolted to the pick plate, handles included.
+  left_clamp: [-0.03, 0.11, -0.19, -0.02, -0.12, -0.01]
+  right_clamp: [-0.12, 0.05, 0.09, 0.30, -0.12, -0.01]

@@ -108,18 +108,24 @@ class MotionClient(Node):
                                      % (dp / dt, j, MAX_JOINT_VEL))
             prev_pos, prev_t = pos, t
 
-    def run(self, pts, anchor=None):
+    def run(self, pts, anchor=None, timeout=None):
         """Send a trajectory. ``pts``: list of (pose_dict, time_from_start_s).
 
         ``anchor``: the pose the first waypoint is safety-checked against
         (default: the pose read at startup). Teleop passes the previous target
         so each small jog is validated as a delta, not against the original home.
 
+        ``timeout``: seconds to wait for the result before cancelling the goal
+        (default: generous for a pendant slider down to 10 %). The slider
+        stretches wall time, so callers that know it should pass a tighter one.
+
         Returns True on SUCCESSFUL, False otherwise. Enforces the safety
         envelope first; a violation raises before anything reaches the robot.
         """
         if anchor is None:
             anchor = self._start
+        if timeout is None:
+            timeout = pts[-1][1] * 10.0 + 30.0
         self._check(pts, anchor)
         traj = JointTrajectory()
         traj.joint_names = JOINTS
@@ -152,7 +158,16 @@ class MotionClient(Node):
                                     'Press Play on the pendant.')
             return False
         rf = gh.get_result_async()
-        rclpy.spin_until_future_complete(self, rf)
+        rclpy.spin_until_future_complete(self, rf, timeout_sec=timeout)
+        if not rf.done():
+            # The goal is alive but not finishing (a joint limit, a wedged
+            # object, a paused program). Cancel it so the controller is free
+            # again; the caller decides what that means.
+            self.get_logger().error('no result after %.0f s; cancelling the goal' % timeout)
+            cancel = gh.cancel_goal_async()
+            rclpy.spin_until_future_complete(self, cancel, timeout_sec=5.0)
+            rclpy.spin_until_future_complete(self, rf, timeout_sec=5.0)
+            return False
         response = rf.result()
         ec = response.result.error_code
         if response.status == GoalStatus.STATUS_SUCCEEDED and ec == 0:

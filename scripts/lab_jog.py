@@ -131,16 +131,26 @@ class JogExecutor(Node):
         self.speed = msg.data
         self.speed_time = time.monotonic()
 
-    def fresh(self, settle_s=1.0):
-        """Spin briefly, then return a fresh, stationary RobotState."""
-        until = time.monotonic() + settle_s
-        while time.monotonic() < until:
-            rclpy.spin_once(self, timeout_sec=0.05)
-        if self.latest is None or time.monotonic() - self.received > 0.5:
-            raise JogError('No fresh joint state -- is the driver running?')
-        if self.latest.velocity and max(abs(v) for v in self.latest.velocity) > 0.0005:
-            raise JogError('The arm is still moving; wait for it to settle.')
-        return RobotState(joint_state=deepcopy(self.latest))
+    def fresh(self, settle_s=1.0, patience_s=4.0):
+        """Spin briefly, then return a fresh, stationary RobotState.
+
+        An arm that has just finished a goal (or just let go of something)
+        can still show a few hundred microradians per second of motion for
+        a moment, so "still moving" is only an error after ``patience_s``.
+        """
+        deadline = time.monotonic() + patience_s
+        while True:
+            until = time.monotonic() + settle_s
+            while time.monotonic() < until:
+                rclpy.spin_once(self, timeout_sec=0.05)
+            if self.latest is None or time.monotonic() - self.received > 0.5:
+                raise JogError('No fresh joint state -- is the driver running?')
+            moving = self.latest.velocity and max(abs(v) for v in self.latest.velocity) > 0.0005
+            if not moving:
+                return RobotState(joint_state=deepcopy(self.latest))
+            if time.monotonic() >= deadline:
+                raise JogError('The arm is still moving; wait for it to settle.')
+            settle_s = 0.5
 
     @staticmethod
     def joints_of(state):
@@ -396,7 +406,10 @@ class JogExecutor(Node):
         if max(abs(anchor[j] - start[j]) for j in JOINTS) > 0.002:
             raise JogError('the arm moved between planning and execution; re-plan')
         report['speed_percent'] = self.speed
-        ok = self.motion.run(pts, anchor=anchor)
+        # Wall time is nominal x 100 / slider; allow half as much again plus
+        # a margin before declaring the goal stuck and cancelling it.
+        budget = pts[-1][1] * 100.0 / max(self.speed or 10.0, 5.0) * 1.5 + 15.0
+        ok = self.motion.run(pts, anchor=anchor, timeout=budget)
         report['executed'] = bool(ok)
         if not ok:
             raise JogError('trajectory did not succeed (see the driver log / pendant)')

@@ -1,0 +1,15 @@
+# Object heights for the single-camera perception node.
+#
+# One camera cannot measure height (see docs/SINGLE_CAMERA_PERCEPTION.md).
+# For a compact object (round or square footprint) the node does not need
+# it: it uses the silhouette's near edge and its width across the view
+# (good to about a centimetre; measured on the lab's toy hard hat
+# 2026-10-02). A listed height switches that object to the shadow-removal
+# method, which is better for flat, elongated, box-like things whose height
+# you know. -1 (or leaving an object out) means "unknown, use the near edge".
+default_height_m: -1
+objects:
+  block: 0.04
+  cube: 0.04
+  plug: 0.028
+  charger: 0.028

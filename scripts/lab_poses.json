@@ -9,10 +9,21 @@
     "shoulder_pan and wrist_3 are left where the session started so a go_to",
     "never spins the base or the tool. Reaching `ready` from the folded pose is",
     "a ~1.9 rad wrist_1 swing: needs --max-excursion 2.0, a low pendant slider",
-    "and eyes on the arm."
+    "and eyes on the arm.",
+    "`front` (2026-10-02) is `ready` with the base turned -90 degrees: the same",
+    "top-down posture, but over the front of the stand where the ZED looks",
+    "and the pick area is. It is the hub the pick workflow starts from."
   ],
   "ready": {
     "shoulder_pan_joint": -0.006,
+    "shoulder_lift_joint": -1.4,
+    "elbow_joint": -1.7,
+    "wrist_1_joint": 1.53,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": -3.579
+  },
+  "front": {
+    "shoulder_pan_joint": -1.577,
     "shoulder_lift_joint": -1.4,
     "elbow_joint": -1.7,
     "wrist_1_joint": 1.53,

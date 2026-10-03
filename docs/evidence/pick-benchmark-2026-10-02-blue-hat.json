@@ -1,0 +1,845 @@
+{
+  "protocol": "pick",
+  "sentence": "pick up the blue hat",
+  "requested_runs": 10,
+  "completed_runs": 5,
+  "succeeded": 4,
+  "success_rate": 0.8,
+  "failure_reasons": {
+    "stage_timeout": 1
+  },
+  "stopped_early": "run 5 aborted (stage_timeout); a person must check",
+  "executed": true,
+  "fake_gripper": false,
+  "backend": "keyword",
+  "max_speed_percent": 70.0,
+  "joint_rate": 0.09,
+  "area": [
+    0.21,
+    -0.03,
+    0.26,
+    0.1
+  ],
+  "seed": 5,
+  "stage_seconds": {
+    "IDLE": {
+      "n": 5,
+      "mean_s": 0.0,
+      "min_s": 0.0,
+      "max_s": 0.0
+    },
+    "PARSE": {
+      "n": 5,
+      "mean_s": 0.0,
+      "min_s": 0.0,
+      "max_s": 0.0
+    },
+    "OBSERVE": {
+      "n": 5,
+      "mean_s": 2.52,
+      "min_s": 2.51,
+      "max_s": 2.54
+    },
+    "DETECT": {
+      "n": 5,
+      "mean_s": 8.22,
+      "min_s": 8.08,
+      "max_s": 8.31
+    },
+    "LOCATE": {
+      "n": 5,
+      "mean_s": 0.04,
+      "min_s": 0.04,
+      "max_s": 0.04
+    },
+    "PLAN": {
+      "n": 5,
+      "mean_s": 1.4,
+      "min_s": 1.29,
+      "max_s": 1.73
+    },
+    "APPROACH": {
+      "n": 5,
+      "mean_s": 32.84,
+      "min_s": 27.6,
+      "max_s": 53.65
+    },
+    "GRASP": {
+      "n": 5,
+      "mean_s": 2.7,
+      "min_s": 2.5,
+      "max_s": 2.83
+    },
+    "LIFT": {
+      "n": 4,
+      "mean_s": 12.14,
+      "min_s": 12.11,
+      "max_s": 12.19
+    },
+    "RETREAT": {
+      "n": 4,
+      "mean_s": 34.15,
+      "min_s": 33.0,
+      "max_s": 35.4
+    },
+    "HOME": {
+      "n": 4,
+      "mean_s": 12.01,
+      "min_s": 11.78,
+      "max_s": 12.12
+    }
+  },
+  "retries": {
+    "reobserve_on_not_found": 0,
+    "regrasp_on_miss": 0
+  },
+  "stamp": "2026-10-02T23:26:05",
+  "runs": [
+    {
+      "run_id": "c5150430cb814c99a879d1aa302ed37c",
+      "utterance": "pick up the blue hat",
+      "started": "2026-10-02T23:16:13.510+00:00",
+      "outcome": "succeeded",
+      "reason": "ok",
+      "message": "All stages completed.",
+      "stages": [
+        {
+          "stage": "IDLE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.0,
+          "detail": {}
+        },
+        {
+          "stage": "PARSE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.001,
+          "detail": {
+            "action": "pick",
+            "target_query": "blue hat",
+            "place_query": "",
+            "echo": "pick up the blue hat"
+          }
+        },
+        {
+          "stage": "OBSERVE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.539,
+          "detail": {}
+        },
+        {
+          "stage": "DETECT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 8.083,
+          "detail": {
+            "pick": {
+              "query": "blue hat",
+              "capture_id": "0f5027f881cc4894b6bacb12843e808b",
+              "confidence": 0.16256718337535858
+            }
+          }
+        },
+        {
+          "stage": "LOCATE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.041,
+          "detail": {
+            "pick": {
+              "xyz": [
+                0.2511298863012454,
+                0.004139728395615203,
+                0.2025
+              ],
+              "yaw": 0.0,
+              "detail": {
+                "height_m": 0.0,
+                "axis_ratio": 1.29,
+                "points": 5706
+              }
+            }
+          }
+        },
+        {
+          "stage": "PLAN",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 1.299,
+          "detail": {
+            "grasp_yaw_deg": 24.8,
+            "tip_above_table_mm": 25.0,
+            "hover_mm": 150,
+            "pick_xy": [
+              0.251,
+              0.004
+            ],
+            "release_xy": [
+              0.241,
+              0.066
+            ],
+            "release_tip_mm": 29.0,
+            "waypoints": 813
+          }
+        },
+        {
+          "stage": "APPROACH",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 27.597,
+          "detail": {}
+        },
+        {
+          "stage": "GRASP",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.503,
+          "detail": {
+            "holding": true,
+            "width_mm": 75.9000015258789,
+            "detail": {
+              "grip_detected": true
+            }
+          }
+        },
+        {
+          "stage": "LIFT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.114,
+          "detail": {}
+        },
+        {
+          "stage": "RETREAT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 32.998,
+          "detail": {}
+        },
+        {
+          "stage": "HOME",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.082,
+          "detail": {}
+        }
+      ],
+      "retries": {
+        "reobserve_on_not_found": 0,
+        "regrasp_on_miss": 0
+      },
+      "duration_s": 99.261,
+      "drop_xy": [
+        0.2411450847444851,
+        0.06643230860389482
+      ]
+    },
+    {
+      "run_id": "342d9f52423f468790070c7b7cae8712",
+      "utterance": "pick up the blue hat",
+      "started": "2026-10-02T23:17:52.771+00:00",
+      "outcome": "succeeded",
+      "reason": "ok",
+      "message": "All stages completed.",
+      "stages": [
+        {
+          "stage": "IDLE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.0,
+          "detail": {}
+        },
+        {
+          "stage": "PARSE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.001,
+          "detail": {
+            "action": "pick",
+            "target_query": "blue hat",
+            "place_query": "",
+            "echo": "pick up the blue hat"
+          }
+        },
+        {
+          "stage": "OBSERVE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.509,
+          "detail": {}
+        },
+        {
+          "stage": "DETECT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 8.229,
+          "detail": {
+            "pick": {
+              "query": "blue hat",
+              "capture_id": "6d35209790364a90a187d04cb30d2b9e",
+              "confidence": 0.13043412566184998
+            }
+          }
+        },
+        {
+          "stage": "LOCATE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.039,
+          "detail": {
+            "pick": {
+              "xyz": [
+                0.24876256192606827,
+                -0.006747207409276323,
+                0.2025
+              ],
+              "yaw": 0.0,
+              "detail": {
+                "height_m": 0.0,
+                "axis_ratio": 1.05,
+                "points": 6210
+              }
+            }
+          }
+        },
+        {
+          "stage": "PLAN",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 1.346,
+          "detail": {
+            "grasp_yaw_deg": 24.8,
+            "tip_above_table_mm": 25.0,
+            "hover_mm": 150,
+            "pick_xy": [
+              0.249,
+              -0.007
+            ],
+            "release_xy": [
+              0.25,
+              0.093
+            ],
+            "release_tip_mm": 29.0,
+            "waypoints": 831
+          }
+        },
+        {
+          "stage": "APPROACH",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 27.671,
+          "detail": {}
+        },
+        {
+          "stage": "GRASP",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.831,
+          "detail": {
+            "holding": true,
+            "width_mm": 72.4000015258789,
+            "detail": {
+              "grip_detected": true
+            }
+          }
+        },
+        {
+          "stage": "LIFT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.113,
+          "detail": {}
+        },
+        {
+          "stage": "RETREAT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 34.244,
+          "detail": {}
+        },
+        {
+          "stage": "HOME",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.119,
+          "detail": {}
+        }
+      ],
+      "retries": {
+        "reobserve_on_not_found": 0,
+        "regrasp_on_miss": 0
+      },
+      "duration_s": 101.107,
+      "drop_xy": [
+        0.24975967827828482,
+        0.09251853689101655
+      ]
+    },
+    {
+      "run_id": "ad2691fc5fc14fc293efbaa2b891cd73",
+      "utterance": "pick up the blue hat",
+      "started": "2026-10-02T23:19:33.880+00:00",
+      "outcome": "succeeded",
+      "reason": "ok",
+      "message": "All stages completed.",
+      "stages": [
+        {
+          "stage": "IDLE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.0,
+          "detail": {}
+        },
+        {
+          "stage": "PARSE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.0,
+          "detail": {
+            "action": "pick",
+            "target_query": "blue hat",
+            "place_query": "",
+            "echo": "pick up the blue hat"
+          }
+        },
+        {
+          "stage": "OBSERVE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.509,
+          "detail": {}
+        },
+        {
+          "stage": "DETECT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 8.307,
+          "detail": {
+            "pick": {
+              "query": "blue hat",
+              "capture_id": "a575a81b533e4983a3bfbd37c7f42f28",
+              "confidence": 0.13986849784851074
+            }
+          }
+        },
+        {
+          "stage": "LOCATE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.04,
+          "detail": {
+            "pick": {
+              "xyz": [
+                0.2483411721649749,
+                -0.001274147676397353,
+                0.2025
+              ],
+              "yaw": 0.0,
+              "detail": {
+                "height_m": 0.0,
+                "axis_ratio": 1.18,
+                "points": 6033
+              }
+            }
+          }
+        },
+        {
+          "stage": "PLAN",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 1.314,
+          "detail": {
+            "grasp_yaw_deg": 24.8,
+            "tip_above_table_mm": 25.0,
+            "hover_mm": 150,
+            "pick_xy": [
+              0.248,
+              -0.001
+            ],
+            "release_xy": [
+              0.247,
+              0.09
+            ],
+            "release_tip_mm": 29.0,
+            "waypoints": 827
+          }
+        },
+        {
+          "stage": "APPROACH",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 27.664,
+          "detail": {}
+        },
+        {
+          "stage": "GRASP",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.811,
+          "detail": {
+            "holding": true,
+            "width_mm": 72.4000015258789,
+            "detail": {
+              "grip_detected": true
+            }
+          }
+        },
+        {
+          "stage": "LIFT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.165,
+          "detail": {}
+        },
+        {
+          "stage": "RETREAT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 33.961,
+          "detail": {}
+        },
+        {
+          "stage": "HOME",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.056,
+          "detail": {}
+        }
+      ],
+      "retries": {
+        "reobserve_on_not_found": 0,
+        "regrasp_on_miss": 0
+      },
+      "duration_s": 100.832,
+      "drop_xy": [
+        0.24699492873699655,
+        0.08990224956650422
+      ]
+    },
+    {
+      "run_id": "aed70b36c696437ea666859f046a279a",
+      "utterance": "pick up the blue hat",
+      "started": "2026-10-02T23:21:14.713+00:00",
+      "outcome": "succeeded",
+      "reason": "ok",
+      "message": "All stages completed.",
+      "stages": [
+        {
+          "stage": "IDLE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.0,
+          "detail": {}
+        },
+        {
+          "stage": "PARSE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.001,
+          "detail": {
+            "action": "pick",
+            "target_query": "blue hat",
+            "place_query": "",
+            "echo": "pick up the blue hat"
+          }
+        },
+        {
+          "stage": "OBSERVE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.512,
+          "detail": {}
+        },
+        {
+          "stage": "DETECT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 8.301,
+          "detail": {
+            "pick": {
+              "query": "blue hat",
+              "capture_id": "349255f04f364ae0bd489f45321ce7ad",
+              "confidence": 0.11838039010763168
+            }
+          }
+        },
+        {
+          "stage": "LOCATE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.04,
+          "detail": {
+            "pick": {
+              "xyz": [
+                0.24781962474623115,
+                0.0037696912514057763,
+                0.2025
+              ],
+              "yaw": 0.0,
+              "detail": {
+                "height_m": 0.0,
+                "axis_ratio": 1.26,
+                "points": 5864
+              }
+            }
+          }
+        },
+        {
+          "stage": "PLAN",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 1.292,
+          "detail": {
+            "grasp_yaw_deg": 24.8,
+            "tip_above_table_mm": 25.0,
+            "hover_mm": 150,
+            "pick_xy": [
+              0.248,
+              0.004
+            ],
+            "release_xy": [
+              0.211,
+              0.031
+            ],
+            "release_tip_mm": 29.0,
+            "waypoints": 830
+          }
+        },
+        {
+          "stage": "APPROACH",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 27.643,
+          "detail": {}
+        },
+        {
+          "stage": "GRASP",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.819,
+          "detail": {
+            "holding": true,
+            "width_mm": 72.4000015258789,
+            "detail": {
+              "grip_detected": true
+            }
+          }
+        },
+        {
+          "stage": "LIFT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 12.186,
+          "detail": {}
+        },
+        {
+          "stage": "RETREAT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 35.396,
+          "detail": {}
+        },
+        {
+          "stage": "HOME",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 11.779,
+          "detail": {}
+        }
+      ],
+      "retries": {
+        "reobserve_on_not_found": 0,
+        "regrasp_on_miss": 0
+      },
+      "duration_s": 101.972,
+      "drop_xy": [
+        0.21145026141418072,
+        0.0305309450691537
+      ]
+    },
+    {
+      "run_id": "2771d5d8db1c480fa3bd7fe45b5d177a",
+      "utterance": "pick up the blue hat",
+      "started": "2026-10-02T23:22:56.686+00:00",
+      "outcome": "aborted",
+      "reason": "stage_timeout",
+      "message": "LIFT did not finish within its 120 s timeout (still waiting on LIFT/lift()). abort() was called.",
+      "stages": [
+        {
+          "stage": "IDLE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.0,
+          "detail": {}
+        },
+        {
+          "stage": "PARSE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.001,
+          "detail": {
+            "action": "pick",
+            "target_query": "blue hat",
+            "place_query": "",
+            "echo": "pick up the blue hat"
+          }
+        },
+        {
+          "stage": "OBSERVE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.508,
+          "detail": {}
+        },
+        {
+          "stage": "DETECT",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 8.174,
+          "detail": {
+            "pick": {
+              "query": "blue hat",
+              "capture_id": "769b3336ce824d60868b577376e21ac5",
+              "confidence": 1.0
+            }
+          }
+        },
+        {
+          "stage": "LOCATE",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 0.038,
+          "detail": {
+            "pick": {
+              "xyz": [
+                0.33250244746957797,
+                -0.09175693039346187,
+                0.2025
+              ],
+              "yaw": -0.2620459317570809,
+              "detail": {
+                "height_m": 0.0,
+                "axis_ratio": 7.78,
+                "points": 382
+              }
+            }
+          }
+        },
+        {
+          "stage": "PLAN",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 1.731,
+          "detail": {
+            "grasp_yaw_deg": 75.0,
+            "tip_above_table_mm": 25.0,
+            "hover_mm": 150,
+            "pick_xy": [
+              0.333,
+              -0.092
+            ],
+            "release_xy": [
+              0.257,
+              0.054
+            ],
+            "release_tip_mm": 29.0,
+            "waypoints": 1256
+          }
+        },
+        {
+          "stage": "APPROACH",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 53.65,
+          "detail": {}
+        },
+        {
+          "stage": "GRASP",
+          "attempt": 1,
+          "outcome": "ok",
+          "reason": "ok",
+          "duration_s": 2.519,
+          "detail": {
+            "holding": true,
+            "width_mm": 72.9000015258789,
+            "detail": {
+              "grip_detected": true
+            }
+          }
+        },
+        {
+          "stage": "LIFT",
+          "attempt": 1,
+          "outcome": "timeout",
+          "reason": "stage_timeout",
+          "duration_s": 120.001,
+          "detail": {
+            "error": "no answer from LIFT/lift()"
+          }
+        }
+      ],
+      "retries": {
+        "reobserve_on_not_found": 0,
+        "regrasp_on_miss": 0
+      },
+      "duration_s": 188.631,
+      "drop_xy": [
+        0.2571678358499157,
+        0.05436669190780015
+      ]
+    }
+  ]
+}

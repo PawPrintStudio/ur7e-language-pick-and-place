@@ -9,6 +9,17 @@ This is task 3.2 (the command console, [#22]) running on the real arm with
 the language pipeline of task 3.1/3.3. No camera, no gripper actuation, no
 object — those are the next demos, not this one.
 
+**Since 2026-10-02 the same console also picks.** Started with `--pick` (for the lab's toy
+hard hat also `--open-mm 108 --tip-clearance 0.025`), with the webcam perception node running
+against a current calibration, a sentence like "pick up the blue hat" is no longer refused: the
+console hands it to the orchestrator, which runs the fixed stage sequence PARSE → OBSERVE →
+DETECT → LOCATE → PLAN → APPROACH → GRASP → LIFT → RETREAT → HOME and prints each stage as it
+ends; the guardrails' typed confirmation still happens in the console when the parser asks for
+it. That is a camera-and-gripper session, not this show — the bring-up (container, driver,
+calibration, the exact commands) is [COLD_START.md](COLD_START.md), and what it proved and did
+not is [LAB_2026-10-02_WEBCAM_PICK.md](LAB_2026-10-02_WEBCAM_PICK.md). Without `--pick`
+everything below is unchanged and pick sentences are refused by policy.
+
 ## The story in one paragraph (say this)
 
 "A language model turns what you say into a small, fixed-vocabulary command.

@@ -17,5 +17,6 @@ setup(
         'perception_node = ur7e_perception.nodes:perception_main',
         'rgbd_source = ur7e_perception.nodes:source_main',
         'perception_eval = ur7e_perception.evaluate:main',
+        'webcam_perception_node = ur7e_perception.webcam_node:main',
     ]},
 )

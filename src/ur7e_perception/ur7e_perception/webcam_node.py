@@ -4,7 +4,10 @@
 as they do in :mod:`ur7e_perception.nodes` (immutable capture IDs, explicit
 ``success``/``reason``), so everything downstream -- the pick demo, the
 orchestrator -- is unchanged. What differs is where 3-D comes from: not a
-depth image but the printed table board (see :mod:`ur7e_perception.monocular`).
+depth image but the printed table board (see :mod:`ur7e_perception.monocular`)
+-- or, when the calibration carries a ``stereo`` section (written by
+``scripts/lab_stereo_calibration.py``), both lenses of a ZED used as one USB
+camera (see :func:`ur7e_perception.stereo.locate_object`).
 
 Per detection request the node:
 
@@ -43,6 +46,7 @@ import yaml
 from . import monocular as mono
 from .camera import Camera
 from .core import Detection, PerceptionError
+from .stereo import locate_object, StereoRig
 
 MARKER_QUERY = re.compile(r'^marker (\d{1,2})$')
 
@@ -155,6 +159,7 @@ class WebcamPerceptionNode(Node):
                 settings['device'] = self.get('device')
             self.capture = Camera(**settings)
             self.get_logger().info(f'camera: {settings}')
+        self.stereo = self.stereo_rig(settings if self.replay is None else {})
         threading.Thread(target=self._grab, daemon=True).start()
 
         self.bridge = CvBridge()
@@ -167,8 +172,24 @@ class WebcamPerceptionNode(Node):
         self.create_timer(1.0 / self.get('publish_rate'), self._publish)
         self.create_service(DetectObject, '/perception/detect_object', self.detect)
         self.create_service(LocateObject, '/perception/locate_object', self.locate)
-        self.get_logger().info(f'Ready: backend={self.get("backend")}, '
-                               'single-camera table mode')
+        mode = 'stereo (both ZED lenses)' if self.stereo else 'single-camera table mode'
+        self.get_logger().info(f'Ready: backend={self.get("backend")}, {mode}')
+
+    def stereo_rig(self, settings):
+        """Return (rig, disparity offset) if the calibration is a stereo one, else None."""
+        stereo = self.calibration.notes.get('stereo')
+        if not stereo or not settings.get('left_half'):
+            return None
+        here = os.path.dirname(os.path.abspath(self.get('calibration')))
+        candidates = [stereo['conf'], os.path.join(here, stereo['conf']),
+                      os.path.join(here, '..', stereo['conf'])]
+        conf = next((path for path in candidates if os.path.exists(path)), None)
+        if conf is None:
+            raise PerceptionError(f'stereo calibration names {stereo["conf"]}, not found')
+        rig = StereoRig.from_zed_conf(conf, depth_range=(0.3, 2.5))
+        if stereo.get('rotation_rvec'):
+            rig = rig.with_rotation(cv2.Rodrigues(np.array(stereo['rotation_rvec']))[0])
+        return rig, float(stereo.get('disparity_offset_px') or 0.0)
 
     # --- camera ---------------------------------------------------------------
 
@@ -177,21 +198,27 @@ class WebcamPerceptionNode(Node):
             if self.replay is not None:
                 rgb = self.replay
                 time.sleep(0.1)
+                right = None
             else:
-                rgb = self.capture.read()
+                rgb, right = self.capture.read_pair() or (None, None)
                 if rgb is None:
                     time.sleep(0.1)
                     continue
             with self.lock:
-                self.frames.append((time.time(), rgb))
+                self.frames.append((time.time(), rgb, right))
 
     def recent_frames(self):
-        """Return undistorted frames younger than ``max_frame_age``, oldest first."""
+        """Return (undistorted frames younger than ``max_frame_age``, stamp, raw pair).
+
+        Frames come oldest first; the raw (left, right) pair is the newest
+        one's, for stereo (``right`` is None for a single camera).
+        """
         now = time.time()
         with self.lock:
-            fresh = [rgb for stamp, rgb in self.frames
+            fresh = [rgb for stamp, rgb, _ in self.frames
                      if now - stamp <= self.get('max_frame_age')]
             stamp = self.frames[-1][0] if self.frames else 0.0
+            pair = self.frames[-1][1:] if self.frames else (None, None)
         if not fresh:
             raise PerceptionError('no fresh camera frame')
         if looks_blank(fresh[-1]):
@@ -201,7 +228,7 @@ class WebcamPerceptionNode(Node):
             # A focal length in pixels only means something at one resolution.
             raise PerceptionError(f'camera delivers {size}, calibration was made at '
                                   f'{tuple(self.calibration.image_size)}')
-        return [self.calibration.undistort(rgb) for rgb in fresh], stamp
+        return [self.calibration.undistort(rgb) for rgb in fresh], stamp, pair
 
     def _publish(self):
         with self.lock:
@@ -314,7 +341,7 @@ class WebcamPerceptionNode(Node):
             query = request.query.strip()
             if not query or len(query) > 120 or '\n' in query:
                 raise PerceptionError('query must be a short noun phrase')
-            frames, stamp = self.recent_frames()
+            frames, stamp, pair = self.recent_frames()
             rgb = frames[-1]
             if self.has_board:
                 focal = self.calibration.focal_px or None
@@ -343,7 +370,7 @@ class WebcamPerceptionNode(Node):
             capture_id = uuid.uuid4().hex
             self.captures[capture_id] = dict(
                 rgb=rgb, k=view.k, cam_to_base=cam_to_base, detection=detection,
-                height=height, stamp=stamp, query=query, rms_px=view.rms_px)
+                height=height, stamp=stamp, query=query, rms_px=view.rms_px, pair=pair)
             while len(self.captures) > 8:
                 self.captures.popitem(last=False)
             response.mask = self.bridge.cv2_to_imgmsg(detection.mask.astype('uint8') * 255,
@@ -364,9 +391,18 @@ class WebcamPerceptionNode(Node):
             capture = self.captures[request.capture_id]
             if time.time() - capture['stamp'] > self.get('max_capture_age'):
                 raise PerceptionError('capture is stale; detect again')
-            grasp = mono.localize_on_table(
-                capture['detection'].mask, capture['k'], capture['cam_to_base'],
-                self.calibration.base_from_board, capture['height'])
+            anchor = self.calibration.base_from_board
+            if self.stereo and capture['pair'][1] is not None:
+                rig, offset = self.stereo
+                grasp = locate_object(
+                    rig, capture['pair'][0], capture['pair'][1], capture['detection'].mask,
+                    self.calibration.focal_px, capture['cam_to_base'], anchor[:3, 3],
+                    anchor[:3, 2], disparity_offset_px=offset)
+                capture['height'] = grasp.height
+            else:
+                grasp = mono.localize_on_table(
+                    capture['detection'].mask, capture['k'], capture['cam_to_base'],
+                    anchor, capture['height'])
             reach = float(np.hypot(grasp.position[0], grasp.position[1]))
             if not self.get('reach_min') <= reach <= self.get('reach_max'):
                 raise PerceptionError(f'object is {reach:.2f} m from the base: out of reach')
@@ -385,6 +421,8 @@ class WebcamPerceptionNode(Node):
                           extent_m=[round(v, 4) for v in grasp.extent],
                           table_z=round(float(grasp.position[2] - height), 4),
                           board_rms_px=round(capture['rms_px'], 2),
+                          stereo=bool(self.stereo and capture['pair'][1] is not None),
+                          table_offset_m=round(float(getattr(grasp, 'table_offset', 0.0)), 4),
                           confidence=round(capture['detection'].confidence, 3))
             self.detail_pub.publish(String(data=json.dumps(detail)))
             self.annotate(capture, grasp, request.capture_id)

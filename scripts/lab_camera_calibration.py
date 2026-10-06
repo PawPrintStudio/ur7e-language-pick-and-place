@@ -237,6 +237,11 @@ def command_wave(args):
             except JogError as error:
                 say('SKIP', {'pose': index, 'xyz': [round(v, 3) for v in (x, y, z)],
                              'why': str(error)[:120]})
+                if 'did not succeed' in str(error):
+                    # The robot itself stopped (2026-10-06: protective stops
+                    # C153). Never carry on to the next pose after that.
+                    say('ABORT', 'execution failed; stopping the wave')
+                    break
                 continue
             if not args.execute:
                 say('PLAN', {'pose': index, 'xyz': [round(v, 3) for v in (x, y, z)],

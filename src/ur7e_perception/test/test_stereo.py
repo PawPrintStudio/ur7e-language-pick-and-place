@@ -13,7 +13,7 @@ import pytest
 
 from ur7e_perception import monocular as mono
 from ur7e_perception.core import PerceptionError
-from ur7e_perception.stereo import object_height, StereoRig
+from ur7e_perception.stereo import fit_row_rotation, locate_object, object_height, StereoRig
 from ur7e_perception.synthetic_table import cuboid, look_at
 
 REPO = Path(__file__).resolve().parents[3]
@@ -319,3 +319,75 @@ def test_table_reference_cancels_a_common_depth_error():
     assert abs(height - 0.04) < 0.002
     with pytest.raises(PerceptionError, match='table reference'):
         object_height(box, CAMERA, *PLANE, table_points_cam=table[:5])
+
+
+def project_pair(rig, rotation, points):
+    """Raw left/right pixels of camera-frame points for a right lens at ``rotation``."""
+    left = cv2.projectPoints(points, np.zeros(3), np.zeros(3), rig.k_left, rig.dist_left)[0]
+    right = cv2.projectPoints(points, cv2.Rodrigues(rotation)[0], rig.translation,
+                              rig.k_right, rig.dist_right)[0]
+    return left.reshape(-1, 2), right.reshape(-1, 2)
+
+
+@pytest.mark.skipif(not CONF.exists(), reason='factory calibration file not present')
+@pytest.mark.parametrize('tilt_deg', [0.3, 1.6])
+def test_a_tilted_lens_is_re_measured_from_matched_points(tilt_deg):
+    # 2026-10-06: today's frames sat 33 px apart in rows with the factory
+    # rotation; refitting RX and RZ brought them to under a pixel.
+    factory = StereoRig.from_zed_conf(CONF)
+    rng = np.random.default_rng(7)
+    depth = rng.uniform(0.5, 3.0, 400)
+    pixels = np.column_stack((rng.uniform(150, 1770, 400), rng.uniform(100, 980, 400)))
+    rays = np.column_stack(((pixels - factory.k_left[:2, 2]) / factory.k_left[0, 0],
+                            np.ones(400)))
+    points = rays * depth[:, None]
+    true_rvec = cv2.Rodrigues(factory.rotation)[0].ravel() + np.radians([-tilt_deg, 0, 0.05])
+    left, right = project_pair(factory, true_rvec, points)
+    right += rng.normal(0, 0.3, right.shape)          # matching noise
+    refined, report = fit_row_rotation(factory, left, right)
+    assert report['before_median_abs_dy'] > 3.0
+    assert report['after_median_abs_dy'] < 0.4
+    found = cv2.Rodrigues(refined.rotation)[0].ravel()
+    assert abs(np.degrees(found[0] - true_rvec[0])) < 0.02
+    assert abs(np.degrees(found[2] - true_rvec[2])) < 0.05
+    # Toe-in is not touched: rows cannot see it.
+    assert found[1] == pytest.approx(cv2.Rodrigues(factory.rotation)[0].ravel()[1])
+
+
+def box_mask(rig, box_height):
+    """The detection mask (ideal left image) of the rendered box."""
+    mask = np.zeros((SIZE[1], SIZE[0]), bool)
+    pixels = box_pixels(rig, box_height)
+    mask[pixels[:, 1], pixels[:, 0]] = True
+    return mask
+
+
+def test_stereo_locator_finds_the_top_centre_of_a_box(tilted):
+    rig, left, right = tilted
+    grasp = locate_object(rig, left, right, box_mask(rig, 0.04), rig.k_left[0, 0], CAMERA,
+                          *PLANE)
+    assert np.hypot(*(grasp.position[:2] - BOX_XY)) < 0.006
+    assert abs(grasp.height - 0.04) < 0.005
+    assert abs(grasp.position[2] - (TABLE_Z + 0.04)) < 0.005
+    assert abs(grasp.table_offset) < 0.003
+    assert grasp.axis_ratio < 2.0 and grasp.yaw == 0.0     # a square box has no long axis
+    assert 0.04 < grasp.extent[0] < 0.09
+
+
+def test_stereo_locator_height_survives_a_wrong_table_plane(tilted):
+    # The calibration's table is 1 cm too high: the ring of real table next to
+    # the box reads -1 cm, so the HEIGHT is still right; z follows the plane
+    # the robot was told about, which is what the pick code plans against.
+    rig, left, right = tilted
+    plane = ([0.0, 0.0, TABLE_Z + 0.01], [0.0, 0.0, 1.0])
+    grasp = locate_object(rig, left, right, box_mask(rig, 0.04), rig.k_left[0, 0], CAMERA,
+                          *plane)
+    assert abs(grasp.table_offset + 0.01) < 0.003
+    assert abs(grasp.height - 0.04) < 0.005
+
+
+def test_stereo_locator_refuses_a_blank_object():
+    rig = make_rig('tilted')
+    blank = np.full((SIZE[1], SIZE[0], 3), 128, np.uint8)
+    with pytest.raises(PerceptionError):
+        locate_object(rig, blank, blank, box_mask(rig, 0.04), rig.k_left[0, 0], CAMERA, *PLANE)

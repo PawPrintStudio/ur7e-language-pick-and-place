@@ -61,7 +61,7 @@ for package in ('ur7e_orchestrator', 'ur7e_perception'):
     sys.path.insert(0, os.path.join(_HERE, '..', 'src', package))
 
 from lab_jog import BASE_FRAME, GROUP, JogError, JogExecutor, TOOL_LINK  # noqa: E402
-from lab_rg2_native import identify, TimeoutTransport, validate_state  # noqa: E402
+from lab_rg2_native import find_by_serial, identify, TimeoutTransport, validate_state  # noqa: E402
 from ur_motion import JOINTS  # noqa: E402  (lab_jog put scripts/motion on the path)
 
 from arm_language import schema  # noqa: E402
@@ -119,11 +119,14 @@ class Rg2:
     functions its pendant nodes call. Widths in mm, force in N.
     """
 
-    def __init__(self, host, tool=2, serial='1000042561', max_force=25.0):
-        self.host, self.tool, self.max_force = host, tool, max_force
+    def __init__(self, host, tool=None, serial='1000042561', max_force=25.0):
+        """Connect; ``tool`` None finds the gripper by serial (the URCap's index drifts)."""
+        self.host, self.max_force = host, max_force
         self.rpc = xmlrpc.client.ServerProxy(f'http://{host}:41414/',
                                              transport=TimeoutTransport())
-        self.device = identify(self.rpc, tool, serial)
+        self.device = (find_by_serial(self.rpc, serial) if tool is None
+                       else identify(self.rpc, tool, serial))
+        self.tool = self.device['deviceId']
 
     def state(self):
         """Return the validated native state (width, busy, status bits)."""

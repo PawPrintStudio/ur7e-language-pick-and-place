@@ -1,4 +1,5 @@
 """Failure-path checks for the bounded native RG2 bench diagnostic."""
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -22,6 +23,19 @@ class NativeChecks(unittest.TestCase):
 
     def test_busy_status_is_not_error(self):
         lab.validate_state(state(status=1, busy=True))
+
+    def test_gripper_is_found_by_serial_whatever_its_index(self):
+        # 2026-10-06: the same RG2 came back from discovery as index 1, not 2.
+        device = dict(productCode=32, deviceId=1, deviceType=5, deviceName="RG2",
+                      serial="1000042561", status=0, warning=0, error=0, update=False)
+        rpc = Mock()
+        rpc.get_discovery.return_value = json.dumps({"devices": [device]})
+        self.assertEqual(lab.find_by_serial(rpc, "1000042561")["deviceId"], 1)
+        with self.assertRaises(RuntimeError):
+            lab.find_by_serial(rpc, "999")
+        rpc.get_discovery.return_value = json.dumps({"devices": [dict(device, error=1)]})
+        with self.assertRaises(RuntimeError):      # found, but not healthy
+            lab.find_by_serial(rpc, "1000042561")
 
     @patch.object(lab, "dashboard_gate")
     def test_excessive_step_never_sent(self, gate):

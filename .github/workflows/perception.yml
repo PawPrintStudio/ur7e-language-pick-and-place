@@ -9,7 +9,7 @@ jobs:
       - name: Install CPU perception dependencies
         run: |
           apt-get update
-          apt-get install -y python3-pytest python3-opencv python3-numpy python3-yaml ros-humble-cv-bridge ros-humble-message-filters ros-humble-tf2-ros
+          apt-get install -y python3-pytest python3-opencv python3-numpy python3-scipy python3-yaml ros-humble-cv-bridge ros-humble-message-filters ros-humble-tf2-ros
       - name: Build, geometry evaluation, live ROS contract
         shell: bash
         run: bash scripts/perception_software_check.sh

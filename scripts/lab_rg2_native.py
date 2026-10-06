@@ -64,6 +64,21 @@ def identify(rpc, tool, serial):
     return device
 
 
+def find_by_serial(rpc, serial):
+    """Return the healthy RG2 with this serial, at whatever index the URCap gave it.
+
+    The URCap numbers its devices at discovery, and the number is not
+    stable: the same gripper was index 2 on 2026-10-02 and index 1 on
+    2026-10-06. The serial is the gripper's identity; the index is only
+    where to address it today.
+    """
+    devices = json.loads(rpc.get_discovery())["devices"]
+    matches = [d for d in devices if str(d["serial"]) == serial]
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one device with serial {serial}: {devices}")
+    return identify(rpc, matches[0]["deviceId"], serial)
+
+
 def move(rpc, host, tool, target, force, feedback=None, canceled=None):
     dashboard_gate(host)
     before = validate_state(rpc.rg_get_all_variables(tool))

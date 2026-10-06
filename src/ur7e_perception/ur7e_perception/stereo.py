@@ -177,6 +177,19 @@ class StereoRig:
         return cls(k_left, dist_left, k_right, dist_right, rotation, translation, size,
                    depth_range)
 
+    def with_rotation(self, rotation):
+        """Return the same two lenses with a different right-lens rotation (3x3)."""
+        return StereoRig(self.k_left, self.dist_left, self.k_right, self.dist_right, rotation,
+                         self.translation, self.image_size, self.depth_range)
+
+    def rectified_points(self, pixels_left_raw, pixels_right_raw):
+        """Map matched raw pixels (Nx2 each) into the two rectified images."""
+        left = cv2.undistortPoints(np.asarray(pixels_left_raw, np.float64).reshape(-1, 1, 2),
+                                   self.k_left, self.dist_left, R=self.R1, P=self.P1)
+        right = cv2.undistortPoints(np.asarray(pixels_right_raw, np.float64).reshape(-1, 1, 2),
+                                    self.k_right, self.dist_right, R=self.R2, P=self.P2)
+        return left.reshape(-1, 2), right.reshape(-1, 2)
+
     def disparity_limits(self):
         """Return (lowest, count) of the disparities searched, in pixels.
 
@@ -391,6 +404,70 @@ class StereoRig:
                 'patches': int(len(shifts))}
 
 
+def match_features(left_raw_rgb, right_raw_rgb, max_features=8000):
+    """Return matched raw pixels (Nx2 left, Nx2 right) between the two eyes.
+
+    SIFT with Lowe's ratio test, then a RANSAC fundamental matrix: a check
+    that uses no calibration at all, so a wrong calibration cannot hide the
+    matches that would reveal it.
+    """
+    sift = cv2.SIFT_create(max_features)
+    kl, dl = sift.detectAndCompute(_gray(left_raw_rgb), None)
+    kr, dr = sift.detectAndCompute(_gray(right_raw_rgb), None)
+    if dl is None or dr is None or len(kl) < 20 or len(kr) < 20:
+        raise PerceptionError('too few features to match the two eyes (blank scene?)')
+    good = [m for m, n in cv2.BFMatcher().knnMatch(dl, dr, k=2) if m.distance < 0.7 * n.distance]
+    if len(good) < 30:
+        raise PerceptionError(f'only {len(good)} feature matches between the eyes; need 30')
+    left = np.float64([kl[m.queryIdx].pt for m in good])
+    right = np.float64([kr[m.trainIdx].pt for m in good])
+    _, mask = cv2.findFundamentalMat(left, right, cv2.FM_RANSAC, 1.5, 0.999)
+    keep = mask.ravel().astype(bool) if mask is not None else np.ones(len(left), bool)
+    return left[keep], right[keep]
+
+
+def fit_row_rotation(rig, pixels_left_raw, pixels_right_raw):
+    """Re-measure the right lens's tilt so matched points share a row again.
+
+    Rectification puts a scene point on the same row in both images only if
+    the rotation between the lenses is right; SGBM searches that row alone,
+    so a few pixels of row error cost most of the depth. Rows pin down two
+    of the three angles: ``RX`` (tilt about the baseline, a constant row
+    shift) and ``RZ`` (roll, a row shift that grows across the image). The
+    third, ``CV`` (toe-in about the vertical), moves points *along* rows --
+    it changes disparity, i.e. depth, and is invisible to this test, so it is
+    kept from the factory file and checked against the robot instead
+    (:func:`handeye.solve` with ``fit_disparity``).
+
+    Returns (refined rig, report dict with row errors before and after).
+    """
+    from scipy.optimize import least_squares
+
+    start = cv2.Rodrigues(rig.rotation)[0].ravel()
+
+    def rows(angles):
+        rotation = cv2.Rodrigues(np.array([angles[0], start[1], angles[1]]))[0]
+        left, right = rig.with_rotation(rotation).rectified_points(
+            pixels_left_raw, pixels_right_raw)
+        return right[:, 1] - left[:, 1]
+
+    before = rows(start[[0, 2]])
+    # Two starts: the factory angles and the factory tilt mirrored. A row
+    # error of tens of pixels can sit in a valley the solver will not leave.
+    fits = [least_squares(rows, guess, loss='soft_l1', f_scale=0.5, x_scale=1e-3)
+            for guess in (start[[0, 2]], start[[0, 2]] * [-1, 1])]
+    best = min(fits, key=lambda fit: np.median(np.abs(fit.fun)))
+    after = rows(best.x)
+    rotation = cv2.Rodrigues(np.array([best.x[0], start[1], best.x[1]]))[0]
+    report = {'matches': int(len(after)),
+              'before_median_abs_dy': float(np.median(np.abs(before))),
+              'after_median_abs_dy': float(np.median(np.abs(after))),
+              'after_p90_abs_dy': float(np.percentile(np.abs(after), 90)),
+              'rotation_rvec': cv2.Rodrigues(rotation)[0].ravel().tolist(),
+              'factory_rvec': start.tolist()}
+    return rig.with_rotation(rotation), report
+
+
 def object_height(points_cam, cam_to_base, plane_point, plane_normal, percentile=90,
                   min_points=30, max_height_m=0.3, table_points_cam=None):
     """Return (height of the object's top above the table in metres, points used).
@@ -448,6 +525,95 @@ def object_height(points_cam, cam_to_base, plane_point, plane_normal, percentile
             f'({int((heights < 0).sum())} are below the table, '
             f'{int((heights > max_height_m).sum())} too high)')
     return float(np.percentile(kept, percentile)), int(len(kept))
+
+
+def locate_object(rig, left_raw_rgb, right_raw_rgb, mask, focal_ideal_px, cam_to_base,
+                  plane_point, plane_normal, disparity_offset_px=0.0, max_pixels=6000,
+                  ring_px=(8, 30), min_points=30, max_height_m=0.3):
+    """Locate an object on the table from both lenses. Return a :class:`core.Grasp`.
+
+    ``mask`` is the detection in the IDEAL left image (what the detectors
+    see). The returned ``position`` follows the single-camera convention the
+    pick code expects: x, y the centre of the object's top, z the height of
+    that top in ``base_link`` (table plane + measured height). Also set:
+    ``height`` (m above the table), ``extent`` (long, short side, m) and
+    ``table_offset`` (how far the stereo table ring sat from the calibrated
+    plane, m -- a health number: it should be millimetres).
+
+    The steps, and why:
+
+    * every mask pixel gets a 3-D point (subsampled to ``max_pixels``; more
+      only costs time), corrected for the robot-measured disparity offset;
+    * a ring of table just outside the mask is measured the same way. Its
+      median height is subtracted, so the object's height is the difference
+      of two stereo measurements side by side and a shared error cancels
+      (see :func:`object_height`);
+    * the top is the 90th percentile of the heights; the centre is taken from
+      the points near the top, because the sides the camera sees lean toward
+      the camera and would pull a plain average off-centre;
+    * yaw comes from the spread of the object's points on the table plane.
+    """
+    from .core import Grasp
+    from .handeye import correct_depth
+
+    mask = np.asarray(mask).astype(bool)
+    rows, cols = np.nonzero(mask)
+    if len(rows) < min_points:
+        raise PerceptionError('detection mask is too small to measure')
+    pick = np.linspace(0, len(rows) - 1, min(len(rows), max_pixels)).astype(int)
+    pixels = np.column_stack((cols[pick], rows[pick])).astype(float)
+    inner = cv2.dilate(mask.astype(np.uint8), np.ones((2 * ring_px[0] + 1,) * 2, np.uint8))
+    outer = cv2.dilate(mask.astype(np.uint8), np.ones((2 * ring_px[1] + 1,) * 2, np.uint8))
+    ring_rows, ring_cols = np.nonzero(outer & ~inner)
+    ring_pick = np.linspace(0, len(ring_rows) - 1, min(len(ring_rows), max_pixels // 2)
+                            ).astype(int) if len(ring_rows) else np.array([], int)
+    ring = np.column_stack((ring_cols[ring_pick], ring_rows[ring_pick])).astype(float)
+    every = np.vstack((pixels, ring)) if len(ring) else pixels
+    points = rig.points_for_pixels(left_raw_rgb, right_raw_rgb, every, focal_ideal_px)
+    points = correct_depth(points, disparity_offset_px, rig.focal_px, rig.baseline_m)
+    obj, table = points[:len(pixels)], points[len(pixels):]
+
+    table_heights = _heights_above(table, cam_to_base, plane_point, plane_normal)
+    table_heights = table_heights[np.abs(table_heights) < 0.03]  # the ring, not a neighbour
+    offset = float(np.median(table_heights)) if len(table_heights) >= min_points else 0.0
+    finite = np.isfinite(obj).all(axis=1)
+    cam_to_base = np.asarray(cam_to_base, dtype=float)
+    in_base = obj[finite] @ cam_to_base[:3, :3].T + cam_to_base[:3, 3]
+    normal = np.asarray(plane_normal, dtype=float) / np.linalg.norm(plane_normal)
+    heights = (in_base - np.asarray(plane_point, dtype=float)) @ normal - offset
+    keep = (heights >= 0.0) & (heights <= max_height_m)
+    if keep.sum() < min_points:
+        raise PerceptionError(f'only {int(keep.sum())} stereo points on the object; need '
+                              f'{min_points} (blank surface, hidden from the right lens, '
+                              'or out of depth range)')
+    in_base, heights = in_base[keep], heights[keep]
+    top = float(np.percentile(heights, 90))
+    # A narrow band: wide enough for stereo noise on a flat top, narrow
+    # enough to leave out the camera-facing side just below the top edge.
+    near_top = heights >= top - max(0.004, 0.1 * top)
+    if near_top.sum() < 10:
+        near_top = heights >= 0.5 * top
+    center = np.median(in_base[near_top, :2], axis=0)
+    xy = in_base[:, :2]
+    values, vectors = np.linalg.eigh(np.cov(xy.T))
+    ratio = float(values[-1] / max(values[0], 1e-12))
+    major, minor = vectors[:, -1], vectors[:, 0]
+    along, across = (xy - center) @ major, (xy - center) @ minor
+    extent = (float(np.percentile(along, 98) - np.percentile(along, 2)),
+              float(np.percentile(across, 98) - np.percentile(across, 2)))
+    yaw = (math.atan2(major[1], major[0]) + math.pi / 2) % math.pi - math.pi / 2
+    # Variance ratio 2 = side ratio ~1.4: below that the long axis is noise
+    # (the same rule as the single-camera locator).
+    if ratio < 2.0:
+        yaw = 0.0
+    # The plane is the robot-measured table; ``top`` is already relative to
+    # the stereo ring, so the offset (a stereo error) is not added back.
+    plane_z = float(np.asarray(plane_point, dtype=float)[2])
+    position = np.array([center[0], center[1], plane_z + top])
+    grasp = Grasp(position, np.array([math.cos(yaw / 2), math.sin(yaw / 2), 0.0, 0.0]), yaw,
+                  int(len(heights)), ratio)
+    grasp.extent, grasp.height, grasp.table_offset = extent, top, offset
+    return grasp
 
 
 def _heights_above(points_cam, cam_to_base, plane_point, plane_normal):

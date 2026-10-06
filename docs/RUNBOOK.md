@@ -1176,3 +1176,24 @@ and what was not done are in the lab record.
   2.5 five-touch verification (#19); TCP vs pendant (#10).
 - Stereo height from the ZED's second lens: tested on rendered pairs, not wired into the node.
 - Jetson / ZED SDK (#15, #16): today's USB-ZED path is a documented alternative; decision pending.
+
+## 2026-10-06 — lab session: stereo calibration built; four protective stops
+
+Full record: [LAB_2026-10-06_STEREO_CALIBRATION.md](LAB_2026-10-06_STEREO_CALIBRATION.md).
+
+- Pre-flight: everything merged (`main` = PR #42); `ur-link` was down
+  (`nmcli con up ur-link`); ZED off its mount, so the 10-02 calibration was invalid.
+- Built (tested): lens re-alignment (`rows`; 33 → 0.74 px row error on the real
+  ZED), stereo eye-to-hand solver (`handeye.py`), stereo locator in the
+  webcam node, `lab_stereo_calibration.py`, RG2 lookup by serial (URCap index
+  changed 2 → 1).
+- Arm: four C153 protective stops while calibrating. One was the hat hitting
+  the block tower on the plate. Three were caused by starting from `front`,
+  where the gripper hangs ~10 cm from the forearm (`lab_path_audit.py`). The
+  operator stopped two by hand.
+- Now enforced: a gripper-to-arm sweep gate (0.15 m), per-move joint limits,
+  yaw-only wave, abort on failure, plan-only rehearsal (`--from-pose`).
+- Recovery used four times: unlock → kill **every** driver process in the
+  container (closing a terminal tab leaves `ros2 launch` running and gives two
+  controller managers) → relaunch driver → Play → check `scaled_joint_trajectory_controller` is active.
+

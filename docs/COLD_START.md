@@ -5,6 +5,14 @@ Ethernet link, RG2 through the OnRobot URCap, ZED 2i used as a plain USB
 camera, everything ROS in one Docker container. Verified 2026-10-02.
 Every command below is a copy-paste; "pendant" steps are the only manual ones.
 
+> **2026-10-06: do not run the §3 calibration wave from `front` with an
+> object in the gripper.** Four protective stops (C153) came from that start
+> pose: in it the gripper hangs ~10 cm from the arm's own forearm, and the
+> approach swings the forearm over the held object. Clear the plate and
+> start from an open, taught pose, as in
+> [LAB_2026-10-06_STEREO_CALIBRATION.md](LAB_2026-10-06_STEREO_CALIBRATION.md)
+> ("Next session"). `lab_stereo_calibration.py` now refuses such moves.
+
 ## 0. Power-on order (5 min)
 
 1. Robot controller on → pendant: **Power on**, **Brake release** (robot mode RUNNING).

@@ -283,6 +283,46 @@ def plan_pose_joint(executor, state, pose):
     return executor.plan_joint_line(state, {j: solved[j] for j in JOINTS})
 
 
+def command_capture(args):
+    """Freedrive calibration: the operator moves the arm, Enter records a stop.
+
+    Sends no motion at all (2026-10-06, after the wave's stops: the RG2
+    fingers kept meeting the forearm in poses the model passed). Writes the
+    same observations file as ``wave``, so ``solve`` works unchanged. Vary
+    position across the view AND the tool's tilt/yaw between stops.
+    """
+    executor = make_executor(args)
+    camera = Camera(**camera_settings())
+    _, shell, _ = lenses()
+    os.makedirs(SESSION, exist_ok=True)
+    observations = []
+    say('CAPTURE', 'freedrive the arm with the target held; Enter = record, q = finish')
+    while True:
+        if input(f'[{len(observations)} recorded] Enter to record, q to finish: ').strip() == 'q':
+            break
+        first = executor.joints_of(executor.fresh(settle_s=0.2))
+        time.sleep(0.5)
+        state = executor.fresh(settle_s=0.2)
+        if max(abs(first[j] - executor.joints_of(state)[j]) for j in first) > 0.002:
+            say('SKIP', 'the arm is still moving; hold it still and press Enter again')
+            continue
+        tool = tool_matrix(executor.fk(state))
+        left, right = grab_pair(camera)
+        index = len(observations)
+        names = (f'capture_{index:02d}_left.jpg', f'capture_{index:02d}_right.jpg')
+        for name, image in zip(names, (left, right)):
+            cv2.imwrite(os.path.join(SESSION, name), cv2.cvtColor(image, cv2.COLOR_RGB2BGR),
+                        [cv2.IMWRITE_JPEG_QUALITY, 97])
+        blobs = white_blobs(shell.undistort(left), color=args.target_color, min_area=300,
+                            max_area=80000)
+        observations.append({'index': index, 'turn': [0, 0, 0], 'tool0': tool.tolist(),
+                             'left': names[0], 'right': names[1]})
+        write_json(OBSERVATIONS, {'color': args.target_color, 'observations': observations})
+        say('SEEN', {'index': index, 'tool0_xyz': [round(v, 4) for v in tool[:3, 3]],
+                     'target_colour_blobs': len(blobs)})
+    say('DONE', {'observations': len(observations), 'file': OBSERVATIONS})
+
+
 def command_wave(args):
     import lab_pick
     from lab_jog import JogError
@@ -685,6 +725,9 @@ def main():
                       help='plan-only: rehearse the wave as if starting at this named pose')
     wave.add_argument('--target-color', choices=sorted(TARGET_COLORS), default='blue')
     wave.set_defaults(run=command_wave)
+    capture = commands.add_parser('capture', help='freedrive calibration: you move the arm, Enter records')
+    capture.add_argument('--target-color', choices=sorted(TARGET_COLORS), default='blue')
+    capture.set_defaults(run=command_capture)
     solve = commands.add_parser('solve', help='camera pose from the wave')
     solve.add_argument('--radius', type=float, default=None,
                        help='target radius, m (default: measured from the images)')
@@ -700,7 +743,7 @@ def main():
     commands.add_parser('check', help='live overlay of the robot on the camera image'
                         ).set_defaults(run=command_check)
     args = cli.parse_args()
-    needs_ros = args.command in ('wave', 'check')
+    needs_ros = args.command in ('wave', 'check', 'capture')
     if needs_ros:
         import rclpy
         rclpy.init()

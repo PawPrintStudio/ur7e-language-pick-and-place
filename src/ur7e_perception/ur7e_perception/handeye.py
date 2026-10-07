@@ -93,7 +93,8 @@ def _linear_start(points_cam, rotations, translations, target_drop=None):
 
 
 def solve(points_cam, tool_poses, focal_px=None, baseline_m=None, fit_disparity=False,
-          loss_scale_m=0.003, outlier_factor=4.0, min_poses=6, target_drop=None):
+          loss_scale_m=0.003, outlier_factor=4.0, min_poses=6, target_drop=None,
+          target_on_axis=False):
     """Solve the camera pose from stereo target positions and flange poses.
 
     ``target_drop`` (m), if given, fixes how far along tool0's z axis the
@@ -112,6 +113,10 @@ def solve(points_cam, tool_poses, focal_px=None, baseline_m=None, fit_disparity=
     the 1-sigma uncertainty of the target offset (mm, per axis) and of the
     disparity offset, from the fit's Jacobian. A large ``sigma`` means the
     poses did not turn the wrist enough to separate that unknown.
+
+    ``target_on_axis`` (needs ``target_drop``) also pins the target on tool0's
+    axis, so only the camera pose is fitted: for a handful of stops, which
+    cannot separate a sideways target offset from the camera pose.
     """
     points = np.asarray(points_cam, dtype=float).reshape(-1, 3)
     poses = np.asarray(tool_poses, dtype=float).reshape(-1, 4, 4)
@@ -125,10 +130,17 @@ def solve(points_cam, tool_poses, focal_px=None, baseline_m=None, fit_disparity=
         raise PerceptionError(f'only {int(inliers.sum())} usable observations; need {min_poses}')
     rotations, translations = poses[:, :3, :3], poses[:, :3, 3]
 
-    free = 3 if target_drop is None else 2
+    if target_on_axis and target_drop is None:
+        raise PerceptionError('target_on_axis needs target_drop')
+    free = 0 if target_on_axis else 3 if target_drop is None else 2
 
     def unpack(params):
-        x = params[6:6 + free] if target_drop is None else np.append(params[6:8], target_drop)
+        if target_on_axis:
+            x = np.array([0.0, 0.0, target_drop])
+        elif target_drop is None:
+            x = params[6:9]
+        else:
+            x = np.append(params[6:8], target_drop)
         offset = params[6 + free] if fit_disparity else 0.0
         return Rotation.from_rotvec(params[:3]).as_matrix(), params[3:6], x, offset
 

@@ -257,6 +257,32 @@ def with_joints(state, joints):
     return moved
 
 
+def plan_pose_joint(executor, state, pose):
+    """IK seeded from ``state``, then a collision-checked straight line in joint space.
+
+    2026-10-06: /compute_cartesian_path turned a 6 mm step from calib_start
+    into 2020 waypoints that swung the shoulder a full turn (the gates
+    refused it). Wave steps are a few cm, so a joint-space line from the
+    nearest IK solution follows nearly the same tool path without that risk.
+    """
+    from lab_jog import JOINTS, JogError
+    from moveit_msgs.srv import GetPositionIK
+    from geometry_msgs.msg import PoseStamped
+    req = GetPositionIK.Request()
+    req.ik_request.group_name = 'ur_manipulator'
+    req.ik_request.robot_state = state
+    req.ik_request.avoid_collisions = True
+    req.ik_request.ik_link_name = 'tool0'
+    req.ik_request.pose_stamped = PoseStamped(pose=pose)
+    req.ik_request.pose_stamped.header.frame_id = 'base_link'
+    req.ik_request.timeout.nanosec = 200_000_000
+    res = executor.call(GetPositionIK, '/compute_ik', req)
+    if res.error_code.val != 1:
+        raise JogError(f'no collision-free IK for the stop (MoveIt code {res.error_code.val})')
+    solved = dict(zip(res.solution.joint_state.name, res.solution.joint_state.position))
+    return executor.plan_joint_line(state, {j: solved[j] for j in JOINTS})
+
+
 def command_wave(args):
     import lab_pick
     from lab_jog import JogError
@@ -306,7 +332,7 @@ def command_wave(args):
             if args.execute:
                 state = executor.fresh()
             try:
-                points = executor.plan_pose(state, pose)
+                points = plan_pose_joint(executor, state, pose)
                 arm, wrist = check_move(
                     executor.joints_of(state), points,
                     *((MAX_ARM_STEP_RAD, MAX_WRIST_STEP_RAD) if approached else

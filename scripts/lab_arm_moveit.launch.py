@@ -57,7 +57,11 @@ def setup(context):
     collision = ET.SubElement(link, 'collision')
     ET.SubElement(collision, 'origin', xyz='0 0 0.135', rpy='0 0 0')
     geometry = ET.SubElement(collision, 'geometry')
-    ET.SubElement(geometry, 'box', size='0.16 0.09 0.28')
+    # 2026-10-06: square, not 0.16 x 0.09. The fingers hit the forearm in every
+    # C153 stop while this box showed ~2 cm of room; the real finger axis was
+    # never checked against tool0 X. 0.20 x 0.20 covers fully open fingers
+    # (72.6 mm) plus ~3 cm whichever way the RG2 is mounted.
+    ET.SubElement(geometry, 'box', size='0.20 0.20 0.28')
     joint = ET.SubElement(robot, 'joint', name='lab_gripper_envelope_joint', type='fixed')
     ET.SubElement(joint, 'parent', link='tool0')
     ET.SubElement(joint, 'child', link='lab_gripper_envelope')

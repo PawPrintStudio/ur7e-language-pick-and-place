@@ -491,12 +491,14 @@ def command_solve(args):
                     'no_detection': [o['index'] for o, f in zip(observations, found) if not f],
                     'no_depth': [o['index'] for o, f in zip(observations, found)
                                  if f and 'centre' not in f]})
-    if len(usable) < 8:
-        raise SystemExit(f'only {len(usable)} stops have a target with stereo depth; need 8')
+    if len(usable) < args.min_stops:
+        raise SystemExit(f'only {len(usable)} stops have a target with stereo depth; '
+                         f'need {args.min_stops} (--min-stops)')
     points = np.array([f['centre'] for _, f in usable])
     poses = np.array([obs['tool0'] for obs, _ in usable])
     result = handeye.solve(points, poses, focal_px=rig.focal_px, baseline_m=rig.baseline_m,
-                           fit_disparity=not args.no_disparity, target_drop=args.target_drop)
+                           fit_disparity=not args.no_disparity, target_drop=args.target_drop,
+                           target_on_axis=args.target_on_axis)
     cam_to_base = result['cam_to_base']
     k = mono.intrinsics(focal, rig.image_size)
     solution = {
@@ -731,9 +733,13 @@ def main():
     solve = commands.add_parser('solve', help='camera pose from the wave')
     solve.add_argument('--radius', type=float, default=None,
                        help='target radius, m (default: measured from the images)')
+    solve.add_argument('--min-stops', type=int, default=8,
+                       help='fewest stops with stereo depth to solve from (fewer = rougher)')
     solve.add_argument('--target-drop', type=float, required=True,
                        help='flange face to the target centre along the tool axis, m '
                             '(ruler; the hat by its brim was ~0.312 on 2026-10-02)')
+    solve.add_argument('--target-on-axis', action='store_true',
+                       help='pin the target on the tool axis (few stops: fit only the camera)')
     solve.add_argument('--no-disparity', action='store_true',
                        help='do not estimate a stereo depth correction')
     solve.set_defaults(run=command_solve)

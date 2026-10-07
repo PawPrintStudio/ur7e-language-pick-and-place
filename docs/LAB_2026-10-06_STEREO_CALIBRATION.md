@@ -133,3 +133,19 @@ to (0.30, -0.02, 0.36): same picture, gap 0.101 m at the start
 
 The camera pose changes are what stereo calibration is for. None of the
 four stops had anything to do with the camera.
+
+## Later on 2026-10-06: gate fix, `calib_start`, and the next step
+
+- **The gripper-gap gate could never pass.** It measured to the `wrist_1`
+  joint, which carries the gripper about 0.14 m off its axis in every
+  top-down pose, so the gap topped out at 0.141 m against a 0.15 m minimum.
+  With Nikola's approval it now treats only the first 70 % of the
+  elbow-to-wrist line as forearm (`FOREARM_REACH` in `lab_path_audit.py`).
+  `front` still fails (0.104 m).
+- **`calib_start`** was placed by hand: elbow folded to -2.31, gap 0.181 m.
+  The tool is tilted 13.5° and the flange is about 0.27 m high. It is saved
+  in `scripts/lab_poses.json`.
+- **Definite next step: mount the ZED rigidly to the robot's stand.**
+  Camera and base then move together, the calibration holds for good, and
+  each session only runs `check`. Tracked as plan task 2.5b in
+  `docs/IMPLEMENTATION_PLAN.md`.

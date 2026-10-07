@@ -12,7 +12,9 @@
     "and eyes on the arm.",
     "`front` (2026-10-02) is `ready` with the base turned -90 degrees: the same",
     "top-down posture, but over the front of the stand where the ZED looks",
-    "and the pick area is. It is the hub the pick workflow starts from."
+    "and the pick area is. It is the hub the pick workflow starts from.",
+    "`calib_start` (2026-10-06, placed by hand) replaces `front` as the stereo",
+    "calibration seed: gripper-to-forearm gap 0.181 m (front: 0.104, gate 0.15)."
   ],
   "ready": {
     "shoulder_pan_joint": -0.006,
@@ -29,5 +31,13 @@
     "wrist_1_joint": 1.53,
     "wrist_2_joint": -1.5708,
     "wrist_3_joint": -3.579
+  },
+  "calib_start": {
+    "shoulder_pan_joint": -1.2937,
+    "shoulder_lift_joint": -1.3273,
+    "elbow_joint": -2.3131,
+    "wrist_1_joint": 2.2467,
+    "wrist_2_joint": -1.4149,
+    "wrist_3_joint": -6.0508
   }
 }

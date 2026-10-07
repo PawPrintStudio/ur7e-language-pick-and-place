@@ -100,6 +100,21 @@ It asserts the controller goes active, `/joint_states` flows, and a
 the orchestrator use later, and the sim twin of lab session 2's first
 commanded motion.
 
+### The natural-language pick, end to end, on tier 1
+
+The lab pick code (`scripts/lab_pick.py`: language parser → orchestrator →
+webcam perception node → MoveIt → trajectory controller) runs against mock
+hardware, a rendered table image and a fake gripper:
+
+```bash
+bash scripts/lab_pick_rehearsal.sh            # six scenarios: picks, place, not-found, refusals, workspace gate
+bash scripts/lab_pick_rehearsal.sh "pick up the blue block"   # one sentence
+```
+
+Each scenario's outcome and reason code are checked; exit 0 means all
+matched. The by-hand version (four terminals, like the lab) is in
+[LAB_2026-10-07_SIM_E2E.md](LAB_2026-10-07_SIM_E2E.md).
+
 ## Tier 2 — URSim (the real controller software, simulated)
 
 URSim is Universal Robots' own controller simulator: the same URControl that

@@ -51,7 +51,7 @@ def segment_distance(p1, q1, p2, q2):
 # must stay this far from the arm's own upper-arm and forearm axes along the
 # whole planned path. Gripper body 0.08 m half-width + forearm 0.05 m radius
 # + margin. The 2026-10-02/06 `front` pose starts at 0.101 m: it fails.
-MIN_GAP_M = 0.15
+MIN_GAP_M = 0.17  # 2026-10-06: gripper envelope widened to 0.10 m half-width
 # Fraction of the elbow-to-wrist-1 line treated as forearm body (see gaps()).
 FOREARM_REACH = 0.7
 

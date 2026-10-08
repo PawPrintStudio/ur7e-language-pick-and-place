@@ -4,6 +4,8 @@ Natural-language pick-and-place for a **Universal Robots UR7e**: say or type *"p
 
 Built on **ROS 2 Humble** running natively on an **NVIDIA Jetson Orin Nano** (JetPack 6.2.x), extending the proven driver + network setup from [ur7e-ros2-keyboard-controller](https://github.com/PawPrintStudio/ur7e-ros2-keyboard-controller).
 
+**New here, or running it yourself? Start with [docs/START_HERE.md](docs/START_HERE.md):** the layers, the environment, and every command for the end-to-end pick in simulation.
+
 ## How it works
 
 ```

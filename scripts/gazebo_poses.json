@@ -1,0 +1,11 @@
+{
+  "_comment": "lab_pick.py --sim gazebo: ready = the Gazebo world observe pose (ur7e_pick_place.srdf.xacro): above the table, out of the overhead camera view.",
+  "ready": {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -1.9,
+    "elbow_joint": 1.9,
+    "wrist_1_joint": -1.57,
+    "wrist_2_joint": -1.57,
+    "wrist_3_joint": 0.0
+  }
+}

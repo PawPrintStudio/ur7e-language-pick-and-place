@@ -62,7 +62,7 @@ computes from the CAD (scripts/test_lab_tooling.py checks they agree):
       <visual>
         <origin xyz="0 0 ${dqc_tool_side / 2}" rpy="0 0 0"/>
         <geometry><cylinder radius="0.036" length="${dqc_tool_side}"/></geometry>
-        <material name="dqc_tool_side"><color rgba="0.15 0.35 0.75 1"/></material>
+        <material name="dqc_tool_side"><color rgba="0.35 0.45 0.6 1"/></material>
       </visual>
       <visual>
         <origin xyz="0 0 ${dqc_tool_side}" rpy="${-pi / 2} 0 0"/>
@@ -70,7 +70,9 @@ computes from the CAD (scripts/test_lab_tooling.py checks they agree):
           <mesh filename="package://ur7e_bringup/meshes/soft_gripper.stl"
                 scale="0.001 0.001 0.001"/>
         </geometry>
-        <material name="soft_gripper_blue"><color rgba="0.3 0.45 0.95 1"/></material>
+        <!-- Blue-grey, not the real saturated blue: in Gazebo the colour
+             detector would otherwise take it for "the blue block". -->
+        <material name="soft_gripper_blue"><color rgba="0.4 0.6 0.85 1"/></material>
       </visual>
       <collision>
         <origin xyz="0 0 0.0732" rpy="0 0 0"/>

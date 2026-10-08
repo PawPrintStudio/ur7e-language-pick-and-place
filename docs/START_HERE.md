@@ -238,6 +238,43 @@ python3 scripts/pick_place_language_demo.py --execute-simulation --backend keywo
 - This demo uses the language parser and `motion_node`, not `lab_pick.py`
   and the orchestrator (gap 7). Recreate the world (restart G1) between full runs.
 
+## 5c. The real-arm pipeline in Gazebo, scored (the full flow)
+
+§5b runs a separate demo script. This one runs **`lab_pick.py`, the program
+that drives the real arm**, against the Gazebo world: language → orchestrator
+(retries, safety gate, every segment planned first, motion audit) →
+perception → MoveIt → controller. It plays six scenarios, the same as tier 1's
+rehearsal, and checks each one against **Gazebo's own block pose**: the block
+must really rise and really end up where it should.
+
+Stop any Gazebo already running. Then, in one devcontainer terminal:
+
+```bash
+bash scripts/gazebo_pick_rehearsal.sh
+```
+
+The Gazebo and RViz windows open; about 15 minutes, each pick ~3–4 min.
+Variants: `GAZEBO_GUI=false` (headless), `REHEARSAL_BACKEND=claude` (Claude
+parser), or one sentence as the argument. Exit 0 only if all six pass.
+Verified 2026-10-08: 6/6. Rendering is software OpenGL by default (the GPU
+driver fails inside the container, and that hangs Gazebo's camera);
+`LIBGL_ALWAYS_SOFTWARE=0` to try the GPU.
+
+What `--sim gazebo` switches (all in `lab_pick.py`'s `SIM_PRESETS`):
+
+- **MoveIt group** `ur_onrobot_manipulator`, **planned frame** `gripper_tcp`
+  (the RG2 on the Dual Quick Changer, as in Gazebo's model);
+- **controller** `/joint_trajectory_controller/...` instead of `scaled_...`;
+- **gripper** [`gazebo_rg2.py`](../scripts/gazebo_rg2.py): Gazebo's gripper
+  controller plus the world's grasp latch, engaged only if the fingertips are
+  really at the block, so a missed grasp is a miss;
+- **time allowance** ×4: Gazebo with windows runs at about half real time;
+- table: [`gazebo_table.json`](../scripts/gazebo_table.json) (table top at
+  z = 0); start pose: [`gazebo_poses.json`](../scripts/gazebo_poses.json).
+
+The script also starts the fake robot status, waits for everything, and before
+each scenario releases the latch and puts the block back on its mark.
+
 ## 6. The scripted version, and the checks
 
 Same stack, started and scored automatically: six sentences, PASS/FAIL each,

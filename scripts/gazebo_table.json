@@ -1,0 +1,51 @@
+{
+  "base_from_board": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "square_m": 0.035,
+  "marker_m": 0.026,
+  "focal_px": 0.0,
+  "dist": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "camera_matrix": null,
+  "camera_to_base": null,
+  "image_size": [
+    1280,
+    720
+  ],
+  "residual_mm": [],
+  "source": "gazebo",
+  "notes": {
+    "method": "known world: pick_place_table.sdf table top at z = 0 (table pose z -0.025, 0.05 thick)",
+    "tool_length": 0.0,
+    "note": "for lab_pick.py --sim gazebo only; no camera keep-out (the Gazebo camera hangs 1 m up)"
+  }
+}

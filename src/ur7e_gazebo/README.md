@@ -8,6 +8,24 @@ package is that integration.
 
 ## What's verified working
 
+**Update 2026-10-08.** Two things below are out of date:
+
+- **The grasp latch works.** It was fixed after this README was written: the
+  `preserveFixedJoint` on `onrobot_base_link_joint` and the plugin on
+  `pick_object` (issue #30). Verified again on 2026-10-08: after
+  `pick_place_language_demo.py`, `pick_object` sits at z = 0.140 m (0.04 + the
+  10 cm lift).
+- **The tool is now the real arm's.** An OnRobot Dual Quick Changer carries
+  the RG2 on one face and a soft gripper on the other, each 60° off the flange
+  axis (`ur7e_bringup/urdf/dual_quick_changer.xacro`, CAD meshes in
+  `ur7e_bringup/meshes/`). The MoveIt robot the demo plans with
+  (`ur7e_pick_place_bringup`) uses the same file, so RViz shows it too. During
+  a pick, `gripper_tcp` points straight down and `tool0` tilts 60°.
+- Startup: the launch resets the block at 9 s, and on a busy machine that
+  can run before the startup latch releases, leaving the block elsewhere
+  (the plan then fails: "no collision-free hover"). Reset it by hand:
+  `ign service -s /world/pick_place_table/set_pose --reqtype ignition.msgs.Pose --reptype ignition.msgs.Boolean --timeout 5000 --req 'name: "pick_object", position: {x: 0.45, y: -0.15, z: 0.04}, orientation: {w: 1.0}'`
+
 - The combined arm+gripper URDF spawns and both `ros2_control` hardware
   interfaces (`ign_ros2_control/IgnitionSystem`, one for the arm via
   `ur_description`'s own `sim_ignition` branch, one we wrote for the

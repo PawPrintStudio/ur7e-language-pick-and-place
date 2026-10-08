@@ -80,3 +80,19 @@ def test_yaml_file_loads_and_starts_unverified():
     settings = lab_tooling.load()
     assert set(DEFAULTS) <= set(settings)
     assert settings['verified'] is False
+
+
+def test_gazebo_and_moveit_model_uses_the_same_mount_as_the_lab_planner():
+    """ur7e_bringup/urdf/dual_quick_changer.xacro must match lab_tooling.py."""
+    import re
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src',
+                        'ur7e_bringup', 'urdf', 'dual_quick_changer.xacro')
+    text = open(path).read()
+
+    def prop(name):
+        return re.search(rf'name="{name}" value="([^"]+)"', text).group(1)
+
+    assert float(prop('dqc_face_x')) == lab_tooling.FACE_CENTRE[0]
+    assert float(prop('dqc_face_z')) == lab_tooling.FACE_CENTRE[2]
+    assert prop('dqc_tilt') == '${pi / 3}' and lab_tooling.FACE_TILT_DEG == 60.0
+    assert abs(float(prop('dqc_tool_side')) + 0.113 - lab_tooling.SOFT_GRIPPER_LENGTH) < 1e-9

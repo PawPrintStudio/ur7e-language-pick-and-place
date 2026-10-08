@@ -201,6 +201,43 @@ Run logs: `/tmp/sim/runs/*.jsonl`.
 Ctrl+C in T5…T1 (reverse order). If T1 is restarted, the mock arm is back at
 its start pose, so run an executed pick before a plan-only one again.
 
+## 5b. The same pick in Gazebo (tier 3): physics, a rendered camera, visible blocks
+
+Gazebo shows what tier 1 cannot: a table, coloured blocks and an overhead
+camera image, with the real tool on the arm (Dual Quick Changer, RG2 on its
+60° face, soft gripper on the other; RViz shows the same model). Stop any
+tier-1 terminals first; one simulated robot at a time.
+
+**G1: the world.** Gazebo and RViz windows open on your desktop:
+
+```bash
+export ROS_DOMAIN_ID=84 ROS_LOCALHOST_ONLY=1 CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><ParticipantIndex>auto</ParticipantIndex><MaxAutoParticipantIndex>120</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+ros2 launch ur7e_perception gazebo_demo.launch.py backend:=fixture gazebo_gui:=true launch_rviz:=true
+```
+
+Wait for `motion_node ready`, then about 12 seconds. The block starts latched
+to the gripper and is released at 8 s.
+
+**G2: put the block on its mark, then say the sentence** (same `export` line first):
+
+```bash
+ign service -s /world/pick_place_table/set_pose --reqtype ignition.msgs.Pose --reptype ignition.msgs.Boolean --timeout 5000 --req 'name: "pick_object", position: {x: 0.45, y: -0.15, z: 0.04}, orientation: {w: 1.0}'
+```
+
+```bash
+python3 scripts/pick_place_language_demo.py --execute-simulation --backend keyword --yes --stage-pause 2 "pick up the red block"
+```
+
+- The reset is needed because the launch's own reset at 9 s can run before
+  the startup release on a busy laptop. The block then lies elsewhere, and
+  PLAN fails with "no collision-free hover".
+- `--stage-pause 2` waits 2 s between stages, so you can follow along.
+- Watch the flange tilt 60° so that the RG2, not the flange, points down.
+- **Check the result in Gazebo, not in the log:** Entity Tree → `pick_object`
+  → Pose. z ≈ 0.14 means the block was lifted (it starts at 0.04).
+- This demo uses the language parser and `motion_node`, not `lab_pick.py`
+  and the orchestrator (gap 7). Recreate the world (restart G1) between full runs.
+
 ## 6. The scripted version, and the checks
 
 Same stack, started and scored automatically: six sentences, PASS/FAIL each,

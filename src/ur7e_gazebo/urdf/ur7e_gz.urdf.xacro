@@ -50,6 +50,7 @@ attempt at real two-finger contact simulation).
        edit the vendored file. -->
   <xacro:property name="prefix" value="$(arg tf_prefix)"/>
   <xacro:include filename="$(find onrobot_description)/urdf/rg2_macro.xacro"/>
+  <xacro:include filename="$(find ur7e_bringup)/urdf/dual_quick_changer.xacro"/>
 
   <link name="world"/>
 
@@ -116,11 +117,15 @@ attempt at real two-finger contact simulation).
   </joint>
   <xacro:finger_joints prefix="${prefix}" fingerprefix="left" reflect="1.0"/>
 
+  <!-- 2026-10-08: the RG2 sits on a face of the OnRobot Dual Quick Changer,
+       60 deg off the flange axis, not on tool0's axis; the changer and the
+       soft gripper on its other face come with it (dual_quick_changer.xacro). -->
   <joint name="$(arg tf_prefix)onrobot_base_link_joint" type="fixed">
     <parent link="$(arg tf_prefix)tool0"/>
     <child link="$(arg tf_prefix)onrobot_base_link"/>
-    <origin xyz="0 0 0" rpy="0 0 ${-pi/2}"/>
+    <xacro:rg2_on_dual_quick_changer_origin/>
   </joint>
+  <xacro:dual_quick_changer prefix="$(arg tf_prefix)"/>
 
   <!--
   Root cause #3 of the DetachableJoint saga (see this file's header + the

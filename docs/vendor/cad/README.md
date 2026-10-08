@@ -125,8 +125,7 @@ position should still be measured on the arm before they go into the model.
 touch points assumed the fingertip was under the flange, so their XY is off
 by about 0.2 m. `lab_camera_calibration.py` / `lab_stereo_calibration.py` keep
 their z bookkeeping (`APPROX_GRIPPER_LENGTH`, a measured vertical drop with
-`tool0` down), which is not affected. The Gazebo robot (`src/ur7e_gazebo`)
-still mounts one RG2 on `tool0`; it serves the Task-2 demo and is unchanged.
+`tool0` down), which is not affected. The Gazebo robot and its MoveIt/RViz model mount the same tool stack (`src/ur7e_bringup/urdf/dual_quick_changer.xacro`, with display meshes exported from these STEP files at 1.5 mm tolerance). `scripts/test_lab_tooling.py` checks that its numbers match `lab_tooling.py`.
 
 ## Photos
 

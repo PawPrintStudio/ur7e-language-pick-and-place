@@ -1,0 +1,57 @@
+// Page 1: the big picture. Edit, then run docs/diagrams/build.sh.
+digraph overview {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, nodesep=0.35, ranksep=0.45,
+         pad=0.4, bgcolor="white", newrank=true,
+         label=<<FONT POINT-SIZE="26"><B>UR7e language pick-and-place: how the pieces connect</B></FONT><BR/><FONT POINT-SIZE="13" COLOR="#555555">One sentence travels down five layers. Same code on the real arm and in simulation; only the bottom layer is swapped.  (2026-10-08)</FONT>>,
+         labelloc=t];
+  node  [fontname="Helvetica", fontsize=12, shape=box, style="rounded,filled", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=10, color="#444444"];
+
+  say [label=<<B>"pick up the red block"</B><BR/><FONT POINT-SIZE="10">typed, spoken, or --say</FONT>>, shape=note, fillcolor="#FFFFFF"];
+
+  subgraph cluster_lang { label=<<B>1  Language</B>  (src/arm_language)>; style="rounded,filled"; fillcolor="#F3E8FF"; color="#8E44AD";
+    parser [label=<<B>IntentParser</B><BR/><FONT POINT-SIZE="10">keyword backend (offline) or Claude (API)<BR/>validator + guardrails: refuse unsafe / non-pick</FONT>>, fillcolor="#E5CCFF"];
+  }
+  subgraph cluster_orch { label=<<B>2  Orchestrator</B>  (src/ur7e_orchestrator + scripts/lab_pick.py)>; style="rounded,filled"; fillcolor="#E8F1FF"; color="#2E6FD8";
+    fsm [label=<<B>State machine</B><BR/><FONT POINT-SIZE="10">PARSE → OBSERVE → DETECT → LOCATE → PLAN → APPROACH<BR/>→ GRASP → LIFT → RETREAT → HOME   (retries, safe aborts)</FONT>>, fillcolor="#CFE0FF"];
+  }
+  subgraph cluster_perc { label=<<B>3  Perception</B>  (src/ur7e_perception)>; style="rounded,filled"; fillcolor="#E9F8EC"; color="#27AE60";
+    perc [label=<<B>perception_node</B><BR/><FONT POINT-SIZE="10">image → "red block" pixels (colour / OWLv2)<BR/>→ (x, y, z) in base_link via table calibration</FONT>>, fillcolor="#C9EFD2"];
+  }
+  subgraph cluster_moveit { label=<<B>4  Planning</B>  (MoveIt 2)>; style="rounded,filled"; fillcolor="#FFF2E3"; color="#E67E22";
+    mg [label=<<B>move_group</B><BR/><FONT POINT-SIZE="10">IK (KDL), collision checks, straight-line and free paths<BR/>knows the tool stack: Dual Quick Changer, RG2 (60°), soft gripper</FONT>>, fillcolor="#FFDDB8"];
+  }
+  subgraph cluster_ctrl { label=<<B>5  Control</B>  (ros2_control)>; style="rounded,filled"; fillcolor="#F2F2F2"; color="#7F8C8D";
+    ctrl [label=<<B>controller_manager</B><BR/><FONT POINT-SIZE="10">trajectory controller: follows joint trajectories<BR/>joint_state_broadcaster: publishes /joint_states</FONT>>, fillcolor="#E0E0E0"];
+  }
+
+  say -> parser [label=" text"];
+  parser -> fsm [label=" {action: pick, target_query: \"red block\"}"];
+  fsm -> perc [label=" detect / locate\n (services)"];
+  perc -> fsm [label=" pose", style=dashed];
+  fsm -> mg [label=" plan every segment first\n (services)"];
+  mg -> fsm [label=" joint trajectories", style=dashed];
+  fsm -> ctrl [label=" execute\n (action)"];
+  ctrl -> mg [label=" /joint_states", style=dotted, constraint=false];
+
+  // what sits under layer 5
+  subgraph cluster_hw { label=<<B>What layer 5 drives: pick ONE</B>>; style="rounded,dashed"; color="#999999"; fontsize=12;
+    real [label=<<B>Real UR7e</B> (lab, domain 42)<BR/><FONT POINT-SIZE="10">ur_robot_driver over Ethernet<BR/>RG2 via OnRobot URCap; ZED camera</FONT>>, fillcolor="#FADBD8"];
+    t1   [label=<<B>Tier 1: mock hardware</B> (domain 87)<BR/><FONT POINT-SIZE="10">joints echo commands; camera = still image<BR/>runs lab_pick.py exactly as on the arm</FONT>>, fillcolor="#FCF3CF"];
+    gz   [label=<<B>Tier 3: Gazebo</B> (domain 84)<BR/><FONT POINT-SIZE="10">physics, rendered RGB-D camera, visible blocks<BR/>runs the Gazebo demo (motion_node)</FONT>>, fillcolor="#D6EAF8"];
+  }
+  ctrl -> real [style=dashed, arrowhead=none];
+  ctrl -> t1   [style=dashed, arrowhead=none];
+  ctrl -> gz   [style=dashed, arrowhead=none];
+
+  key [shape=plaintext, style="", label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="5" COLOR="#BBBBBB">
+      <TR><TD COLSPAN="2" BGCOLOR="#EEEEEE"><B>Read this first</B></TD></TR>
+      <TR><TD ALIGN="LEFT">Page 2</TD><TD ALIGN="LEFT">Gazebo node graph (captured live with ros2 node info)</TD></TR>
+      <TR><TD ALIGN="LEFT">Page 3</TD><TD ALIGN="LEFT">Real arm and tier-1 graph (lab_pick.py)</TD></TR>
+      <TR><TD ALIGN="LEFT">Page 4</TD><TD ALIGN="LEFT">"Something broke: which node do I check?"</TD></TR>
+      <TR><TD ALIGN="LEFT">Guide</TD><TD ALIGN="LEFT">docs/START_HERE.md   (commands, domains, failures)</TD></TR>
+      <TR><TD ALIGN="LEFT">Rule</TD><TD ALIGN="LEFT">Nodes only talk through topics, services and actions:<BR ALIGN="LEFT"/>that is why a layer can be swapped without touching the others.</TD></TR>
+    </TABLE>>];
+  {rank=same; parser; key}
+}

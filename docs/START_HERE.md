@@ -291,6 +291,7 @@ and the safe abort (no HOME after a safety stop).
 | [RUNBOOK.md](RUNBOOK.md) | Real-arm procedures and recovery (long; search it) |
 | [DEMO_CONSOLE.md](DEMO_CONSOLE.md) | `lab_console.py`, the interactive demo console |
 | [SINGLE_CAMERA_PERCEPTION.md](SINGLE_CAMERA_PERCEPTION.md) | How perception and table calibration work |
+| [diagrams/ros2_node_graph.pdf](diagrams/ros2_node_graph.pdf) | **Every ROS 2 node and how they connect** (big picture, Gazebo, real arm, "which node do I check"). Sources: `diagrams/*.dot`, rebuild with `diagrams/build.sh` |
 | [vendor/cad/README.md](vendor/cad/README.md) | Manufacturer CAD (UR7e, Dual Quick Changer, tool side, soft gripper) and the measured changer geometry |
 | `LAB_<date>_*.md` | Session logs: what happened that day. History, not instructions |
 | [TASK2_SOFTWARE.md](TASK2_SOFTWARE.md), [TASK3_SOFTWARE.md](TASK3_SOFTWARE.md) | Perception and language deliverables, including the Gazebo demos |

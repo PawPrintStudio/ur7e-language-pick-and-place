@@ -1,0 +1,81 @@
+// Page 3: the real arm (and tier 1, which runs the same lab_pick.py on mock
+// hardware). Node names from the 2026-10-07 tier-1 `ros2 node list` and
+// ur_robot_driver's ur_control.launch.py (Humble). Edit, then run build.sh.
+digraph real_arm {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, nodesep=0.35, ranksep=0.6, pad=0.4,
+         newrank=true, labelloc=t,
+         label=<<FONT POINT-SIZE="24"><B>Real UR7e (and tier 1): the lab_pick.py graph</B></FONT><BR/><FONT POINT-SIZE="12" COLOR="#555555">python3 scripts/lab_pick.py --say "pick up the red block"   (lab: domain 42, laptop/Jetson + arm on Ethernet.   Tier 1: domain 87, mock hardware, same code.)</FONT>>];
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", penwidth=1.2];
+  edge [fontname="Helvetica", fontsize=9, color="#444444"];
+
+  // ---- the lab_pick.py process ----
+  subgraph cluster_pick {
+    label=<<B>lab_pick.py</B>  /  lab_console.py --pick   (one Python process, two ROS nodes)>; style="rounded,filled"; fillcolor="#EAF1FF"; color="#2E6FD8";
+    parser [label=<<B>arm_language parser</B><BR/><FONT POINT-SIZE="9">keyword, or Claude backend<BR/>(not a node: a library call)</FONT>>, fillcolor="#E5CCFF", color="#8E44AD"];
+    orch [label=<<B>ur7e_orchestrator</B> state machine<BR/><FONT POINT-SIZE="9">+ LabAdapters (stage → ROS calls)<BR/>plans every segment before moving</FONT>>, fillcolor="#CFE0FF", color="#2E6FD8"];
+    jog [label=<<B>node: lab_jog</B> (PickExecutor)<BR/><FONT POINT-SIZE="9">reads state, asks MoveIt, safety gate<BR/>plans frame rg2_tcp (Dual Quick Changer)</FONT>>, fillcolor="#CFE0FF", color="#2E6FD8"];
+    umo [label=<<B>node: ur_motion</B> (MotionClient)<BR/><FONT POINT-SIZE="9">sends the audited, re-timed trajectory</FONT>>, fillcolor="#CFE0FF", color="#2E6FD8"];
+    parser -> orch [label=" intent"]; orch -> jog [label=" stages"]; jog -> umo [label=" points"];
+  }
+
+  // ---- non-ROS outside world ----
+  claude [label=<<B>Anthropic API</B><BR/><FONT POINT-SIZE="9">HTTPS, only with the Claude backend</FONT>>, shape=box, style="rounded,dashed", fillcolor="white", color="#8E44AD"];
+  rg2 [label=<<B>RG2 gripper</B><BR/><FONT POINT-SIZE="9">OnRobot URCap XML-RPC :41414 on the arm<BR/>(not ROS; FakeRg2 in tier 1)</FONT>>, shape=box, style="rounded,dashed", fillcolor="white", color="#C0392B"];
+  dash [label=<<B>UR dashboard :29999</B><BR/><FONT POINT-SIZE="9">"stop" on abort (not ROS)</FONT>>, shape=box, style="rounded,dashed", fillcolor="white", color="#C0392B"];
+  zed [label=<<B>ZED 2 camera (USB)</B><BR/><FONT POINT-SIZE="9">frames grabbed directly, not a topic<BR/>(tier 1: a rendered still image)</FONT>>, shape=box, style="rounded,dashed", fillcolor="white", color="#27AE60"];
+
+  // ---- other nodes ----
+  perc [label=<<B>perception_node</B><BR/><FONT POINT-SIZE="9">webcam_perception_node<BR/>colour / OWLv2, table.json calibration</FONT>>, fillcolor="#C9EFD2", color="#27AE60"];
+  mg [label=<<B>move_group</B><BR/><FONT POINT-SIZE="9">scripts/lab_arm_moveit.launch.py (KDL)<BR/>+ lab_tooling.py: changer, RG2, soft gripper, rg2_tcp<BR/>plans only: never executes here</FONT>>, fillcolor="#FFDDB8", color="#E67E22"];
+
+  subgraph cluster_drv {
+    label=<<B>ur_robot_driver</B>   (ros2 launch ur7e_bringup ur7e_bringup.launch.py)>; style="rounded,filled"; fillcolor="#F4F4F4"; color="#7F8C8D";
+    cm [label=<<B>controller_manager</B><BR/><FONT POINT-SIZE="9">ur_ros2_control_node<BR/>(tier 1: mock hardware)</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    sjtc [label=<<B>scaled_joint_trajectory_controller</B>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    jsb [label=<<B>joint_state_broadcaster</B>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    ssb [label=<<B>speed_scaling_state_broadcaster</B><BR/><FONT POINT-SIZE="9">the pendant speed slider</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    io [label=<<B>io_and_status_controller</B><BR/><FONT POINT-SIZE="9">safety mode, program running</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    rsp [label=<<B>robot_state_publisher</B>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    extra [label=<<FONT POINT-SIZE="9">real arm only: ur_robot_state_helper, controller_stopper,<BR/>urscript_interface, dashboard_client, ur_tool_comm<BR/>loaded but unused by us: force_mode, freedrive, passthrough ...</FONT>>, shape=note, fillcolor="#FFFFFF", color="#BBBBBB"];
+    cm -> sjtc [arrowhead=none, style=dotted]; cm -> jsb [arrowhead=none, style=dotted];
+    cm -> ssb [arrowhead=none, style=dotted]; cm -> io [arrowhead=none, style=dotted];
+  }
+  arm [label=<<B>UR7e controller</B><BR/><FONT POINT-SIZE="9">PolyScope 5.23 + External Control URCap<BR/>Ethernet (RTDE + reverse interface)</FONT>>, fillcolor="#FADBD8", color="#C0392B"];
+  fake [label=<<B>rehearsal_status</B>   (tier 1 ONLY)<BR/><FONT POINT-SIZE="9">fakes safety mode / program running / speed 100 %<BR/>refuses to start in domain 42</FONT>>, fillcolor="#FCF3CF", color="#B7950B", style="rounded,filled,dashed"];
+
+  node [shape=ellipse, style=filled, fillcolor="#FFFFFF", color="#888888", fontsize=9];
+  t_js [label="/joint_states"];
+  t_gate [label="/speed_scaling_state_broadcaster/speed_scaling\n/io_and_status_controller/safety_mode\n/io_and_status_controller/robot_program_running"];
+  t_tf [label="/tf"];
+
+  // calls
+  parser -> claude [style=dashed, color="#8E44AD", arrowhead=vee];
+  jog -> perc [label="srv  /perception/detect_object\nsrv  /perception/locate_object", style=dashed, color="#27AE60", fontcolor="#1E8449"];
+  zed -> perc [color="#27AE60"];
+  jog -> mg [label="srv  /compute_fk  /compute_cartesian_path\n/plan_kinematic_path  /check_state_validity\n/apply_planning_scene (table, obstacles)", style=dashed, color="#E67E22", fontcolor="#AF601A"];
+  umo -> sjtc [label="ACTION  /scaled_joint_trajectory_controller/follow_joint_trajectory", penwidth=2.2, color="#2E6FD8", fontcolor="#2E6FD8"];
+  sjtc -> arm [color="#7F8C8D"];
+  orch -> rg2 [label=" grip / release", style=dashed, color="#C0392B", fontcolor="#C0392B"];
+  orch -> dash [label=" abort", style=dashed, color="#C0392B", fontcolor="#C0392B"];
+
+  // state into the gate
+  arm -> jsb [style=dotted, color="#7F8C8D"];
+  jsb -> t_js; t_js -> jog; t_js -> rsp; t_js -> mg;
+  ssb -> t_gate; io -> t_gate; fake -> t_gate [style=dashed, color="#B7950B"];
+  t_gate -> jog [label=" safety gate before\n every motion"];
+  rsp -> t_tf;
+
+  legend [shape=plaintext, style="", fontsize=10, label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#BBBBBB">
+      <TR><TD COLSPAN="2" BGCOLOR="#EEEEEE"><B>Differences from Gazebo (page 2)</B></TD></TR>
+      <TR><TD ALIGN="LEFT">Who executes</TD><TD ALIGN="LEFT">ur_motion sends trajectories straight to the controller.<BR ALIGN="LEFT"/>MoveIt only plans, so every motion passes our audit and speed caps.</TD></TR>
+      <TR><TD ALIGN="LEFT">Gripper</TD><TD ALIGN="LEFT">OnRobot URCap over XML-RPC, not a ROS controller</TD></TR>
+      <TR><TD ALIGN="LEFT">Camera</TD><TD ALIGN="LEFT">grabbed inside perception_node, no image topic</TD></TR>
+      <TR><TD ALIGN="LEFT">Safety gate</TD><TD ALIGN="LEFT">no motion unless safety NORMAL, program running,<BR ALIGN="LEFT"/>slider inside the approved window</TD></TR>
+      <TR><TD ALIGN="LEFT">Tool lock</TD><TD ALIGN="LEFT">--execute refused until scripts/lab_tooling.yaml<BR ALIGN="LEFT"/>is verified on the arm</TD></TR>
+      <TR><TD ALIGN="LEFT">Dashed boxes</TD><TD ALIGN="LEFT">outside ROS (network sockets, USB, web API)</TD></TR>
+    </TABLE>>];
+
+  {rank=same; claude; legend}
+  {rank=same; perc; mg; rg2; dash}
+}

@@ -1,0 +1,93 @@
+// Page 2: Gazebo (tier 3) node graph. Captured live on 2026-10-08 with
+//   ros2 node list / ros2 node info   (domain 84, gazebo_demo.launch.py)
+// Edit, then run docs/diagrams/build.sh.
+digraph gazebo {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=13, nodesep=0.35, ranksep=0.6, pad=0.4,
+         newrank=true, splines=true, labelloc=t,
+         label=<<FONT POINT-SIZE="24"><B>Tier 3: Gazebo node graph</B></FONT><BR/><FONT POINT-SIZE="12" COLOR="#555555">ros2 launch ur7e_perception gazebo_demo.launch.py   +   python3 scripts/pick_place_language_demo.py "pick up the red block"      (domain 84; captured live 2026-10-08)</FONT>>];
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", penwidth=1.2];
+  edge [fontname="Helvetica", fontsize=9, color="#444444"];
+
+  // ---- you ----
+  demo [label=<<B>pick_place_demo</B><BR/><FONT POINT-SIZE="9">scripts/pick_place_language_demo.py<BR/>arm_language parser runs inside (no node)<BR/>sequences the stages, then exits</FONT>>, fillcolor="#CFE0FF", color="#2E6FD8"];
+
+  // ---- perception ----
+  perc [label=<<B>perception_node</B><BR/><FONT POINT-SIZE="9">fixture (colour) / OWLv2 backend<BR/>RGB-D → pose in base_link</FONT>>, fillcolor="#C9EFD2", color="#27AE60"];
+  camtf [label=<<B>static_transform_publisher</B><BR/><FONT POINT-SIZE="9">base_link → overhead_camera/link/rgbd</FONT>>, fillcolor="#EAF7EC", color="#27AE60"];
+
+  // ---- motion / planning ----
+  motion [label=<<B>motion_node</B><BR/><FONT POINT-SIZE="9">src/ur7e_motion (pymoveit2)<BR/>goto_named / approach_above /<BR/>cartesian_descend / lift / retreat</FONT>>, fillcolor="#CFE0FF", color="#2E6FD8"];
+  mg [label=<<B>move_group</B><BR/><FONT POINT-SIZE="9">MoveIt: IK, collisions, planning<BR/>+ moveit_simple_controller_manager<BR/>model: ur7e_pick_place.urdf.xacro (tool stack)</FONT>>, fillcolor="#FFDDB8", color="#E67E22"];
+  seeder [label=<<B>planning_scene_seeder</B><BR/><FONT POINT-SIZE="9">adds the table to MoveIt's scene</FONT>>, fillcolor="#FFF0DE", color="#E67E22"];
+  rsp [label=<<B>robot_state_publisher</B><BR/><FONT POINT-SIZE="9">joints + URDF → /tf</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+  rviz [label=<<B>rviz2_moveit</B><BR/><FONT POINT-SIZE="9">display + manual Plan / Execute<BR/>(orange arm = goal-state ghost)</FONT>>, fillcolor="#F5F5F5", color="#999999"];
+
+  // ---- Gazebo process ----
+  subgraph cluster_gz {
+    label=<<B>ign gazebo</B>   (one process: physics + sensors + ros2_control plugin)>; style="rounded,filled"; fillcolor="#EAF3FB"; color="#2E86C1";
+    world [label=<<B>world: pick_place_table</B><BR/><FONT POINT-SIZE="9">table, pick_object (red), place_target (blue)<BR/>DetachableJoint latch on pick_object</FONT>>, fillcolor="#D6EAF8", color="#2E86C1"];
+    cam [label=<<B>overhead_camera</B><BR/><FONT POINT-SIZE="9">RGB-D sensor, 1 m above the table</FONT>>, fillcolor="#D6EAF8", color="#2E86C1"];
+    cm [label=<<B>controller_manager</B><BR/><FONT POINT-SIZE="9">inside gz_ros2_control</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    jsb [label=<<B>joint_state_broadcaster</B>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    jtc [label=<<B>joint_trajectory_controller</B><BR/><FONT POINT-SIZE="9">(real arm: scaled_...)</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    gac [label=<<B>gripper_action_controller</B><BR/><FONT POINT-SIZE="9">RG2 finger_width</FONT>>, fillcolor="#E0E0E0", color="#7F8C8D"];
+    cm -> jsb [arrowhead=none, style=dotted]; cm -> jtc [arrowhead=none, style=dotted]; cm -> gac [arrowhead=none, style=dotted];
+  }
+  bridge_cam [label=<<B>ros_gz_bridge</B> (camera)<BR/><FONT POINT-SIZE="9">/overhead/* → /camera/*</FONT>>, shape=cds, fillcolor="#FDEBD0", color="#AF601A"];
+  bridge_latch [label=<<B>ros_gz_bridge</B> (latch)<BR/><FONT POINT-SIZE="9">ROS → Gazebo</FONT>>, shape=cds, fillcolor="#FDEBD0", color="#AF601A"];
+  bridge_clock [label=<<B>ros_gz_bridge</B> (clock)<BR/><FONT POINT-SIZE="9">/clock: every node uses sim time</FONT>>, shape=cds, fillcolor="#FDEBD0", color="#AF601A"];
+
+  // ---- topics (ellipses) ----
+  node [shape=ellipse, style=filled, fillcolor="#FFFFFF", color="#888888", fontsize=9];
+  t_img [label="/camera/rgb\n/camera/depth\n/camera/camera_info"];
+  t_js [label="/joint_states"];
+  t_tf [label="/tf  /tf_static"];
+  t_attach [label="/pick_object/attach\n/pick_object/detach"];
+  t_scene [label="/planning_scene"];
+  t_annot [label="/perception/annotated\n/perception/grasp_pose"];
+
+  // camera path
+  cam -> bridge_cam [color="#AF601A"];
+  bridge_cam -> t_img; t_img -> perc;
+  perc -> t_annot;
+  camtf -> t_tf;
+
+  // the stages
+  demo -> perc [label="srv  /perception/detect_object\nsrv  /perception/locate_object", style=dashed, color="#27AE60", fontcolor="#1E8449"];
+  demo -> motion [label="ACTION  /execute_primitive", penwidth=2.2, color="#2E6FD8", fontcolor="#2E6FD8"];
+  demo -> gac [label="ACTION  /gripper_action_controller/gripper_cmd", penwidth=2.2, color="#2E6FD8", fontcolor="#2E6FD8"];
+  demo -> mg [label="srv  /apply_planning_scene (attach the block)", style=dashed, color="#E67E22", fontcolor="#AF601A"];
+  demo -> t_attach; t_attach -> bridge_latch -> world [color="#AF601A"];
+
+  motion -> mg [label="srv  /compute_cartesian_path, /plan_kinematic_path,\n/compute_ik, /compute_fk, /get|apply_planning_scene\nACTION  /move_action, /execute_trajectory", style=dashed, color="#E67E22", fontcolor="#AF601A"];
+  mg -> jtc [label="ACTION  /joint_trajectory_controller/follow_joint_trajectory", penwidth=2.2, color="#2E6FD8", fontcolor="#2E6FD8"];
+  jtc -> world [label=" moves the joints", color="#7F8C8D"];
+
+  // state feedback
+  jsb -> t_js; t_js -> rsp; t_js -> mg; t_js -> motion;
+  rsp -> t_tf; t_tf -> rviz; t_tf -> perc;
+  seeder -> t_scene; t_scene -> mg;
+  rviz -> mg [label="ACTION /move_action (Plan / Execute)", style=dashed, color="#999999", fontcolor="#777777"];
+  world -> bridge_clock [color="#AF601A", style=dotted];
+
+  // legend
+  legend [shape=plaintext, style="", fontsize=10, label=<
+    <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4" COLOR="#BBBBBB">
+      <TR><TD COLSPAN="2" BGCOLOR="#EEEEEE"><B>Legend</B></TD></TR>
+      <TR><TD>rounded box</TD><TD ALIGN="LEFT">ROS 2 node</TD></TR>
+      <TR><TD>ellipse</TD><TD ALIGN="LEFT">topic (stream, many readers)</TD></TR>
+      <TR><TD>dashed arrow</TD><TD ALIGN="LEFT">service: request → one reply</TD></TR>
+      <TR><TD>thick blue arrow</TD><TD ALIGN="LEFT">action: long goal + feedback + result</TD></TR>
+      <TR><TD>arrow shape</TD><TD ALIGN="LEFT">ros_gz_bridge: Gazebo ↔ ROS translator</TD></TR>
+      <TR><TD BGCOLOR="#CFE0FF">blue</TD><TD ALIGN="LEFT">our sequencing code</TD></TR>
+      <TR><TD BGCOLOR="#C9EFD2">green</TD><TD ALIGN="LEFT">perception</TD></TR>
+      <TR><TD BGCOLOR="#FFDDB8">orange</TD><TD ALIGN="LEFT">MoveIt planning</TD></TR>
+      <TR><TD BGCOLOR="#E0E0E0">grey</TD><TD ALIGN="LEFT">ros2_control / robot state</TD></TR>
+      <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT POINT-SIZE="9">Not drawn: /clock to every node, /rosout,<BR ALIGN="LEFT"/>parameter services, transform_listener helpers.</FONT></TD></TR>
+    </TABLE>>];
+
+  // rows: you -> services -> planner -> controllers -> simulator
+  {rank=same; demo; legend}
+  {rank=same; motion; perc; bridge_latch}
+  {rank=same; mg; seeder; rviz}
+}

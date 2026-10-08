@@ -114,6 +114,7 @@ class StubExecutor(lab_pick.PickExecutor):
         self.anchor, self.tool_length, self.hover = np.asarray(anchor, float), 0.2, 0.12
         self.plan_only, self.poses = True, {'ready': {}}
         self.tool_yaw_x, self.unreachable, self.planned = tool_yaw_x, unreachable, []
+        self.tool_link, self.tooling = lab_pick.TOOL_LINK, dict(lab_pick.lab_tooling.DEFAULTS)
 
     def fresh(self, settle_s=1.0):
         return 'state'
@@ -129,6 +130,9 @@ class StubExecutor(lab_pick.PickExecutor):
 
     def predicted(self, state, points):
         return state
+
+    def excursion(self, state, points):
+        return self.swings.pop(0) if getattr(self, 'swings', None) else 0.0
 
     def plan_joint_line(self, state, goal, step=0.03):
         return []
@@ -210,3 +214,61 @@ def test_unreachable_target_is_refused_at_plan_time_and_tilt_is_checked():
     with pytest.raises(StageError) as caught:
         adapters(tilted).plan(Intent('pick', 'red block'), target, None)
     assert caught.value.reason == 'tool_not_vertical'
+
+
+# --- the Dual Quick Changer tool stack (lab_tooling.py, 2026-10-08) --------------------
+
+def test_rg2_tcp_planning_puts_the_fingertips_above_the_real_surface():
+    executor = StubExecutor(tilted_table())
+    executor.tool_link = lab_pick.PICK_LINK
+    reach = executor.tooling['tcp_to_tips_m']
+    # The TCP points straight down, so the tips are tcp_to_tips below it; the
+    # calibration's tool0 length (0.2 here) no longer enters.
+    assert abs(executor.tool_z(-0.5, 0.0, 0.008) - (-0.03 + reach + 0.008)) < 1e-9
+
+
+def test_rg2_tcp_start_may_be_tilted_but_tool0_start_may_not():
+    target = Target((-0.4, 0.2, 0.04), 0.0, {'height_m': 0.04, 'axis_ratio': 1.0})
+    half = math.radians(60) / 2   # the RG2 at `ready`: 60 deg off vertical
+    tilted_fk = lambda state: Pose(orientation=type(Pose().orientation)(  # noqa: E731
+        x=math.sin(half), w=math.cos(half)))
+    rg2 = StubExecutor(np.eye(4))
+    rg2.tool_link, rg2.fk = lab_pick.PICK_LINK, tilted_fk
+    summary = adapters(rg2).plan(Intent('pick', 'red block'), target, None)
+    assert summary['waypoints'] == 6
+    flange = StubExecutor(np.eye(4))
+    flange.fk = tilted_fk
+    with pytest.raises(StageError, match='tilted'):
+        adapters(flange).plan(Intent('pick', 'red block'), target, None)
+
+
+class Args:
+    def __init__(self, execute, allow=False):
+        self.execute, self.allow_unverified_tooling = execute, allow
+
+
+def test_unverified_tooling_blocks_real_motion_only():
+    unverified = dict(lab_pick.lab_tooling.DEFAULTS, verified=False)
+    lab_pick.check_tooling(Args(execute=False), unverified)          # plan-only: fine
+    lab_pick.check_tooling(Args(execute=True, allow=True), unverified)  # simulation
+    with pytest.raises(RuntimeError, match='not verified'):
+        lab_pick.check_tooling(Args(execute=True), unverified)
+    lab_pick.check_tooling(Args(execute=True), dict(unverified, verified=True))
+
+
+def test_rg2_tcp_takes_the_jaw_angle_with_the_least_joint_swing():
+    executor = StubExecutor(np.eye(4), tool_yaw_x=0.0)
+    executor.tool_link = lab_pick.PICK_LINK
+    executor.swings = [6.4, 1.5, 3.0, 2.9]      # measured in simulation, 2026-10-08
+    target = Target((-0.4, 0.2, 0.04), 0.0, {'height_m': 0.04, 'axis_ratio': 1.1})
+    lab = adapters(executor)
+    lab.plan(Intent('pick', 'red block'), target, None)
+    assert abs(math.degrees(lab.grasp_yaw) - 90.0) < 1e-6   # the 1.5 rad candidate
+    # A long object only accepts the two jaw angles across its axis.
+    executor = StubExecutor(np.eye(4), tool_yaw_x=0.0)
+    executor.tool_link, executor.swings = lab_pick.PICK_LINK, [2.0, 0.5]
+    long = Target((-0.4, 0.2, 0.012), 0.0, {'height_m': 0.012, 'axis_ratio': 9.0})
+    lab = adapters(executor)
+    lab.plan(Intent('pick', 'screwdriver'), long, None)
+    assert abs(abs(math.degrees(lab.grasp_yaw)) - 90.0) < 1e-6
+    assert math.degrees(lab.grasp_yaw) < 0                   # the second (-90) one

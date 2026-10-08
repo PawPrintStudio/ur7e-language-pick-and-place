@@ -77,6 +77,9 @@ controller_active() {
   ros2 control list_controllers | grep scaled_joint_trajectory_controller | grep -q active
 }
 has_service() { ros2 service list | grep -qx "$1"; }
+# The gate needs the fake status before the first pick (2026-10-08: scenario 1
+# raced it and aborted). Its topics are latched, so the node being up is enough.
+status_up() { ros2 node list | grep -qx /rehearsal_status; }
 
 # --- the scene ---------------------------------------------------------------------------
 # A rendered webcam view of the table with a red block at (-0.42, 0.22) and a
@@ -106,6 +109,7 @@ wait_until 90 "MoveIt (/apply_planning_scene)" moveit has_service /apply_plannin
 wait_until 90 "MoveIt (/compute_cartesian_path)" moveit has_service /compute_cartesian_path
 wait_until 60 "perception (/perception/detect_object)" perception \
   has_service /perception/detect_object
+wait_until 60 "fake robot status (safety mode)" status status_up
 
 # --- the scenarios -----------------------------------------------------------------------
 # expected outcome | expected reason | extra lab_pick arguments | sentence
@@ -146,7 +150,7 @@ for scenario in "${SCENARIOS[@]}"; do
   echo "== [$n/${#SCENARIOS[@]}] \"$sentence\"  (expect $want_outcome / $want_reason)"
   set +e
   python3 scripts/lab_pick.py --calibration "$OUT/table.json" --log-dir "$OUT/runs" \
-    --backend "$BACKEND" --say "$sentence" --execute --yes --fake-gripper \
+    --backend "$BACKEND" --say "$sentence" --execute --yes --fake-gripper --allow-unverified-tooling \
     --max-speed-percent 100 --max-excursion 4.0 --poses-file "$OUT/poses.json" \
     "${extra_args[@]}" 2>&1 | tee "$log"
   set -e
@@ -181,7 +185,7 @@ if [[ -n "${REHEARSAL_KEEP:-}" ]]; then
   echo "== REHEARSAL_KEEP: the stack stays up. In another container shell:"
   echo "   export ROS_DOMAIN_ID=$ROS_DOMAIN_ID ROS_LOCALHOST_ONLY=1 CYCLONEDDS_URI='$CYCLONEDDS_URI'"
   echo "   python3 scripts/lab_pick.py --calibration $OUT/table.json --log-dir $OUT/runs \\"
-  echo "     --workspace ${SCENE_WORKSPACE[*]} --execute --yes --fake-gripper \\"
+  echo "     --workspace ${SCENE_WORKSPACE[*]} --execute --yes --fake-gripper --allow-unverified-tooling \\"
   echo "     --max-speed-percent 100 --max-excursion 4.0 --poses-file $OUT/poses.json \\"
   echo "     --say \"pick up the blue block\""
   echo "   Ctrl-C here stops everything."

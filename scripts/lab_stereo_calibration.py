@@ -92,7 +92,8 @@ MAX_APPROACH_WRIST_RAD = 1.2
 # The held target as the planner should see it: a box under the fingertips
 # (tool0 frame; the RG2's closed tips are 0.258 m from the flange). Sized
 # for the blue hat held by its brim (about 15 cm across, 10 cm deep).
-TARGET_BOX = {'size': (0.17, 0.17, 0.12), 'center_z': 0.258 + 0.06}
+# Centre 6 cm beyond the closed fingertips, along the RG2 axis (frame rg2_tcp).
+TARGET_BOX = {'size': (0.17, 0.17, 0.12), 'beyond_tips': 0.06}
 
 
 def wave_stops(xs, ys, heights):
@@ -214,7 +215,7 @@ def make_executor(args):
 def attach_target(executor, attach=True):
     """Tell the planner about the held target, or forget it again.
 
-    The planner knows the gripper (a box on the flange, lab_arm_moveit.launch.py)
+    The planner knows the tools (boxes from lab_tooling.py, lab_arm_moveit.launch.py)
     but not what it holds: without this, a path may sweep the hanging target
     through the arm or an obstacle and still count as collision-free.
     """
@@ -224,17 +225,21 @@ def attach_target(executor, attach=True):
     from shape_msgs.msg import SolidPrimitive
 
     executor.ensure_table()
-    held = AttachedCollisionObject(link_name='tool0', touch_links=[
-        'lab_gripper_envelope', 'tool0', 'flange', 'wrist_3_link'])
+    import lab_tooling
+    # The RG2 holds it, and the RG2 sits 60 deg off the flange axis on the
+    # Dual Quick Changer: hang the box from the RG2's TCP, not from tool0.
+    held = AttachedCollisionObject(link_name='rg2_tcp',
+                                   touch_links=lab_tooling.TOUCH_LINKS + ['rg2_tcp'])
     held.object.id = 'lab_held_target'
-    held.object.header.frame_id = 'tool0'
+    held.object.header.frame_id = 'rg2_tcp'
     req = ApplyPlanningScene.Request()
     req.scene.is_diff = True
     req.scene.robot_state.is_diff = True
     if attach:
         held.object.operation = CollisionObject.ADD
         pose = lab_pick.Pose()
-        pose.position.z, pose.orientation.w = TARGET_BOX['center_z'], 1.0
+        pose.position.z = lab_tooling.load()['tcp_to_tips_m'] + TARGET_BOX['beyond_tips']
+        pose.orientation.w = 1.0
         held.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX,
                                                  dimensions=list(TARGET_BOX['size']))]
         held.object.primitive_poses = [pose]

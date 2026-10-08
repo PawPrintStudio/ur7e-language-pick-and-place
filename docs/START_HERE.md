@@ -146,10 +146,16 @@ P="python3 scripts/lab_pick.py --calibration /tmp/sim/table.json --log-dir /tmp/
   apply and every pick fails with `outside_workspace`.
 - `--max-excursion 4.0` allows the long first move from the mock start pose.
 
+- `--allow-unverified-tooling` (sim only): picks plan the RG2's own TCP
+  (`rg2_tcp`) because the RG2 sits 60° off the flange on the Dual Quick Changer
+  ([vendor/cad/README.md](vendor/cad/README.md)). Real `--execute` is refused
+  until that mounting is checked on the arm (`scripts/lab_tooling.yaml`,
+  `verified: true`); this flag allows it in simulation.
+
 First an executed run, which also parks the arm at `ready`:
 
 ```bash
-$P --say "pick up the red block" --execute --yes --fake-gripper --max-speed-percent 100
+$P --say "pick up the red block" --execute --yes --fake-gripper --allow-unverified-tooling --max-speed-percent 100
 ```
 
 Then plan-only works too (it computes every trajectory and sends none):
@@ -232,6 +238,7 @@ and the safe abort (no HOME after a safety stop).
 | `No fresh joint state -- is the driver running?` | T1 down, or this terminal is on domain 42. `echo $ROS_DOMAIN_ID` |
 | `Failed to find a free participant index` | No `CYCLONEDDS_URI` in this terminal (section 4) |
 | `tool_not_vertical` on plan-only | Fresh mock arm; run one `--execute` pick first |
+| `lab_tooling.yaml is not verified` | `--execute` without the tooling check. In sim add `--allow-unverified-tooling`; on the arm, do the check in [vendor/cad/README.md](vendor/cad/README.md) |
 | `outside_workspace` on the red block | `--workspace` missing |
 | `BLOCKED … execution gate closed` | T4 (`rehearsal_status.py`) not running |
 | PLAN `unreachable` after many runs, or "invalid bounds" | Wrist wound up on the mock arm. Restart T1 |

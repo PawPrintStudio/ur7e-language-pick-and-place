@@ -70,6 +70,64 @@ benchmark (only the first grasp was clean, later ones grazed or missed) and the
 2026-10-06 finger-on-forearm protective stops. The exact angle and fingertip
 position should still be measured on the arm before they go into the model.
 
+## How the code uses this (2026-10-08)
+
+- [`scripts/lab_tooling.py`](../../../scripts/lab_tooling.py) holds the geometry
+  above and builds the frames. [`scripts/lab_tooling.yaml`](../../../scripts/lab_tooling.yaml)
+  holds what only the arm can confirm.
+- `scripts/lab_arm_moveit.launch.py` adds four links under `tool0`:
+  - `lab_changer`: box 138 × 81 × 102 mm on the flange
+  - `lab_rg2`: 155 × 155 × 239 mm along the RG2 axis
+  - `lab_soft_gripper`: 104 × 104 × 146 mm along the other axis
+  - `rg2_tcp`: no geometry; the RG2's TCP, z out of the fingers
+
+  These replace the old single 0.20 × 0.20 × 0.28 m on-axis box.
+- `lab_pick.py` and `lab_console.py --pick` **plan `rg2_tcp`, not `tool0`**.
+  "Top-down" now means the RG2 points straight down, so the wrist tilts about
+  60° from `ready` during a pick. Fingertip height = table + clearance, with
+  `tcp_to_tips_m` between the TCP and the tips.
+- The **jaw angle** is chosen by planning the approach at each equivalent
+  angle and keeping the one with the smallest joint swing. That's every
+  quarter turn for a near-square object, or the two angles across a long
+  object's axis. At `ready` the RG2 hangs tilted, so "keep the current jaw
+  direction" asked for a 6.4 rad wrist swing in simulation, while another
+  angle needed 1.5 rad.
+- `lab_table_calibration.py touch` computes the fingertip from the tool stack,
+  not along `tool0` Z. `lab_stereo_calibration.py` hangs the held target from
+  `rg2_tcp`.
+- **`--execute` is refused until `verified: true`** in `lab_tooling.yaml`.
+  Simulation passes `--allow-unverified-tooling`; the rehearsal script does
+  this already.
+
+### Checking `lab_tooling.yaml` on the arm (do this before any real motion)
+
+1. **Pendant first.** Installation → TCP. The OnRobot URCap computes a TCP for
+   the Dual Quick Changer + RG2 (dynamic TCP). Write down its X, Y, Z, RX, RY, RZ.
+   That is OnRobot's own answer for `tool0 → RG2 TCP`.
+2. Compare it with `python3 scripts/lab_tooling.py`, which prints `tool0 -> rg2_tcp`.
+   - **Direction in the flange plane:** the pendant TCP's X/Y direction gives
+     `changer_yaw_deg` (with `rg2_face: '+x'`, the RG2 TCP sits at angle
+     `changer_yaw_deg` from tool0 +X).
+   - **Length:** if the pendant's TCP is further out, increase `rg2_tcp_m`.
+   - **Tilt:** about 60° from the flange axis. Anything else means the CAD
+     reading is wrong. Stop and re-measure.
+3. **Jaw direction (`rg2_roll_deg`):** with the arm at `ready`, note which way
+   the fingers close relative to the changer's V. 0 means they close in the
+   plane of the V.
+4. **Fingertips (`tcp_to_tips_m`):** with the jaws closed, measure how far the
+   fingertips extend beyond the pendant's TCP point. 0.034 m is a conservative
+   default: too large only means grasps end a little high.
+5. Set `verified: true`. Commit the file with a note in that day's LAB log of
+   who checked it and the pendant values. Then run plan-only picks, then
+   ≤ 25 % speed (see `arm-motion-preview-first`).
+
+**Still to redo with the new geometry:** the table and camera calibrations. Old
+touch points assumed the fingertip was under the flange, so their XY is off
+by about 0.2 m. `lab_camera_calibration.py` / `lab_stereo_calibration.py` keep
+their z bookkeeping (`APPROX_GRIPPER_LENGTH`, a measured vertical drop with
+`tool0` down), which is not affected. The Gazebo robot (`src/ur7e_gazebo`)
+still mounts one RG2 on `tool0`; it serves the Task-2 demo and is unchanged.
+
 ## Photos
 
 | File | Shows |

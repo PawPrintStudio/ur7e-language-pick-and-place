@@ -219,8 +219,12 @@ def command_touch(args):
     except Exception as error:  # noqa: B902 - any failure means "assume closed"
         depth_mm, width_mm = 0.0, None
         print(f'NOTE: could not read the gripper ({error}); assuming closed jaws')
-    # Fingertip = tool0 origin pushed along the tool's own Z by the gripper length.
-    tip = pose[:3, 3] + pose[:3, :3] @ [0, 0, args.tool_length - depth_mm / 1000]
+    # Fingertip from the real tool stack (lab_tooling.py): the RG2 sits 60 deg
+    # off tool0 Z on the Dual Quick Changer, so the tips are NOT on the flange
+    # axis. Open jaws are shorter by ``depth`` along the RG2's own axis.
+    import lab_tooling
+    tips = np.asarray(pose) @ lab_tooling.tool0_to_tips()
+    tip = tips[:3, 3] - tips[:3, 2] * depth_mm / 1000
     tilt = math.degrees(math.acos(max(-1.0, min(1.0, -pose[2, 2]))))
     touches = read_json(TOUCH_FILE, {})
     touches[str(args.corner)] = dict(tip=tip.tolist(), tool0=pose.tolist(),
@@ -434,10 +438,9 @@ def main():
     touch = commands.add_parser('touch')
     touch.add_argument('--corner', type=int, choices=(1, 2, 3, 4), required=True)
     touch.add_argument('--tool-length', type=float, default=0.20,
-                       help='flange to closed fingertip, m. Grasp heights do not depend on '
-                            'it (the same value is reused when moving); it does set the '
-                            'absolute table height written to the file, and it matters '
-                            'for XY if the tool is tilted during a touch')
+                       help='recorded with each touch for the tool0-based height contract. '
+                            'The fingertip position itself now comes from lab_tooling.py '
+                            '(RG2 on the Dual Quick Changer, 60 deg off tool0 Z)')
     touch.add_argument('--robot-ip', default='192.168.56.101')
     touch.add_argument('--tool-index', type=int, default=2, help='OnRobot device index')
     touch.set_defaults(run=command_touch)

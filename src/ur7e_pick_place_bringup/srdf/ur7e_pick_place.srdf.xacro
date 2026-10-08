@@ -31,4 +31,23 @@ clobbering our addition.
     <joint name="$(arg prefix)wrist_2_joint" value="-1.57"/>
     <joint name="$(arg prefix)wrist_3_joint" value="0"/>
   </group_state>
+
+  <!-- 2026-10-08: the Dual Quick Changer and the soft gripper
+       (ur7e_bringup/urdf/dual_quick_changer.xacro) are bolted to the flange
+       and to the RG2's base: touching each other is the mounting, not a
+       collision. Everything else (forearm, table, the RG2's fingers) is checked. -->
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)tool0" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)flange" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)wrist_3_link" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)wrist_2_link" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)onrobot_base_link" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)cable_connector_0" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)cable_connector_1" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_changer" link2="$(arg prefix)lab_soft_gripper" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_soft_gripper" link2="$(arg prefix)tool0" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_soft_gripper" link2="$(arg prefix)flange" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_soft_gripper" link2="$(arg prefix)wrist_3_link" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_soft_gripper" link2="$(arg prefix)onrobot_base_link" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_soft_gripper" link2="$(arg prefix)cable_connector_0" reason="Adjacent"/>
+  <disable_collisions link1="$(arg prefix)lab_soft_gripper" link2="$(arg prefix)cable_connector_1" reason="Adjacent"/>
 </robot>

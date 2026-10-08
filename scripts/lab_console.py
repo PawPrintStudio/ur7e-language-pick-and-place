@@ -344,11 +344,16 @@ def main():
         import lab_pick
         from ur7e_orchestrator.workflow import Orchestrator
         from ur7e_perception.monocular import TableCalibration
+        if args.execute and not lab_pick.lab_tooling.load()['verified']:
+            say('BLOCKED', 'lab_tooling.yaml is not verified on this arm (Dual Quick '
+                           'Changer mounting); see docs/vendor/cad/README.md')
+            return 2
         executor = lab_pick.PickExecutor(
             TableCalibration.load(args.calibration), hover=args.hover,
             max_speed_percent=args.max_speed_percent, joint_rate=args.joint_rate,
             max_excursion=args.max_excursion, mirror_lr=args.mirror_lr,
-            plan_only=not args.execute, poses_file=args.poses_file)
+            plan_only=not args.execute, poses_file=args.poses_file,
+            tool_link=lab_pick.PICK_LINK)
     else:
         executor = JogExecutor(max_speed_percent=args.max_speed_percent,
                                joint_rate=args.joint_rate, max_excursion=args.max_excursion,

@@ -42,6 +42,7 @@ def setup(context):
     return [
         SetEnvironmentVariable('IGN_GAZEBO_RESOURCE_PATH', ':'.join([
             os.path.dirname(get_package_share_directory('onrobot_description')),
+            os.path.dirname(get_package_share_directory('ur7e_bringup')),  # changer meshes
             os.path.dirname(get_package_share_directory('ur_description')),
             os.environ.get('IGN_GAZEBO_RESOURCE_PATH', '')])),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(

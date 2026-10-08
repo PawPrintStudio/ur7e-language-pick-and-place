@@ -51,7 +51,9 @@ def segment_distance(p1, q1, p2, q2):
 # must stay this far from the arm's own upper-arm and forearm axes along the
 # whole planned path. Gripper body 0.08 m half-width + forearm 0.05 m radius
 # + margin. The 2026-10-02/06 `front` pose starts at 0.101 m: it fails.
-MIN_GAP_M = 0.15
+MIN_GAP_M = 0.17  # 2026-10-06: gripper envelope widened to 0.10 m half-width
+# Fraction of the elbow-to-wrist-1 line treated as forearm body (see gaps()).
+FOREARM_REACH = 0.7
 
 
 def sweep(executor, state, points, every=4):
@@ -82,8 +84,12 @@ def gaps(frames):
         axis = rotation.apply([0, 0, 1])
         tilts.append(math.degrees(math.acos(np.clip(-axis[2], -1, 1))))
         hang = (position, position + HANG_M * axis)
-        arm = [(f['upper_arm_link'][0], f['forearm_link'][0]),
-               (f['forearm_link'][0], f['wrist_1_link'][0]),
+        # The forearm stops FOREARM_REACH of the way to wrist 1: the wrist
+        # itself carries the gripper ~0.14 m off its axis in every top-down
+        # pose, so measuring to it makes the gate unpassable (2026-10-06 scan).
+        elbow, wrist = f['forearm_link'][0], f['wrist_1_link'][0]
+        arm = [(f['upper_arm_link'][0], elbow),
+               (elbow, elbow + FOREARM_REACH * (wrist - elbow)),
                (f['base_link'][0], f['shoulder_link'][0])]
         clearances.append(min(segment_distance(*hang, *seg) for seg in arm))
     return tilts, clearances

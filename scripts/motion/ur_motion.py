@@ -72,11 +72,13 @@ def relative_sine(home, joint_amps, period, cycles, dt=0.1):
 
 
 class MotionClient(Node):
-    def __init__(self):
+    def __init__(self, action=ACTION):
         super().__init__('ur_motion')
         self._start = None
         self.create_subscription(JointState, '/joint_states', self._js, 10)
-        self._ac = ActionClient(self, FollowJointTrajectory, ACTION)
+        # The real arm's controller by default; Gazebo's is named
+        # /joint_trajectory_controller/follow_joint_trajectory.
+        self._ac = ActionClient(self, FollowJointTrajectory, action)
 
     def _js(self, msg):
         if self._start is None:

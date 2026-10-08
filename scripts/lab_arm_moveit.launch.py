@@ -1,8 +1,9 @@
 """Arm-only lab planning from the running driver's calibrated description.
 
-No hardware controllers or TF publishers are started here. The attached RG2
-is represented by a conservative fixed collision envelope, not fake joint
-feedback. Named lab poses are captured from live joints; production home and
+No hardware controllers or TF publishers are started here. The tool stack
+(Dual Quick Changer, RG2, soft gripper, see lab_tooling.py) is represented by
+fixed collision boxes, not fake joint feedback, plus an ``rg2_tcp`` frame the
+pick planner moves. Named lab poses are captured from live joints; production home and
 observe poses are deliberately not reused from a possibly folded start.
 """
 
@@ -18,8 +19,13 @@ from launch_ros.actions import Node
 import rclpy
 from rcl_interfaces.srv import GetParameters
 from sensor_msgs.msg import JointState
+import sys
+
 import xacro
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import lab_tooling  # noqa: E402
 
 
 def setup(context):
@@ -49,18 +55,11 @@ def setup(context):
     robot = ET.fromstring(description)
     if robot.find(".//joint[@name='finger_width']") is not None:
         raise RuntimeError('This launch is only for the arm-only driver')
-    # RG2 collision-mesh bounds sampled across 0..110 mm opening (1 mm
-    # increments), expressed in tool0: x +/-72.62 mm, y -39.43..35.89 mm,
-    # z 0..233.59 mm. Add mounting allowance along Z and at least 5 mm
-    # padding. This envelope covers every opening, without invented feedback.
-    link = ET.SubElement(robot, 'link', name='lab_gripper_envelope')
-    collision = ET.SubElement(link, 'collision')
-    ET.SubElement(collision, 'origin', xyz='0 0 0.135', rpy='0 0 0')
-    geometry = ET.SubElement(collision, 'geometry')
-    ET.SubElement(geometry, 'box', size='0.16 0.09 0.28')
-    joint = ET.SubElement(robot, 'joint', name='lab_gripper_envelope_joint', type='fixed')
-    ET.SubElement(joint, 'parent', link='tool0')
-    ET.SubElement(joint, 'child', link='lab_gripper_envelope')
+    # 2026-10-08: the real tool stack, not one box on the flange axis. A Dual
+    # Quick Changer splays the RG2 and a soft gripper 60 deg off tool0 Z, so a
+    # single on-axis envelope (0.20 x 0.20 x 0.28 m until now) missed both
+    # tools. Geometry and the lab-checked mounting are in lab_tooling.py/.yaml.
+    lab_tooling.add_to_urdf(robot, lab_tooling.load())
 
     share = Path(get_package_share_directory('ur_moveit_config'))
     srdf = ET.fromstring(xacro.process_file(
@@ -75,9 +74,8 @@ def setup(context):
                      'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']:
             ET.SubElement(state, 'joint', name=name,
                           value=str(joints[name] + (delta if name == 'wrist_3_joint' else 0)))
-    for name in ['tool0', 'flange', 'wrist_3_link']:
-        ET.SubElement(srdf, 'disable_collisions', link1='lab_gripper_envelope',
-                      link2=name, reason='Adjacent')
+    for first, second in lab_tooling.ADJACENT:
+        ET.SubElement(srdf, 'disable_collisions', link1=first, link2=second, reason='Adjacent')
 
     repo = Path(__file__).resolve().parents[1]
     config = repo / 'src/ur7e_pick_place_bringup/config'

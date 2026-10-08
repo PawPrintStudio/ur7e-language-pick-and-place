@@ -92,7 +92,8 @@ MAX_APPROACH_WRIST_RAD = 1.2
 # The held target as the planner should see it: a box under the fingertips
 # (tool0 frame; the RG2's closed tips are 0.258 m from the flange). Sized
 # for the blue hat held by its brim (about 15 cm across, 10 cm deep).
-TARGET_BOX = {'size': (0.17, 0.17, 0.12), 'center_z': 0.258 + 0.06}
+# Centre 6 cm beyond the closed fingertips, along the RG2 axis (frame rg2_tcp).
+TARGET_BOX = {'size': (0.17, 0.17, 0.12), 'beyond_tips': 0.06}
 
 
 def wave_stops(xs, ys, heights):
@@ -214,7 +215,7 @@ def make_executor(args):
 def attach_target(executor, attach=True):
     """Tell the planner about the held target, or forget it again.
 
-    The planner knows the gripper (a box on the flange, lab_arm_moveit.launch.py)
+    The planner knows the tools (boxes from lab_tooling.py, lab_arm_moveit.launch.py)
     but not what it holds: without this, a path may sweep the hanging target
     through the arm or an obstacle and still count as collision-free.
     """
@@ -224,17 +225,21 @@ def attach_target(executor, attach=True):
     from shape_msgs.msg import SolidPrimitive
 
     executor.ensure_table()
-    held = AttachedCollisionObject(link_name='tool0', touch_links=[
-        'lab_gripper_envelope', 'tool0', 'flange', 'wrist_3_link'])
+    import lab_tooling
+    # The RG2 holds it, and the RG2 sits 60 deg off the flange axis on the
+    # Dual Quick Changer: hang the box from the RG2's TCP, not from tool0.
+    held = AttachedCollisionObject(link_name='rg2_tcp',
+                                   touch_links=lab_tooling.TOUCH_LINKS + ['rg2_tcp'])
     held.object.id = 'lab_held_target'
-    held.object.header.frame_id = 'tool0'
+    held.object.header.frame_id = 'rg2_tcp'
     req = ApplyPlanningScene.Request()
     req.scene.is_diff = True
     req.scene.robot_state.is_diff = True
     if attach:
         held.object.operation = CollisionObject.ADD
         pose = lab_pick.Pose()
-        pose.position.z, pose.orientation.w = TARGET_BOX['center_z'], 1.0
+        pose.position.z = lab_tooling.load()['tcp_to_tips_m'] + TARGET_BOX['beyond_tips']
+        pose.orientation.w = 1.0
         held.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX,
                                                  dimensions=list(TARGET_BOX['size']))]
         held.object.primitive_poses = [pose]
@@ -255,6 +260,72 @@ def with_joints(state, joints):
     moved.joint_state.position = [float(joints.get(name, value)) for name, value in
                                   zip(moved.joint_state.name, moved.joint_state.position)]
     return moved
+
+
+def plan_pose_joint(executor, state, pose):
+    """IK seeded from ``state``, then a collision-checked straight line in joint space.
+
+    2026-10-06: /compute_cartesian_path turned a 6 mm step from calib_start
+    into 2020 waypoints that swung the shoulder a full turn (the gates
+    refused it). Wave steps are a few cm, so a joint-space line from the
+    nearest IK solution follows nearly the same tool path without that risk.
+    """
+    from lab_jog import JOINTS, JogError
+    from moveit_msgs.srv import GetPositionIK
+    from geometry_msgs.msg import PoseStamped
+    req = GetPositionIK.Request()
+    req.ik_request.group_name = 'ur_manipulator'
+    req.ik_request.robot_state = state
+    req.ik_request.avoid_collisions = True
+    req.ik_request.ik_link_name = 'tool0'
+    req.ik_request.pose_stamped = PoseStamped(pose=pose)
+    req.ik_request.pose_stamped.header.frame_id = 'base_link'
+    req.ik_request.timeout.nanosec = 200_000_000
+    res = executor.call(GetPositionIK, '/compute_ik', req)
+    if res.error_code.val != 1:
+        raise JogError(f'no collision-free IK for the stop (MoveIt code {res.error_code.val})')
+    solved = dict(zip(res.solution.joint_state.name, res.solution.joint_state.position))
+    return executor.plan_joint_line(state, {j: solved[j] for j in JOINTS})
+
+
+def command_capture(args):
+    """Freedrive calibration: the operator moves the arm, Enter records a stop.
+
+    Sends no motion at all (2026-10-06, after the wave's stops: the RG2
+    fingers kept meeting the forearm in poses the model passed). Writes the
+    same observations file as ``wave``, so ``solve`` works unchanged. Vary
+    position across the view AND the tool's tilt/yaw between stops.
+    """
+    executor = make_executor(args)
+    camera = Camera(**camera_settings())
+    _, shell, _ = lenses()
+    os.makedirs(SESSION, exist_ok=True)
+    observations = []
+    say('CAPTURE', 'freedrive the arm with the target held; Enter = record, q = finish')
+    while True:
+        if input(f'[{len(observations)} recorded] Enter to record, q to finish: ').strip() == 'q':
+            break
+        first = executor.joints_of(executor.fresh(settle_s=0.2))
+        time.sleep(0.5)
+        state = executor.fresh(settle_s=0.2)
+        if max(abs(first[j] - executor.joints_of(state)[j]) for j in first) > 0.002:
+            say('SKIP', 'the arm is still moving; hold it still and press Enter again')
+            continue
+        tool = tool_matrix(executor.fk(state))
+        left, right = grab_pair(camera)
+        index = len(observations)
+        names = (f'capture_{index:02d}_left.jpg', f'capture_{index:02d}_right.jpg')
+        for name, image in zip(names, (left, right)):
+            cv2.imwrite(os.path.join(SESSION, name), cv2.cvtColor(image, cv2.COLOR_RGB2BGR),
+                        [cv2.IMWRITE_JPEG_QUALITY, 97])
+        blobs = white_blobs(shell.undistort(left), color=args.target_color, min_area=300,
+                            max_area=80000)
+        observations.append({'index': index, 'turn': [0, 0, 0], 'tool0': tool.tolist(),
+                             'left': names[0], 'right': names[1]})
+        write_json(OBSERVATIONS, {'color': args.target_color, 'observations': observations})
+        say('SEEN', {'index': index, 'tool0_xyz': [round(v, 4) for v in tool[:3, 3]],
+                     'target_colour_blobs': len(blobs)})
+    say('DONE', {'observations': len(observations), 'file': OBSERVATIONS})
 
 
 def command_wave(args):
@@ -306,7 +377,7 @@ def command_wave(args):
             if args.execute:
                 state = executor.fresh()
             try:
-                points = executor.plan_pose(state, pose)
+                points = plan_pose_joint(executor, state, pose)
                 arm, wrist = check_move(
                     executor.joints_of(state), points,
                     *((MAX_ARM_STEP_RAD, MAX_WRIST_STEP_RAD) if approached else
@@ -425,12 +496,14 @@ def command_solve(args):
                     'no_detection': [o['index'] for o, f in zip(observations, found) if not f],
                     'no_depth': [o['index'] for o, f in zip(observations, found)
                                  if f and 'centre' not in f]})
-    if len(usable) < 8:
-        raise SystemExit(f'only {len(usable)} stops have a target with stereo depth; need 8')
+    if len(usable) < args.min_stops:
+        raise SystemExit(f'only {len(usable)} stops have a target with stereo depth; '
+                         f'need {args.min_stops} (--min-stops)')
     points = np.array([f['centre'] for _, f in usable])
     poses = np.array([obs['tool0'] for obs, _ in usable])
     result = handeye.solve(points, poses, focal_px=rig.focal_px, baseline_m=rig.baseline_m,
-                           fit_disparity=not args.no_disparity, target_drop=args.target_drop)
+                           fit_disparity=not args.no_disparity, target_drop=args.target_drop,
+                           target_on_axis=args.target_on_axis)
     cam_to_base = result['cam_to_base']
     k = mono.intrinsics(focal, rig.image_size)
     solution = {
@@ -659,12 +732,19 @@ def main():
                       help='plan-only: rehearse the wave as if starting at this named pose')
     wave.add_argument('--target-color', choices=sorted(TARGET_COLORS), default='blue')
     wave.set_defaults(run=command_wave)
+    capture = commands.add_parser('capture', help='freedrive calibration: you move the arm, Enter records')
+    capture.add_argument('--target-color', choices=sorted(TARGET_COLORS), default='blue')
+    capture.set_defaults(run=command_capture)
     solve = commands.add_parser('solve', help='camera pose from the wave')
     solve.add_argument('--radius', type=float, default=None,
                        help='target radius, m (default: measured from the images)')
+    solve.add_argument('--min-stops', type=int, default=8,
+                       help='fewest stops with stereo depth to solve from (fewer = rougher)')
     solve.add_argument('--target-drop', type=float, required=True,
                        help='flange face to the target centre along the tool axis, m '
                             '(ruler; the hat by its brim was ~0.312 on 2026-10-02)')
+    solve.add_argument('--target-on-axis', action='store_true',
+                       help='pin the target on the tool axis (few stops: fit only the camera)')
     solve.add_argument('--no-disparity', action='store_true',
                        help='do not estimate a stereo depth correction')
     solve.set_defaults(run=command_solve)
@@ -674,7 +754,7 @@ def main():
     commands.add_parser('check', help='live overlay of the robot on the camera image'
                         ).set_defaults(run=command_check)
     args = cli.parse_args()
-    needs_ros = args.command in ('wave', 'check')
+    needs_ros = args.command in ('wave', 'check', 'capture')
     if needs_ros:
         import rclpy
         rclpy.init()

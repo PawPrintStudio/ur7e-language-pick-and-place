@@ -133,3 +133,72 @@ to (0.30, -0.02, 0.36): same picture, gap 0.101 m at the start
 
 The camera pose changes are what stereo calibration is for. None of the
 four stops had anything to do with the camera.
+
+## Later on 2026-10-06: gate fix, `calib_start`, and the next step
+
+- **The gripper-gap gate could never pass.** It measured to the `wrist_1`
+  joint, which carries the gripper about 0.14 m off its axis in every
+  top-down pose, so the gap topped out at 0.141 m against a 0.15 m minimum.
+  With Nikola's approval it now treats only the first 70 % of the
+  elbow-to-wrist line as forearm (`FOREARM_REACH` in `lab_path_audit.py`).
+  `front` still fails (0.104 m).
+- **`calib_start`** was placed by hand and saved in `scripts/lab_poses.json`
+  (final version: gap 0.164 m, tool straight down, flange about
+  (0.14, 0.27, 0.29) m). Under the later 0.17 m gate it is **refused**, and
+  it should not be used: see below.
+- **Definite next step: mount the ZED rigidly to the robot's stand.**
+  Camera and base then move together, the calibration holds for good, and
+  each session only runs `check`. Tracked as plan task 2.5b in
+  `docs/IMPLEMENTATION_PLAN.md`.
+
+## Evening 2026-10-06: wave from the folded pose, two stops, freedrive capture
+
+Nikola chose to calibrate from the folded `calib_start` at 100 % speed,
+standing at the pendant. What happened, in order:
+
+- **Wrist 3 at -6.20 rad blocked all planning.** The lab MoveIt config caps
+  it at ±6.133 rad, and OMPL rejects a start state outside the cap. A
+  wrist-3-only move to -5.90 fixed it. Check this first whenever planning
+  fails with "invalid bounds" / code 99999.
+- **`/compute_cartesian_path` is unsafe here.** A 6 mm step became 2020
+  waypoints that swung the shoulder a full turn (the joint gate refused
+  it). Wave moves now use seeded IK + a collision-checked joint line
+  (`plan_pose_joint`). Measured with `log/base_clearance.py`: tool path
+  within 1.7 mm of straight.
+- **The local grid gave only 3–5 plannable stops.** The arm is folded:
+  opening it brings the forearm in, and going lower puts the hat into the
+  platform.
+- **Run 1 was stopped by Nikola**: the hat came about 10 cm (surface to
+  surface) from the base column.
+- **Run 2: protective stop C153A3 on a 35° wrist turn.** Nikola: **the RG2
+  fingers hit the arm, every time a warning came, in all the stops.** The
+  gripper model was a 0.16 x 0.09 m box with jaws along tool0 X. Which way
+  the real fingers open was never checked, and on paper there was ~2 cm of
+  room. Fixed by making the envelope **square, 0.20 x 0.20 m**, in
+  `lab_arm_moveit.launch.py`, and raising the gripper gate to **0.17 m**.
+- **Freedrive calibration added**: `lab_stereo_calibration.py capture`
+  (Enter records a stop, no motion), plus solve options `--min-stops` and
+  `--target-on-axis`.
+- **The camera was repositioned**; the old images were deleted.
+  `rows.json` (lens-to-lens) was kept.
+- **The freedrive solve with the hat failed** (best 54 mm RMS; 7–8 stops).
+  The hat is a bad target: gripped by the brim, its centre is off the
+  tool axis by an unknown amount (solved 28 ± 22 cm); its visible centre
+  shifts with the viewing angle; and it is blue like the robot's joint caps
+  (stop 6 detected a cap).
+
+## Next session, in this order
+
+1. **Calibrate with a small GREEN ball** (4–6 cm) held at the fingertips,
+   by freedrive:
+   `lab_stereo_calibration.py capture --target-color green`, 10+ stops
+   spread across the view with varied tilt and yaw. Green, because blue
+   matches the joint caps and red matches the clamp handles. Measure
+   flange face to ball centre. Then
+   `solve --target-drop <m> --target-on-axis`, `finish`, `check`.
+   The camera has not moved since the evening capture, so `rows` stays valid.
+2. **Demo run + screenshots for the repo** (language → detect → pick),
+   Nikola's goal.
+3. **Rigid camera mount** (plan task 2.5b).
+4. Do **not** use the folded `calib_start` for motion. Starts must pass the
+   0.17 m gate. Any new motion: sweep picture in RViz first.

@@ -18,6 +18,10 @@ setup(
         # a raw repo path would only work where the repo layout is identical.
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
+        # The Dual Quick Changer tool stack shared by the Gazebo and MoveIt
+        # robots, with display meshes from the manufacturer CAD.
+        ("share/" + package_name + "/urdf", glob("urdf/*.xacro")),
+        ("share/" + package_name + "/meshes", glob("meshes/*.stl")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

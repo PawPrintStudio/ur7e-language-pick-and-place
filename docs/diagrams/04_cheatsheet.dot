@@ -1,0 +1,32 @@
+// Page 4: "something broke, which node do I check?" Edit, then run build.sh.
+digraph cheatsheet {
+  graph [fontname="Helvetica", pad=0.5, labelloc=t,
+         label=<<FONT POINT-SIZE="24"><B>Something broke: which node do I check?</B></FONT><BR/><FONT POINT-SIZE="12" COLOR="#555555">Always first: am I in the container, on the right domain?   whoami; pwd; echo $ROS_DOMAIN_ID   (sim 87 / Gazebo 84 / lab 42)</FONT>>];
+  node [fontname="Helvetica", shape=plaintext];
+  t [label=<
+  <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#BBBBBB">
+    <TR><TD BGCOLOR="#2E4057"><FONT COLOR="white"><B>Symptom</B></FONT></TD><TD BGCOLOR="#2E4057"><FONT COLOR="white"><B>Node / piece to check</B></FONT></TD><TD BGCOLOR="#2E4057"><FONT COLOR="white"><B>Command</B></FONT></TD></TR>
+    <TR><TD ALIGN="LEFT">No fresh joint state -- is the driver running?</TD><TD ALIGN="LEFT">joint_state_broadcaster (inside controller_manager)<BR ALIGN="LEFT"/>or this terminal is on another domain</TD><TD ALIGN="LEFT"><FONT FACE="Courier">ros2 topic hz /joint_states</FONT></TD></TR>
+    <TR><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">Plan works, Execute does nothing / times out</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">the trajectory controller is not active</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7"><FONT FACE="Courier">ros2 control list_controllers</FONT></TD></TR>
+    <TR><TD ALIGN="LEFT">PLAN unreachable / no collision-free hover</TD><TD ALIGN="LEFT">move_group: the target, the scene, or a misplaced block</TD><TD ALIGN="LEFT">look in RViz; Gazebo: reset pick_object (START_HERE 5b)</TD></TR>
+    <TR><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">/perception/detect_object unavailable</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">perception_node not up (or crashed on start)</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7"><FONT FACE="Courier">ros2 service list | grep perception</FONT></TD></TR>
+    <TR><TD ALIGN="LEFT">not_found for an object that is there</TD><TD ALIGN="LEFT">perception_node backend / colour words / reach region</TD><TD ALIGN="LEFT">open the snapshot dir; /perception/annotated</TD></TR>
+    <TR><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">execution gate closed / safety_mode_not_normal</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">io_and_status_controller + speed_scaling (lab)<BR ALIGN="LEFT"/>rehearsal_status (tier 1)</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7"><FONT FACE="Courier">ros2 topic echo /io_and_status_controller/safety_mode</FONT></TD></TR>
+    <TR><TD ALIGN="LEFT">Failed to find a free participant index</TD><TD ALIGN="LEFT">not a node: CYCLONEDDS_URI missing in this terminal</TD><TD ALIGN="LEFT">the full export line (START_HERE 4)</TD></TR>
+    <TR><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">lab_tooling.yaml is not verified</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">not a node: the Dual Quick Changer check</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">docs/vendor/cad/README.md; sim: --allow-unverified-tooling</TD></TR>
+    <TR><TD ALIGN="LEFT">RViz shows no arm / wrong pose</TD><TD ALIGN="LEFT">robot_state_publisher (/tf)</TD><TD ALIGN="LEFT"><FONT FACE="Courier">ros2 run tf2_ros tf2_echo base_link tool0</FONT></TD></TR>
+    <TR><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">Gazebo: block not lifted after a "successful" pick</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">latch bridge (/pick_object/attach)</TD><TD ALIGN="LEFT" BGCOLOR="#F7F7F7">Entity Tree → pick_object → Pose z (0.14 = lifted)</TD></TR>
+  </TABLE>>];
+
+  s [label=<
+  <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="7" COLOR="#BBBBBB">
+    <TR><TD COLSPAN="2" BGCOLOR="#EEEEEE"><B>See the graph yourself (live)</B></TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT FACE="Courier">ros2 node list</FONT></TD><TD ALIGN="LEFT">who is running</TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT FACE="Courier">ros2 node info /move_group</FONT></TD><TD ALIGN="LEFT">a node's topics, services, actions (how page 2 was made)</TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT FACE="Courier">ros2 topic list   /   ros2 topic echo /joint_states --once</FONT></TD><TD ALIGN="LEFT">streams and one sample</TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT FACE="Courier">ros2 service list   /   ros2 action list</FONT></TD><TD ALIGN="LEFT">request/reply and long-running goals</TD></TR>
+    <TR><TD ALIGN="LEFT"><FONT FACE="Courier">rqt_graph</FONT></TD><TD ALIGN="LEFT">this picture, auto-drawn (topics only)</TD></TR>
+    <TR><TD COLSPAN="2" ALIGN="LEFT"><FONT POINT-SIZE="10">Words: <B>node</B> = one process doing one job.  <B>topic</B> = a stream anyone can read (/joint_states).<BR ALIGN="LEFT"/><B>service</B> = ask once, get one answer (/compute_ik).  <B>action</B> = a long job with progress and a result (follow_joint_trajectory).<BR ALIGN="LEFT"/><B>domain</B> = which nodes can find each other at all.  Sources of these pages: docs/diagrams/*.dot (run build.sh).</FONT></TD></TR>
+  </TABLE>>];
+  t -> s [style=invis];
+}

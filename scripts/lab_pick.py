@@ -60,7 +60,8 @@ sys.path.insert(0, _HERE)
 for package in ('ur7e_orchestrator', 'ur7e_perception'):
     sys.path.insert(0, os.path.join(_HERE, '..', 'src', package))
 
-from lab_jog import BASE_FRAME, GROUP, JogError, JogExecutor, TOOL_LINK  # noqa: E402
+from lab_jog import BASE_FRAME, GROUP, JogError, JogExecutor, TOOL_LINK  # noqa: E402,F401
+import lab_tooling  # noqa: E402
 from lab_rg2_native import find_by_serial, identify, TimeoutTransport, validate_state  # noqa: E402
 from ur_motion import JOINTS  # noqa: E402  (lab_jog put scripts/motion on the path)
 
@@ -78,7 +79,12 @@ from ur7e_perception.monocular import TableCalibration  # noqa: E402
 
 DEFAULT_CALIBRATION = os.path.join(_HERE, 'lab_table.json')
 OBSTACLES_FILE = os.path.join(_HERE, 'lab_obstacles.yaml')
-APPROX_GRIPPER_LENGTH = 0.258  # tool0 flange to closed RG2 fingertips, m (measured 2026-10-02)
+# Vertical drop from tool0 to the closed RG2 fingertips with tool0 pointing
+# straight down (measured 2026-10-02). Only the calibration scripts' z bookkeeping
+# uses it. The RG2 does NOT hang below tool0: the Dual Quick Changer puts it 60
+# deg off the flange axis (lab_tooling.py), so picks plan the RG2's own TCP.
+APPROX_GRIPPER_LENGTH = 0.258
+PICK_LINK = 'rg2_tcp'   # frame added by lab_arm_moveit.launch.py from lab_tooling.py
 DEFAULT_LOG_DIR = os.path.join(_HERE, '..', 'log', 'runs')
 SEED_POSES_FILE = os.path.join(_HERE, 'lab_poses.json')
 SESSION_POSES_FILE = os.path.join(_HERE, '.console_poses.json')
@@ -199,9 +205,11 @@ class PickExecutor(JogExecutor):
     poses, taught poses); that is what the camera calibration itself uses.
     """
 
-    def __init__(self, calibration=None, hover=0.12, table_surface_z=None, **kwargs):
+    def __init__(self, calibration=None, hover=0.12, table_surface_z=None, tooling=None,
+                 **kwargs):
         super().__init__(**kwargs)
         self.calibration = calibration
+        self.tooling = tooling or lab_tooling.load()
         self.hover = hover
         self.anchor = self.tool_length = None
         # Without a calibration the planner's table is the base plane unless
@@ -229,10 +237,18 @@ class PickExecutor(JogExecutor):
         return origin[2] - (normal[0] * (x - origin[0]) + normal[1] * (y - origin[1])) / normal[2]
 
     def tool_z(self, x, y, tip_above_table):
-        """tool0 height that puts the closed fingertips this far above the table."""
+        """Height of the planned link that puts the closed fingertips this far above the table.
+
+        Planning the RG2's TCP (pointing straight down), the fingertips are a
+        fixed ``tcp_to_tips_m`` below it and the table plane is the real
+        surface. Planning tool0 keeps the old contract: the calibration's
+        ``tool_length`` above the plane.
+        """
         if tip_above_table < 0.004:
             raise JogError(f'refusing a fingertip height of {tip_above_table * 1000:.0f} mm: '
                            'the floor is 4 mm above the table')
+        if self.tool_link != TOOL_LINK:
+            return self.table_z(x, y) + self.tooling['tcp_to_tips_m'] + tip_above_table
         return self.table_z(x, y) + self.tool_length + tip_above_table
 
     def ensure_table(self):
@@ -251,6 +267,9 @@ class PickExecutor(JogExecutor):
         # slab, 5 mm low on purpose, 20 cm thick); grasp heights never use it.
         if self.anchor is None:
             surface = float(self.table_surface_z)
+        elif self.tool_link != TOOL_LINK:
+            # The plane perception and tool_z() use is the surface itself.
+            surface = float(self.anchor[2, 3])
         else:
             contact = float(self.anchor[2, 3] + self.tool_length)
             surface = contact - APPROX_GRIPPER_LENGTH
@@ -298,10 +317,10 @@ class PickExecutor(JogExecutor):
     # --- planning -----------------------------------------------------------------
 
     def plan_pose(self, state, pose, avoid_collisions=True):
-        """Cartesian straight line from ``state`` to an absolute tool0 pose."""
+        """Cartesian straight line from ``state`` to an absolute pose of ``tool_link``."""
         self.ensure_table()
         req = GetCartesianPath.Request(
-            start_state=state, group_name=GROUP, link_name=TOOL_LINK,
+            start_state=state, group_name=self.group, link_name=self.tool_link,
             waypoints=[pose], max_step=0.001, jump_threshold=0.0,
             revolute_jump_threshold=0.02, avoid_collisions=avoid_collisions,
             max_velocity_scaling_factor=0.01, max_acceleration_scaling_factor=0.01)
@@ -356,8 +375,12 @@ class PickExecutor(JogExecutor):
         after.joint_state.effort = []
         return after
 
+    def excursion(self, state, points):
+        """Largest joint swing (rad) of ``points`` from ``state``."""
+        return self.audit(self.joints_of(state), points)['max_joint_excursion_rad']
+
     def pose_at(self, x, y, tip_above_table, yaw_x):
-        """Top-down tool0 pose with the fingertips over (x, y)."""
+        """Top-down pose of ``tool_link`` with the fingertips over (x, y)."""
         pose = Pose()
         pose.position.x, pose.position.y = float(x), float(y)
         pose.position.z = float(self.tool_z(x, y, tip_above_table))
@@ -492,7 +515,8 @@ class LabAdapters(Adapters):
         if not response.success:
             reason = response.reason
             missing = ('not detected', 'object on the table', 'missing or seen',
-                       'multiple plausible', 'more than one')
+                       'multiple plausible', 'more than one',
+                       'absent or ambiguous')  # Gazebo's fixture backend
             if any(text in reason for text in missing):
                 raise NotFound('not_found', f'"{query}": {reason}')
             raise StageError('perception_error', reason)
@@ -526,11 +550,20 @@ class LabAdapters(Adapters):
         self.target, self.place = target, place
         state = ex.fresh()
         current_yaw, tilt = tool_yaw(ex.fk(state))
-        if tilt > 3.0:
+        # Planning tool0, the start must already be top-down. The RG2 TCP is
+        # 60 deg off at `ready` by construction (Dual Quick Changer); the
+        # approach turns it upright, at the jaw angle that swings least.
+        if tilt > 3.0 and ex.tool_link == TOOL_LINK:
             raise StageError('tool_not_vertical',
                              f'tool is tilted {tilt:.1f} deg; start from a top-down pose')
-        self.grasp_yaw = current_yaw
-        if target.detail['axis_ratio'] >= cfg['align_ratio']:
+        height = max(0.0, target.detail['height_m'])
+        elongated = target.detail['axis_ratio'] >= cfg['align_ratio']
+        if ex.tool_link != TOOL_LINK:
+            self.grasp_yaw = self._least_swing_yaw(state, target, height, elongated,
+                                                   current_yaw)
+        else:
+            self.grasp_yaw = current_yaw
+        if ex.tool_link == TOOL_LINK and elongated:
             # Jaws close along tool X, so X goes ACROSS the object's long axis.
             aligned = nearest_equivalent(target.yaw + math.pi / 2, current_yaw)
             # A half-turn-symmetric gripper never needs more than 90 deg; cap
@@ -539,7 +572,6 @@ class LabAdapters(Adapters):
             # 2026-10-02, and the lift then stalled at the joint limit).
             turn = max(-cfg['max_align_turn'], min(cfg['max_align_turn'], aligned - current_yaw))
             self.grasp_yaw = current_yaw + turn
-        height = max(0.0, target.detail['height_m'])
         self.tip_height = max(cfg['min_tip_clearance'], height - cfg['finger_reach'])
         x, y = target.xyz[0], target.xyz[1]
         if place is None:
@@ -578,6 +610,40 @@ class LabAdapters(Adapters):
             raise StageError('unreachable', str(error))
         summary['waypoints'] = waypoints
         return summary
+
+    def _least_swing_yaw(self, state, target, height, elongated, current_yaw):
+        """Jaw angle for the RG2 TCP whose approach moves the joints least.
+
+        At `ready` the RG2 hangs 60 deg off vertical on the Dual Quick Changer,
+        so "keep the current jaw direction" is meaningless: from there it asked
+        the wrist for a 6.4 rad swing (simulation, 2026-10-08) while a quarter
+        turn away the same approach needed 1.5. The jaws are symmetric under a
+        half turn; a near-square object also accepts a quarter turn. Each
+        candidate approach is planned and the smallest swing wins.
+        """
+        ex = self.executor
+        if elongated:
+            base, step, count = target.yaw + math.pi / 2, math.pi, 2
+        else:
+            base, step, count = current_yaw, math.pi / 2, 4
+        x, y = target.xyz[0], target.xyz[1]
+        hover = ex.hover + height
+        best, tried = None, []
+        for k in range(count):
+            yaw = math.atan2(math.sin(base + k * step), math.cos(base + k * step))
+            try:
+                points = ex.plan_pose(state, ex.pose_at(x, y, hover, yaw), True)
+                swing = ex.excursion(state, points)
+            except JogError as error:
+                tried.append(f'{math.degrees(yaw):.0f} deg: {error}')
+                continue
+            tried.append(f'{math.degrees(yaw):.0f} deg: {swing:.2f} rad')
+            if best is None or swing < best[0]:
+                best = (swing, yaw)
+        if best is None:
+            raise StageError('unreachable', 'no jaw angle reaches the object: '
+                             + '; '.join(tried))
+        return best[1]
 
     # --- motion -------------------------------------------------------------------------
 
@@ -716,14 +782,52 @@ def on_event(event):
         say('RUN', {'run_id': event['run_id'], 'utterance': event['utterance']})
 
 
+# `--sim gazebo`: the same pipeline against the Gazebo world
+# (ros2 launch ur7e_perception gazebo_demo.launch.py). Gazebo's robot already
+# carries the Dual Quick Changer (ur7e_bringup/urdf/dual_quick_changer.xacro);
+# only names differ from the lab, plus the gripper, which is the world's latch.
+SIM_PRESETS = {
+    'gazebo': {
+        'group': 'ur_onrobot_manipulator',
+        'tool_link': 'gripper_tcp',       # RG2 TCP in the community model: 218 mm out
+        'controller': '/joint_trajectory_controller/follow_joint_trajectory',
+        'tcp_to_tips_m': 0.016,           # its RG2 mesh reaches 233.6 mm
+        # Gazebo with GUI + RViz ran at ~0.5 x real time: a 42 s carry took
+        # over 78 s of wall time and was cancelled as stuck (2026-10-08).
+        'time_allowance': 4.0,
+    },
+}
+
+
+def check_tooling(args, tooling=None):
+    """Refuse real motion until lab_tooling.yaml has been checked on the arm."""
+    tooling = tooling or lab_tooling.load()
+    simulated = getattr(args, 'sim', None) in SIM_PRESETS
+    if (args.execute and not tooling['verified'] and not args.allow_unverified_tooling
+            and not simulated):
+        raise RuntimeError(
+            'lab_tooling.yaml is not verified: the Dual Quick Changer mounting '
+            '(changer yaw, RG2 face/roll, TCP length) has not been checked on this arm. '
+            'Check it (docs/vendor/cad/README.md), set verified: true, or pass '
+            '--allow-unverified-tooling in simulation only')
+    return tooling
+
+
 def build(args, executor=None):
     """Construct executor, gripper, parser, adapters and orchestrator."""
+    tooling = dict(check_tooling(args))
+    sim = SIM_PRESETS.get(getattr(args, 'sim', None) or '', {})
+    if sim:
+        tooling['tcp_to_tips_m'] = sim['tcp_to_tips_m']
     calibration = TableCalibration.load(args.calibration)
     if executor is None:
         executor = PickExecutor(
             calibration, hover=args.hover, max_speed_percent=args.max_speed_percent,
             joint_rate=args.joint_rate, max_excursion=args.max_excursion,
-            plan_only=not args.execute, poses_file=args.poses_file)
+            plan_only=not args.execute, poses_file=args.poses_file,
+            tool_link=sim.get('tool_link', PICK_LINK), group=sim.get('group', GROUP),
+            controller_action=sim.get('controller'), tooling=tooling)
+        executor.time_allowance = sim.get('time_allowance', executor.time_allowance)
         executor.load_poses(SEED_POSES_FILE)
         executor.load_poses()
     config = dict(DEFAULT_CONFIG)
@@ -737,7 +841,11 @@ def build(args, executor=None):
     config.update(force_n=args.force, open_mm=args.open_mm,
                   min_tip_clearance=args.tip_clearance)
     fake = args.fake_gripper or not args.execute
-    gripper = FakeRg2() if fake else Rg2(args.robot_ip)
+    if sim and not fake:
+        from gazebo_rg2 import GazeboRg2
+        gripper = GazeboRg2(executor)
+    else:
+        gripper = FakeRg2() if fake else Rg2(args.robot_ip)
     backend = create(args.backend, **({'model': args.model} if args.model else {}))
     parser = IntentParser(backend, GuardrailPolicy(
         allowed_actions=schema.MOTION_ACTIONS, require_confirmation=not args.no_confirm))
@@ -821,6 +929,13 @@ def add_session_arguments(cli):
     cli.add_argument('--log-dir', default=DEFAULT_LOG_DIR)
     cli.add_argument('--fake-gripper', action='store_true',
                      help='rehearsal only: do not talk to the RG2')
+    cli.add_argument('--sim', choices=sorted(SIM_PRESETS),
+                     help='run against a simulator instead of the arm: gazebo = '
+                          'gazebo_demo.launch.py (its MoveIt group, gripper_tcp, its '
+                          'trajectory controller, the grasp latch as the gripper)')
+    cli.add_argument('--allow-unverified-tooling', action='store_true',
+                     help='simulation only: --execute although lab_tooling.yaml is not '
+                          'verified on the real arm')
     cli.add_argument('--poses-file', default=SESSION_POSES_FILE,
                      help='taught poses (shared with lab_console.py)')
 

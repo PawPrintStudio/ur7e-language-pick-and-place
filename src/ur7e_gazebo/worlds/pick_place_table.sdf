@@ -135,9 +135,13 @@ that exact name/link to weld it to the gripper on command.
       <link name="link">
         <visual name="visual">
           <geometry><box><size>0.06 0.06 0.002</size></box></geometry>
+          <!-- Saturated blue (2026-10-08): the perception fixture backend
+               needs blue > 1.6 x green to call it "blue block"; the old
+               0.2/0.6/0.9 was not, so "put ... on the blue block" never
+               found it. -->
           <material>
-            <ambient>0.2 0.6 0.9 1</ambient>
-            <diffuse>0.2 0.6 0.9 1</diffuse>
+            <ambient>0.1 0.2 0.85 1</ambient>
+            <diffuse>0.1 0.2 0.85 1</diffuse>
           </material>
         </visual>
       </link>

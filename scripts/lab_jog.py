@@ -91,8 +91,19 @@ class JogExecutor(Node):
     """Plans with MoveIt, executes through ``MotionClient``."""
 
     def __init__(self, max_speed_percent=50.0, joint_rate=0.05, max_excursion=0.6,
-                 mirror_lr=False, plan_only=False, poses_file=None):
+                 mirror_lr=False, plan_only=False, poses_file=None, tool_link=TOOL_LINK,
+                 group=GROUP, controller_action=None):
         super().__init__('lab_jog')
+        # The MoveIt planning group: 'ur_manipulator' with the lab's arm-only
+        # MoveIt; Gazebo's MoveIt names its arm group 'ur_onrobot_manipulator'.
+        self.group = group
+        # How much longer than nominal a motion may take before it is
+        # cancelled as stuck. 1.5 on the arm; a simulator running slower than
+        # real time (Gazebo with its GUI: about half speed) needs more.
+        self.time_allowance = 1.5
+        # The frame FK reports and straight-line moves steer: tool0 (the
+        # flange) by default; the pick planner uses the RG2's own TCP.
+        self.tool_link = tool_link
         self.max_speed_percent = float(max_speed_percent)
         self.joint_rate = min(float(joint_rate), MAX_JOINT_VEL)
         self.max_excursion = float(max_excursion)
@@ -118,7 +129,7 @@ class JogExecutor(Node):
         self.create_subscription(SafetyMode, '/io_and_status_controller/safety_mode',
                                  lambda msg: setattr(self, 'safety', msg.mode), latched)
 
-        self.motion = MotionClient()
+        self.motion = MotionClient(controller_action) if controller_action else MotionClient()
         self._table_added = False
 
     # --- telemetry -----------------------------------------------------------
@@ -164,8 +175,14 @@ class JogExecutor(Node):
         gate that reads stale fields refuses a healthy robot with "no live
         telemetry" (the teleop hand-over did exactly that, 2026-09-30).
         """
-        until = time.monotonic() + listen_s
-        while time.monotonic() < until:
+        start = time.monotonic()
+        # Listen longer only while nothing has been heard yet: a just-started
+        # process may not have discovered the status publishers within
+        # listen_s (the rehearsal aborted 1 run in 6 that way, 2026-10-08).
+        # A robot that reports a bad state is still refused at once.
+        while (time.monotonic() - start < listen_s
+               or ((self.safety is None or self.speed is None)
+                   and time.monotonic() - start < 3.0)):
             rclpy.spin_once(self, timeout_sec=0.05)
         problems = []
         if self.safety != SafetyMode.NORMAL:
@@ -219,11 +236,11 @@ class JogExecutor(Node):
 
     def valid(self, state):
         response = self.call(GetStateValidity, '/check_state_validity',
-                             GetStateValidity.Request(robot_state=state, group_name=GROUP))
+                             GetStateValidity.Request(robot_state=state, group_name=self.group))
         return response.valid
 
     def fk(self, state):
-        req = GetPositionFK.Request(robot_state=state, fk_link_names=[TOOL_LINK])
+        req = GetPositionFK.Request(robot_state=state, fk_link_names=[self.tool_link])
         req.header.frame_id = BASE_FRAME
         response = self.call(GetPositionFK, '/compute_fk', req)
         if response.error_code.val != 1:
@@ -250,7 +267,7 @@ class JogExecutor(Node):
         target.position.y += vector[1] * d
         target.position.z += vector[2] * d
         req = GetCartesianPath.Request(
-            start_state=state, group_name=GROUP, link_name=TOOL_LINK,
+            start_state=state, group_name=self.group, link_name=self.tool_link,
             # 1 mm steps, measured on the real stack 2026-09-30: with pick_ik
             # in local mode the same 2 cm lift reaches 100% at 1 mm, 9% at
             # 2 mm and 0% at 5 mm -- each step is an IK solve seeded by the
@@ -284,7 +301,7 @@ class JogExecutor(Node):
         self.ensure_table()
         req = GetMotionPlan.Request()
         plan = req.motion_plan_request
-        plan.group_name = GROUP
+        plan.group_name = self.group
         plan.start_state = state
         plan.allowed_planning_time = 5.0
         plan.num_planning_attempts = 3
@@ -408,7 +425,8 @@ class JogExecutor(Node):
         report['speed_percent'] = self.speed
         # Wall time is nominal x 100 / slider; allow half as much again plus
         # a margin before declaring the goal stuck and cancelling it.
-        budget = pts[-1][1] * 100.0 / max(self.speed or 10.0, 5.0) * 1.5 + 15.0
+        budget = (pts[-1][1] * 100.0 / max(self.speed or 10.0, 5.0) * self.time_allowance
+                  + 15.0)
         ok = self.motion.run(pts, anchor=anchor, timeout=budget)
         report['executed'] = bool(ok)
         if not ok:

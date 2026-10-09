@@ -54,6 +54,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # image has them; --break-system-packages is not needed on 22.04.
 RUN pip3 install --no-cache-dir "anthropic>=1.10" "brotli>=1.1" "pytest>=7,<9"
 
+# Real-hardware perception (2026-10-08): the webcam node's default
+# `backend:=auto` loads OWLv2 with no fallback, so without these it crashes
+# at start; the colour backend alone cannot find "headphones".
+#   torch (CPU wheel)  - the laptop drives the ZED; no CUDA in the container.
+#   transformers<5     - Owlv2Processor.post_process_grounded_object_detection
+#                        as webcam_node.py calls it.
+#   numpy<2            - apt's python3-opencv and cv_bridge are built against
+#                        numpy 1.x; a 2.x pulled in by pip breaks both imports.
+#   pillow>=9.1        - apt's Pillow 9.0.1 satisfies a bare "pillow", but
+#                        transformers' OWLv2 needs Image.Resampling (9.1+);
+#                        without the bound the import fails (2026-10-08).
+RUN pip3 install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch "transformers>=4.40,<5" "pillow>=9.1" "numpy<2"
+
 # Non-root user: files created in the bind-mounted workspace stay owned by
 # you, not root (the classic Docker-on-Linux paper cut).
 ARG USERNAME=ros
@@ -67,6 +81,11 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && rm -rf /var/lib/apt/lists/*
 
 USER $USERNAME
+
+# Mount point for the `ur7e-hf-cache` volume (devcontainer.json): created here
+# so the volume is owned by this user, and OWLv2's ~600 MB of weights survive
+# container rebuilds instead of downloading again.
+RUN mkdir -p /home/$USERNAME/.cache/huggingface
 
 # Shell environment for every terminal in the container.
 # ROS_DOMAIN_ID + RMW match the Jetson (RUNBOOK, SSH path section): a laptop

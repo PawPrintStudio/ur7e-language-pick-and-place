@@ -9,11 +9,18 @@
     //   see docs/SIMULATION.md for the Windows URSim note).
     // --ipc=host: Fast DDS shared-memory transport between host and container.
     // ptrace/seccomp: let gdb attach inside the container.
+    // Real hardware (2026-10-08): the ZED is a plain UVC camera. The cgroup
+    //   rule (81 = V4L2) plus the /dev bind below let any camera plugged in,
+    //   or renumbered after a replug, appear inside. `--device /dev/videoN`
+    //   would refuse to start the container whenever that node is missing.
+    //   The video group (gid 44 on host and image) grants the file access.
     "runArgs": [
         "--network=host",
         "--ipc=host",
         "--cap-add=SYS_PTRACE",
-        "--security-opt=seccomp=unconfined"
+        "--security-opt=seccomp=unconfined",
+        "--device-cgroup-rule=c 81:* rmw",
+        "--group-add=video"
     ],
     // GUI (RViz/Gazebo) via the host X server. On Linux run `xhost +local:`
     // once per session; on Windows, WSLg provides DISPLAY=:0 automatically.
@@ -27,7 +34,10 @@
         "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
     },
     "mounts": [
-        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+        "source=/dev,target=/dev,type=bind",
+        // OWLv2 weights (~600 MB): kept across rebuilds.
+        "source=ur7e-hf-cache,target=/home/ros/.cache/huggingface,type=volume"
     ],
     // Vendor import first (scripts/vendor_import.sh, ur7e.repos, D6): pulls
     // the third-party UR+RG2 packages phase 1 builds on into src/vendor/

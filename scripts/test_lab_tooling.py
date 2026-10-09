@@ -76,10 +76,12 @@ def test_urdf_has_every_link_hanging_from_tool0_and_a_bodiless_tcp():
     assert tcp.find('collision') is None
 
 
-def test_yaml_file_loads_and_starts_unverified():
+def test_yaml_file_loads_with_an_explicit_verified_flag():
+    # Checked on the arm 2026-10-08 (changer yaw 180, roll 90), so the file is
+    # now verified; the gate itself is covered by the lab_pick tests.
     settings = lab_tooling.load()
     assert set(DEFAULTS) <= set(settings)
-    assert settings['verified'] is False
+    assert isinstance(settings['verified'], bool)
 
 
 def test_gazebo_and_moveit_model_uses_the_same_mount_as_the_lab_planner():

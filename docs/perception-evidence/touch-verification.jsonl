@@ -1,0 +1,3 @@
+{"marker": 8, "commanded_xy": [0.4186999552834906, 0.22419539119507323], "stamp": "2026-10-08T23:49:12", "executed": true, "measured_offset_mm": "~0", "note": "horizontal offset ~0 (operator); the typed 10 was the designed 10 mm hover height"}
+{"marker": 16, "commanded_xy": [0.31817597506171424, 0.1903889870324513], "stamp": "2026-10-08T23:53:34", "executed": true, "measured_offset_mm": "0"}
+{"marker": 0, "commanded_xy": [0.5187778362175152, 0.2579099470017746], "stamp": "2026-10-08T23:55:28", "executed": true, "measured_offset_mm": "0"}

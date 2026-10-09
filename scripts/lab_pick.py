@@ -75,7 +75,7 @@ from ur7e_orchestrator.adapters import (  # noqa: E402
     Adapters, Detection, GraspResult, Intent, NotFound, Refused, SafetyAbort, StageError,
     Target)
 from ur7e_orchestrator.workflow import Orchestrator  # noqa: E402
-from ur7e_perception.monocular import TableCalibration  # noqa: E402
+from ur7e_perception.monocular import COLUMNS, ROWS, TableCalibration  # noqa: E402
 
 DEFAULT_CALIBRATION = os.path.join(_HERE, 'lab_table.json')
 OBSTACLES_FILE = os.path.join(_HERE, 'lab_obstacles.yaml')
@@ -206,10 +206,14 @@ class PickExecutor(JogExecutor):
     """
 
     def __init__(self, calibration=None, hover=0.12, table_surface_z=None, tooling=None,
-                 **kwargs):
+                 surface_drop=0.0, **kwargs):
         super().__init__(**kwargs)
         self.calibration = calibration
         self.tooling = tooling or lab_tooling.load()
+        # The calibration plane is the board's top surface. Off the board the
+        # pick surface can sit lower (2026-10-08: the plate is 8 mm below the
+        # board's raised piece), so table_z drops by this much there.
+        self.surface_drop = surface_drop
         self.hover = hover
         self.anchor = self.tool_length = None
         # Without a calibration the planner's table is the base plane unless
@@ -232,9 +236,28 @@ class PickExecutor(JogExecutor):
     # --- table geometry -----------------------------------------------------------
 
     def table_z(self, x, y):
-        """Height of the table plane under (x, y), base_link metres."""
+        """Height of the surface under (x, y), base_link metres.
+
+        The board plane on the board; ``surface_drop`` lower everywhere else.
+        """
+        z = self.board_z(x, y)
+        if getattr(self, 'surface_drop', 0.0) and not self.on_board(x, y):
+            z -= self.surface_drop
+        return z
+
+    def board_z(self, x, y):
+        """Height of the calibration board's plane under (x, y): perception's reference."""
         origin, normal = self.anchor[:3, 3], self.anchor[:3, 2]
         return origin[2] - (normal[0] * (x - origin[0]) + normal[1] * (y - origin[1])) / normal[2]
+
+    def on_board(self, x, y, margin=0.01):
+        """Return whether (x, y) lies on the calibration board (same margin as perception)."""
+        if self.calibration is None:
+            return False
+        square = self.calibration.square_m
+        local = np.linalg.inv(self.anchor) @ np.array([x, y, self.anchor[2, 3], 1.0])
+        return (-margin <= local[0] <= COLUMNS * square + margin
+                and -margin <= local[1] <= ROWS * square + margin)
 
     def tool_z(self, x, y, tip_above_table):
         """Height of the planned link that puts the closed fingertips this far above the table.
@@ -537,7 +560,10 @@ class LabAdapters(Adapters):
                            f'object at ({p.x:.2f}, {p.y:.2f}) is outside the pick area '
                            f'x {x0}..{x1}, y {y0}..{y1}; move it toward the middle')
         yaw = 2 * math.atan2(q.y, q.x) if abs(q.x) + abs(q.y) > 1e-9 else 0.0
-        height = p.z - self.executor.table_z(p.x, p.y)
+        # Perception reports the object's top as board plane + its listed
+        # height (lab_objects.yaml), so measure from that plane: measuring
+        # from the dropped pick surface would add surface_drop to every height.
+        height = max(0.0, p.z - self.executor.board_z(p.x, p.y))
         detail = {'height_m': round(height, 4), 'axis_ratio': round(response.axis_ratio, 2),
                   'points': int(response.valid_points)}
         return Target((p.x, p.y, p.z), yaw, detail)
@@ -743,9 +769,12 @@ DEFAULT_CONFIG = {
     # reports yaw 0 ("no meaningful long axis") and the wrist stays put.
     'align_ratio': 2.0, 'max_align_turn': math.radians(60), 'drop_xy': None,
     # Targets outside this base_link rectangle (m) are refused at LOCATE:
-    # the lab's raised front piece minus a margin from its edges, where a
-    # round object can be half over the drop and a grasp pulls it off.
-    'workspace': (0.14, -0.07, 0.30, 0.22),
+    # the plate beside the table board (2026-10-08 layout, edges projected
+    # through that day's calibration: x 0.12..0.41, y -0.09..0.10 up to the
+    # board), minus ~1.5 cm (widened from ~3 cm the same evening): keeps the
+    # red clamps at the back and the plate's front edge clear. Objects on
+    # the board itself are rejected by perception regardless.
+    'workspace': (0.17, -0.075, 0.39, 0.11),
 }
 
 
@@ -795,6 +824,7 @@ SIM_PRESETS = {
         # Gazebo with GUI + RViz ran at ~0.5 x real time: a 42 s carry took
         # over 78 s of wall time and was cancelled as stuck (2026-10-08).
         'time_allowance': 4.0,
+        'surface_drop': 0.0,              # Gazebo's table is one flat plane
     },
 }
 
@@ -826,7 +856,8 @@ def build(args, executor=None):
             joint_rate=args.joint_rate, max_excursion=args.max_excursion,
             plan_only=not args.execute, poses_file=args.poses_file,
             tool_link=sim.get('tool_link', PICK_LINK), group=sim.get('group', GROUP),
-            controller_action=sim.get('controller'), tooling=tooling)
+            controller_action=sim.get('controller'), tooling=tooling,
+            surface_drop=sim.get('surface_drop', args.surface_drop))
         executor.time_allowance = sim.get('time_allowance', executor.time_allowance)
         executor.load_poses(SEED_POSES_FILE)
         executor.load_poses()
@@ -872,7 +903,11 @@ def verify_marker(args, executor, adapters):
     say('TARGET', {'query': query, 'xy': [round(x, 4), round(y, 4)],
                    'table_z': round(executor.table_z(x, y), 4)})
     if not executor.plan_only:
-        adapters.gripper.move(0.0, 10.0)
+        # 10 mm, not 0: empty jaws driven shut stall on each other, the RG2
+        # flags a grip (red LED) and the next open can stop the program with
+        # "grip lost" (2026-10-02, 2026-10-08). The table touches were made
+        # at ~10 mm too, so the fingertip length matches the calibration.
+        adapters.gripper.move(10.0, 10.0)
     adapters._move(lambda: executor.move_pose('hover', executor.pose_at(x, y, 0.10, yaw)))
     adapters._move(lambda: executor.move_pose(
         'point', executor.pose_at(x, y, 0.010, yaw), avoid_collisions=False))
@@ -910,8 +945,13 @@ def add_session_arguments(cli):
     cli.add_argument('--model', default='')
     cli.add_argument('--robot-ip', default='192.168.56.101')
     cli.add_argument('--calibration', default=DEFAULT_CALIBRATION)
-    cli.add_argument('--max-speed-percent', type=float, default=50.0)
+    # Upper bound only: the pendant slider is the real speed, and the gate
+    # refuses to move when the slider is above this.
+    cli.add_argument('--max-speed-percent', type=float, default=100.0)
     cli.add_argument('--joint-rate', type=float, default=0.09)
+    cli.add_argument('--surface-drop', type=float, default=0.015,
+                     help='how far the pick surface off the board sits below the board, m '
+                          '(2026-10-08: plate 8 mm below the board, +7 mm by eye)')
     cli.add_argument('--max-excursion', type=float, default=2.5)
     cli.add_argument('--hover', type=float, default=0.12,
                      help='fingertip height above the tallest object while carrying, m')

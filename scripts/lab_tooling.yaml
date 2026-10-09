@@ -5,9 +5,9 @@
 # lab_pick.py --execute refuses to move the real robot until a person has
 # checked every value below on the arm and set verified: true.
 
-verified: false
-changer_yaw_deg: 0.0    # changer turned about the flange axis: angle of the face holding the RG2 from tool0 +x
+verified: true
+changer_yaw_deg: 180.0   # changer turned about the flange axis: angle of the face holding the RG2 from tool0 +x
 rg2_face: '+x'          # keep '+x' and use changer_yaw_deg to point it; '-x' mirrors
-rg2_roll_deg: 0.0       # RG2 turned about its own axis on the face (jaw direction)
-rg2_tcp_m: 0.200        # OnRobot RG2 TCP from its mount face (OnRobot manual 8.3.1)
-tcp_to_tips_m: 0.034    # closed fingertips beyond the TCP; conservative (mesh max 233.6 mm)
+rg2_roll_deg: 90.0      # RG2 turned about its own axis on the face (jaw direction)
+rg2_tcp_m: 0.202        # OnRobot RG2 TCP from its mount face (OnRobot manual 8.3.1)
+tcp_to_tips_m: 0.045    # closed fingertips beyond the TCP; conservative (mesh max 233.6 mm)

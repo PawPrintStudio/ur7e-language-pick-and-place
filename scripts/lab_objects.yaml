@@ -13,3 +13,6 @@ objects:
   cube: 0.04
   plug: 0.028
   charger: 0.028
+  # 2026-10-08, measured with a ruler on the lab objects
+  tape: 0.018
+  hat: 0.04

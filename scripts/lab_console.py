@@ -275,7 +275,7 @@ def main():
     cli.add_argument('--model', default='', help='backend model override')
     cli.add_argument('--execute', action='store_true',
                      help='really move the arm (default: plan only and report)')
-    cli.add_argument('--max-speed-percent', type=float, default=50.0,
+    cli.add_argument('--max-speed-percent', type=float, default=100.0,
                      help='refuse to move if the pendant slider is above this')
     cli.add_argument('--joint-rate', type=float, default=0.05,
                      help='nominal rad/s for moves and go_to (before the pendant slider)')
@@ -318,6 +318,8 @@ def main():
                      help='lowest fingertip height above the table when grasping, m')
     cli.add_argument('--hover', type=float, default=0.12,
                      help='fingertip height above the object while travelling, m')
+    cli.add_argument('--surface-drop', type=float, default=0.015,
+                     help='how far the pick surface off the board sits below the board, m')
     args = cli.parse_args()
     if args.pick and args.max_excursion < 2.5:
         # A pick run is a sequence of large, planned moves (observe -> hover ->
@@ -353,7 +355,7 @@ def main():
             max_speed_percent=args.max_speed_percent, joint_rate=args.joint_rate,
             max_excursion=args.max_excursion, mirror_lr=args.mirror_lr,
             plan_only=not args.execute, poses_file=args.poses_file,
-            tool_link=lab_pick.PICK_LINK)
+            tool_link=lab_pick.PICK_LINK, surface_drop=args.surface_drop)
     else:
         executor = JogExecutor(max_speed_percent=args.max_speed_percent,
                                joint_rate=args.joint_rate, max_excursion=args.max_excursion,

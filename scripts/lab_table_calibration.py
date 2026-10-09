@@ -24,7 +24,7 @@ depth camera. The idea, in the order you run it:
 
 ``touch --corner N``  (N = 1..4, the numbers printed at the board's corners)
     Tell the robot where the board is. Close the gripper, jog the fingertips
-    onto corner N (pendant Move tab, tool pointing straight down), run this.
+    onto corner N (pendant Move tab, RG2 straight down: the flange tilts ~60 deg), run this.
     It reads tool0 from TF and stores the fingertip point; if the jaws are
     not fully closed it asks the gripper how much shorter it is at that
     width and corrects for it. No motion is commanded: the script only
@@ -225,7 +225,9 @@ def command_touch(args):
     import lab_tooling
     tips = np.asarray(pose) @ lab_tooling.tool0_to_tips()
     tip = tips[:3, 3] - tips[:3, 2] * depth_mm / 1000
-    tilt = math.degrees(math.acos(max(-1.0, min(1.0, -pose[2, 2]))))
+    # Tilt of the RG2's own axis, not the flange's: with the changer the
+    # flange is ~60 deg off vertical whenever the RG2 points straight down.
+    tilt = math.degrees(math.acos(max(-1.0, min(1.0, -tips[2, 2]))))
     touches = read_json(TOUCH_FILE, {})
     touches[str(args.corner)] = dict(tip=tip.tolist(), tool0=pose.tolist(),
                                      tilt_deg=tilt, tool_length=args.tool_length,
@@ -235,8 +237,8 @@ def command_touch(args):
                           tilt_deg=round(tilt, 1), jaw_width_mm=width_mm,
                           jaw_depth_mm=depth_mm, recorded=sorted(touches))))
     if tilt > 5:
-        print(f'WARNING: the tool is tilted {tilt:.1f} deg from straight down; the fingertip '
-              'point then depends on --tool-length being exact. Prefer a vertical tool.')
+        print(f'WARNING: the RG2 is tilted {tilt:.1f} deg from straight down; the fingertip '
+              'point then depends on tcp_to_tips_m being exact. Prefer a vertical RG2.')
 
 
 def command_fit(args):

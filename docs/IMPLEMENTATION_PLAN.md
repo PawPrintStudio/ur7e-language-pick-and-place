@@ -2,6 +2,8 @@
 
 Five phases, each ending in something demonstrable on real hardware. Phases map 1:1 to GitHub milestones; tasks map 1:1 to issues on the project board. Decisions referenced as D1–D7 and questions Q1–Q9 are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+> **2026-10-10:** phases 0 to 4 are closed with [project board 1](https://github.com/orgs/PawPrintStudio/projects/2), deemed successful on repeated real picks; phase 5 stays a stretch list. The project's second phase, a chess match against a student, is planned in [CHESS.md](CHESS.md) and tracked on [board 3](https://github.com/orgs/PawPrintStudio/projects/3). The tables below are the record of project 1.
+
 **Guiding principles:**
 
 1. Motion before perception, perception before language. Each layer is validated in isolation before the layer above depends on it.

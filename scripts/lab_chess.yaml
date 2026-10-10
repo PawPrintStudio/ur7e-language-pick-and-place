@@ -1,0 +1,21 @@
+# The lab's chess set, for lab_chess.py. Measure with a ruler, then set
+# measured: true. The numbers below are a typical club set (king 95 mm)
+# and are placeholders until then.
+#
+# height_m  base to top; the pads close 28 mm below the top (finger_reach).
+# width_mm  jaw width once closed on the piece, at that height. With
+#           measured: true a closed width more than width_tolerance_mm away
+#           from it counts as a miss (issue C4).
+# open_mm   jaw opening before the descent. The open jaws straddle the piece
+#           and must clear its diagonal neighbours: squares of s mm put them
+#           1.4 s apart, so 50 mm is safe from about 45 mm squares up.
+measured: false
+open_mm: 50
+width_tolerance_mm: 6
+pieces:
+  k: {height_m: 0.095, width_mm: 24}
+  q: {height_m: 0.085, width_mm: 24}
+  b: {height_m: 0.070, width_mm: 20}
+  n: {height_m: 0.060, width_mm: 26}
+  r: {height_m: 0.055, width_mm: 26}
+  p: {height_m: 0.048, width_mm: 20}

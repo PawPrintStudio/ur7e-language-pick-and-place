@@ -42,3 +42,7 @@ scripts/.voice_inbox.txt
 scripts/.lab_camera.json
 scripts/.lab_touches.json
 scripts/lab_table.json
+
+# lab_chess.py: corner touches and the fitted board, per board placement
+scripts/.lab_chess_touches.json
+scripts/lab_chess.json

@@ -200,7 +200,11 @@ def quaternion_matrix(x, y, z, w):
         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
 
 
-def command_touch(args):
+def measure_fingertip(robot_ip, tool_index):
+    """Where the closed fingertips are now: (tip_xyz, base_from_tool0, tilt_deg, width_mm, depth_mm).
+
+    Shared by the table calibration and the chessboard (lab_chess.py touch).
+    """
     pose = tool_pose()
     # The RG2's fingers swing on a parallelogram: the wider the jaws, the
     # shorter the gripper. It reports that shortening ("depth", mm) itself,
@@ -212,7 +216,7 @@ def command_touch(args):
         import xmlrpc.client
         socket.setdefaulttimeout(3.0)  # an unreachable robot must not hang a touch
         state = xmlrpc.client.ServerProxy(
-            f'http://{args.robot_ip}:41414/').rg_get_all_variables(args.tool_index)
+            f'http://{robot_ip}:41414/').rg_get_all_variables(tool_index)
         depth_mm, width_mm = float(state['depth']), float(state['width'])
         if not (0 <= depth_mm <= 30 and 0 <= width_mm <= 110):
             raise ValueError(f'implausible gripper state: depth {depth_mm}, width {width_mm}')
@@ -228,6 +232,11 @@ def command_touch(args):
     # Tilt of the RG2's own axis, not the flange's: with the changer the
     # flange is ~60 deg off vertical whenever the RG2 points straight down.
     tilt = math.degrees(math.acos(max(-1.0, min(1.0, -tips[2, 2]))))
+    return tip, pose, tilt, width_mm, depth_mm
+
+
+def command_touch(args):
+    tip, pose, tilt, width_mm, depth_mm = measure_fingertip(args.robot_ip, args.tool_index)
     touches = read_json(TOUCH_FILE, {})
     touches[str(args.corner)] = dict(tip=tip.tolist(), tool0=pose.tolist(),
                                      tilt_deg=tilt, tool_length=args.tool_length,

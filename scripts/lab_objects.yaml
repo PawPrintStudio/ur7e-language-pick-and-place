@@ -16,3 +16,6 @@ objects:
   # 2026-10-08, measured with a ruler on the lab objects
   tape: 0.018
   hat: 0.04
+  # 2026-10-09, a Sharpie lying flat: barrel diameter, not yet ruler-checked
+  sharpie: 0.012
+  marker: 0.012

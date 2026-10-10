@@ -46,8 +46,8 @@ python3 scripts/lab_chess.py play --steps-only --engine none    # the match loop
 python3 scripts/lab_chess.py squares                            # the centres from lab_chess.json
 ```
 
-With the driver and MoveIt up (`scripts/lab_up.sh`; quit the console with
-`KEEP_STACK=true`), plan-only until `--execute`:
+With the driver and MoveIt up (`CHESS=true bash scripts/lab_up.sh` in the
+container: no camera, no OWLv2, no console), plan-only until `--execute`:
 
 ```
 python3 scripts/lab_chess.py touch --corner 1     # fingertip on the a1 corner; then 2 (h1), 3 (h8), 4 (a8), box
@@ -60,6 +60,25 @@ python3 scripts/lab_chess.py play --execute --max-speed-percent 25
 Dependencies: `pip install chess` and `apt install stockfish`; the dev
 container has both. Without Stockfish the arm plays random legal moves,
 captures first, which is enough to test the mechanics.
+
+### On a Raspberry Pi 5
+
+The dev container's usual base image is amd64 only. On the Pi (64-bit
+Raspberry Pi OS or Ubuntu 24.04, Docker installed, 8 GB RAM or more) build it
+from `ros:humble-ros-base`, which has no RViz. All the apt packages exist for
+arm64.
+
+```
+export ROS_BASE_IMAGE=ros:humble-ros-base    # before VS Code starts: lab_up.sh on the host
+bash scripts/lab_up.sh                       # host: ur-link, then Reopen in Container
+colcon build --symlink-install               # in the container, first time
+bash scripts/tier1_smoke_test.sh             # mock hardware: proves the image before the arm
+CHESS=true bash scripts/lab_up.sh            # driver + MoveIt
+```
+
+Not yet tried on a Pi. Open questions: whether the UR driver needs a
+PREEMPT_RT kernel on the Pi (watch for the velocity-veto popup), and the
+`ur-link` NetworkManager profile (static 192.168.56.1) must be created there.
 
 ## Lab checklist, next session
 

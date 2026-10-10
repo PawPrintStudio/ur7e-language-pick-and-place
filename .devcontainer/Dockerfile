@@ -2,7 +2,11 @@
 # `git clone`. Based on osrf/ros:humble-desktop-full (athackst pattern) —
 # desktop-full brings RViz and the GUI stack that plain ros:humble (CI image)
 # deliberately lacks.
-FROM osrf/ros:humble-desktop-full
+# That image is amd64 only. On a Raspberry Pi 5 (arm64) build from
+# ros:humble-ros-base instead: no RViz, everything else the same
+# (devcontainer.json reads it from ROS_BASE_IMAGE; docs/CHESS.md).
+ARG BASE_IMAGE=osrf/ros:humble-desktop-full
+FROM ${BASE_IMAGE}
 
 # Project stack, mirroring the Jetson install (RUNBOOK B3) plus sim extras:
 #   ros-humble-ur              driver + calibration + moveit config (Jetson)

@@ -12,6 +12,7 @@
 #   bash scripts/lab_up.sh --backend keyword           # extra args go to lab_console
 #   ZED_DEVICE=2 bash scripts/lab_up.sh                # skip the ZED auto-detect
 #   KEEP_STACK=true bash scripts/lab_up.sh             # leave driver/MoveIt/perception up
+#   CHESS=true bash scripts/lab_up.sh                  # driver + MoveIt only, no camera; Ctrl+C stops them
 #
 # It assumes nothing moved since 10-08: lab_table.json (camera pose),
 # lab_tooling.yaml (verified) and .console_poses.json (taught observe) are
@@ -56,6 +57,7 @@ source scripts/lab_env.sh
 set -u
 SPEED="${LAB_SPEED:-100}"
 KEEP="${KEEP_STACK:-false}"
+CHESS="${CHESS:-false}"
 OUT="log/lab/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 echo "== logs: $OUT"
@@ -68,14 +70,17 @@ if [[ -z "${ANTHROPIC_API_KEY:-}" && -f .env ]]; then set -a; source .env; set +
 
 # The ZED moves between /dev/video0 and video2 on replug. Find its capture
 # node (index 0) by name rather than trusting the number in lab_table.json.
-zed="${ZED_DEVICE:-}"
-if [[ -z "$zed" ]]; then
-  for d in /sys/class/video4linux/video*; do
-    if grep -q ZED "$d/name" 2>/dev/null && [[ "$(cat "$d/index")" == 0 ]]; then zed="${d##*video}"; break; fi
-  done
+# Chess plays from a square table and needs no camera.
+if [[ "$CHESS" != true ]]; then
+  zed="${ZED_DEVICE:-}"
+  if [[ -z "$zed" ]]; then
+    for d in /sys/class/video4linux/video*; do
+      if grep -q ZED "$d/name" 2>/dev/null && [[ "$(cat "$d/index")" == 0 ]]; then zed="${d##*video}"; break; fi
+    done
+  fi
+  [[ -n "$zed" && -e "/dev/video$zed" ]] || { echo "== no ZED camera found: replug it into a USB-3 port (ls /dev/video*)" >&2; exit 2; }
+  echo "   ZED on /dev/video$zed"
 fi
-[[ -n "$zed" && -e "/dev/video$zed" ]] || { echo "== no ZED camera found: replug it into a USB-3 port (ls /dev/video*)" >&2; exit 2; }
-echo "   ZED on /dev/video$zed"
 
 # Two drivers means two controller managers fighting over the arm.
 if pgrep -f "ur7e_bringup.launch.py|lab_arm_moveit.launch.py|webcam_perception_node" >/dev/null; then
@@ -134,6 +139,13 @@ wait_until 180 "pendant Play (reverse interface connected)" driver \
 echo "== 2/4 MoveIt (KDL)"
 start moveit ros2 launch scripts/lab_arm_moveit.launch.py ik:=kdl
 wait_until 120 "MoveIt (/compute_cartesian_path)" moveit has_service /compute_cartesian_path
+
+if [[ "$CHESS" == true ]]; then
+  echo "== chess stack up. In another terminal:  python3 scripts/lab_chess.py ...  (docs/CHESS.md)"
+  echo "   Ctrl+C here stops MoveIt and the driver."
+  wait -n "${pids[@]}" || true   # returns on Ctrl+C or when either one dies
+  exit 0
+fi
 
 echo "== 3/4 perception (OWLv2 load takes a while on CPU)"
 start perception env OMP_NUM_THREADS=4 ros2 run ur7e_perception webcam_perception_node --ros-args \

@@ -1,7 +1,11 @@
 {
     "name": "ur7e-pick-and-place",
     "build": {
-        "dockerfile": "Dockerfile"
+        "dockerfile": "Dockerfile",
+        // Raspberry Pi 5: export ROS_BASE_IMAGE=ros:humble-ros-base first.
+        "args": {
+            "BASE_IMAGE": "${localEnv:ROS_BASE_IMAGE:osrf/ros:humble-desktop-full}"
+        }
     },
     "remoteUser": "ros",
     // --network=host: ROS 2 discovery (multicast) and direct reach to the

@@ -215,8 +215,11 @@ def measure_fingertip(robot_ip, tool_index):
         import socket
         import xmlrpc.client
         socket.setdefaulttimeout(3.0)  # an unreachable robot must not hang a touch
-        state = xmlrpc.client.ServerProxy(
-            f'http://{robot_ip}:41414/').rg_get_all_variables(tool_index)
+        from lab_rg2_native import find_by_serial
+        rpc = xmlrpc.client.ServerProxy(f'http://{robot_ip}:41414/')
+        if tool_index is None:
+            tool_index = find_by_serial(rpc, os.environ.get('RG2_SERIAL', '1000042561'))['deviceId']
+        state = rpc.rg_get_all_variables(tool_index)
         depth_mm, width_mm = float(state['depth']), float(state['width'])
         if not (0 <= depth_mm <= 30 and 0 <= width_mm <= 110):
             raise ValueError(f'implausible gripper state: depth {depth_mm}, width {width_mm}')
@@ -452,8 +455,9 @@ def main():
                        help='recorded with each touch for the tool0-based height contract. '
                             'The fingertip position itself now comes from lab_tooling.py '
                             '(RG2 on the Dual Quick Changer, 60 deg off tool0 Z)')
-    touch.add_argument('--robot-ip', default='192.168.56.101')
-    touch.add_argument('--tool-index', type=int, default=2, help='OnRobot device index')
+    touch.add_argument('--robot-ip', default=os.environ.get('ROBOT_IP', '192.168.56.101'))
+    touch.add_argument('--tool-index', type=int, help='OnRobot device index (default: find the RG2 '
+                       'by $RG2_SERIAL)')
     touch.set_defaults(run=command_touch)
     fit = commands.add_parser('fit')
     fit.add_argument('--output', default=CALIBRATION_FILE)

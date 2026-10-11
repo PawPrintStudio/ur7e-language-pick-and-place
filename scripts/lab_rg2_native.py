@@ -8,6 +8,7 @@ The API and tool index were verified against a pendant-exported URScript.
 import argparse
 import json
 import math
+import os
 import socket
 import time
 import xmlrpc.client
@@ -134,13 +135,15 @@ def move(rpc, host, tool, target, force, feedback=None, canceled=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="192.168.56.101")
-    parser.add_argument("--tool-index", type=int, default=2)
-    parser.add_argument("--serial", default="1000042561")
+    parser.add_argument("--host", default=os.environ.get('ROBOT_IP', '192.168.56.101'))
+    parser.add_argument("--tool-index", type=int, help="default: find the RG2 by --serial")
+    parser.add_argument("--serial", default=os.environ.get('RG2_SERIAL', '1000042561'))
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--empty-supervised", action="store_true")
     args = parser.parse_args()
     rpc = xmlrpc.client.ServerProxy(f"http://{args.host}:41414/", transport=TimeoutTransport())
+    if args.tool_index is None:
+        args.tool_index = find_by_serial(rpc, args.serial)["deviceId"]
     device = identify(rpc, args.tool_index, args.serial)
     state = validate_state(rpc.rg_get_all_variables(args.tool_index))
     print(json.dumps({"event": "read", "device": device, "state": state}), flush=True)

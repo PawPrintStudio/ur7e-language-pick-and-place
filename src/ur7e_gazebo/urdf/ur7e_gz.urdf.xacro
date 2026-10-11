@@ -35,6 +35,9 @@ attempt at real two-finger contact simulation).
 <robot name="ur7e_gz" xmlns:xacro="http://ros.org/wiki/xacro">
   <xacro:arg name="ur_type" default="ur7e"/>
   <xacro:arg name="tf_prefix" default=""/>
+  <!-- single: RG2 straight on the flange (chess arm); dual: Dual Quick Changer
+       (project-1 arm). Must match scripts/lab_tooling.yaml's mount. -->
+  <xacro:arg name="tool_mount" default="single"/>
   <xacro:arg name="kinematics_parameters_file"
              default="$(find ur7e_bringup)/config/ur7e_calibration.yaml"/>
   <xacro:arg name="simulation_controllers"
@@ -123,9 +126,10 @@ attempt at real two-finger contact simulation).
   <joint name="$(arg tf_prefix)onrobot_base_link_joint" type="fixed">
     <parent link="$(arg tf_prefix)tool0"/>
     <child link="$(arg tf_prefix)onrobot_base_link"/>
-    <xacro:rg2_on_dual_quick_changer_origin/>
+    <xacro:if value="${'$(arg tool_mount)' == 'dual'}"><xacro:rg2_on_dual_quick_changer_origin/></xacro:if>
+    <xacro:unless value="${'$(arg tool_mount)' == 'dual'}"><origin xyz="0 0 0" rpy="0 0 ${-pi/2}"/></xacro:unless>
   </joint>
-  <xacro:dual_quick_changer prefix="$(arg tf_prefix)"/>
+  <xacro:if value="${'$(arg tool_mount)' == 'dual'}"><xacro:dual_quick_changer prefix="$(arg tf_prefix)"/></xacro:if>
 
   <!--
   Root cause #3 of the DetachableJoint saga (see this file's header + the

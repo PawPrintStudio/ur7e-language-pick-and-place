@@ -5,8 +5,10 @@
 # That image is amd64 only. On a Raspberry Pi 5 (arm64) build from
 # ros:humble-ros-base instead: no RViz, everything else the same
 # (devcontainer.json reads it from ROS_BASE_IMAGE; docs/CHESS.md).
-ARG BASE_IMAGE=osrf/ros:humble-desktop-full
-FROM ${BASE_IMAGE}
+# The default lives here, not in devcontainer.json: ${localEnv:VAR:default}
+# cuts the default at its first ':', which turned it into plain "osrf/ros".
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE:-osrf/ros:humble-desktop-full}
 
 # Project stack, mirroring the Jetson install (RUNBOOK B3) plus sim extras:
 #   ros-humble-ur              driver + calibration + moveit config (Jetson)

@@ -518,7 +518,7 @@ def command_map(args):
 def main():
     cli = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
-    cli.add_argument('--robot-ip', default='192.168.56.101')
+    cli.add_argument('--robot-ip', default=os.environ.get('ROBOT_IP', '192.168.56.101'))
     cli.add_argument('--execute', action='store_true', help='really move (default: plan only)')
     cli.add_argument('--max-speed-percent', type=float, default=50.0)
     cli.add_argument('--joint-rate', type=float, default=0.09)

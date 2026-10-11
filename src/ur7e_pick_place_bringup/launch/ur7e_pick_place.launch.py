@@ -44,6 +44,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import (
     AndSubstitution,
     Command,
+    EnvironmentVariable,
     FindExecutable,
     LaunchConfiguration,
     NotSubstitution,
@@ -310,7 +311,7 @@ def generate_launch_description():
             "robot_ip",
             description="Robot controller IP. Default is the lab robot; the "
             "URSim container uses the same address (sim/ursim/docker-compose.yml).",
-            default_value="192.168.56.101",
+            default_value=EnvironmentVariable("ROBOT_IP", default_value="192.168.56.101"),
         ),
         DeclareLaunchArgument(
             "kinematics_parameters_file",

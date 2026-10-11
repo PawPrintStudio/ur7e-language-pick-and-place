@@ -1,5 +1,9 @@
 """The real tool stack on the UR7e flange: Dual Quick Changer, RG2, soft gripper.
 
+``mount: single`` in ``lab_tooling.yaml`` (the chess arm, 2026-10-10) is the
+RG2 bolted straight to the flange instead: on tool0's axis, no changer, no soft
+gripper. ``mount: dual`` (the default) is everything below.
+
 One place for the geometry every planner and calibration script must agree on.
 The OnRobot Dual Quick Changer v3 sits on the flange and carries two tools
 splayed in a V (photos: docs/vendor/cad/photos/). Each tool face points 60 deg
@@ -46,6 +50,7 @@ PAD = 0.005                                 # collision padding on every box
 
 DEFAULTS = {
     'verified': False,
+    'mount': 'dual',              # 'dual': Dual Quick Changer; 'single': RG2 on the flange
     'changer_yaw_deg': 0.0,       # changer +x face direction, measured from tool0 +x about tool0 z
     'rg2_face': '+x',             # which changer face holds the RG2: '+x' or '-x'
     'rg2_roll_deg': 0.0,          # RG2 turned on its face, about its own axis
@@ -62,6 +67,8 @@ def load(path=TOOLING_FILE):
             settings.update(yaml.safe_load(stream) or {})
     if settings['rg2_face'] not in ('+x', '-x'):
         raise ValueError(f"rg2_face must be '+x' or '-x', not {settings['rg2_face']!r}")
+    if settings['mount'] not in ('single', 'dual'):
+        raise ValueError(f"mount must be 'single' or 'dual', not {settings['mount']!r}")
     return settings
 
 
@@ -114,6 +121,8 @@ def rg2_sign(settings):
 
 
 def rg2_mount(settings):
+    if settings['mount'] == 'single':
+        return transform(rot_z(settings['rg2_roll_deg']))
     return face_mount(rg2_sign(settings), settings) @ transform(rot_z(settings['rg2_roll_deg']))
 
 
@@ -144,6 +153,11 @@ def tips_in_base(base_from_tool0, settings=None):
 LINKS = ('lab_changer', 'lab_rg2', 'lab_soft_gripper', 'rg2_tcp')
 
 
+def links(settings=None):
+    settings = settings or load()
+    return LINKS if settings['mount'] == 'dual' else ('lab_rg2', 'rg2_tcp')
+
+
 def urdf_elements(settings=None):
     """(name, parent, 4x4 joint origin, box size or None, 4x4 box origin) for each link.
 
@@ -162,12 +176,13 @@ def urdf_elements(settings=None):
     soft_len = SOFT_GRIPPER_LENGTH + PAD
     soft_box = ((SOFT_GRIPPER_WIDTH + 2 * PAD,) * 2 + (soft_len,),
                 transform(translation=(0, 0, soft_len / 2)))
-    return [
+    elements = [
         ('lab_changer', 'tool0', yaw) + changer_box,
         ('lab_rg2', 'tool0', rg2_mount(settings)) + rg2_box,
         ('lab_soft_gripper', 'tool0', soft_mount(settings)) + soft_box,
         ('rg2_tcp', 'tool0', tool0_to_rg2_tcp(settings), None, None),
     ]
+    return [e for e in elements if e[0] in links(settings)]
 
 
 def add_to_urdf(robot, settings=None):
@@ -200,6 +215,17 @@ ADJACENT = [(a, b) for a in ('lab_changer', 'lab_rg2', 'lab_soft_gripper')
 TOUCH_LINKS = ['lab_changer', 'lab_rg2', 'lab_soft_gripper', 'tool0', 'flange', 'wrist_3_link']
 
 
+def adjacent(settings=None):
+    """ADJACENT, without the links this mount does not have."""
+    present = set(links(settings)) | {'tool0', 'flange', 'wrist_3_link'}
+    return [(a, b) for a, b in ADJACENT if a in present and b in present]
+
+
+def touch_links(settings=None):
+    present = set(links(settings)) | {'tool0', 'flange', 'wrist_3_link'}
+    return [name for name in TOUCH_LINKS if name in present]
+
+
 def main():
     import xml.etree.ElementTree as ET
     settings = load()
@@ -208,7 +234,7 @@ def main():
     tcp, tips = tool0_to_rg2_tcp(settings), tool0_to_tips(settings)
     print('tool0 -> rg2_tcp xyz (m):', tcp[:3, 3], ' axis:', tcp[:3, 2])
     print('tool0 -> fingertips xyz (m):', tips[:3, 3])
-    tilt = math.degrees(math.acos(tcp[2, 2]))
+    tilt = math.degrees(math.acos(min(1.0, tcp[2, 2])))
     print(f'RG2 axis is {tilt:.1f} deg off the flange axis')
     robot = ET.Element('robot', name='preview')
     add_to_urdf(robot, settings)

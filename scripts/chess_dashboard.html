@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UR7e Chess</title>
+<!-- Served by `lab_chess.py watch`: /state (JSON, twice a second) and /stream
+     (annotated camera video). No libraries: it must work offline and on the Pi.
+     Two boards on purpose: the GAME RECORD (what the program believes) and what
+     the CAMERA SEES (pieces guessed from their measured height). Mixing them on
+     one board was unreadable (2026-10-11). -->
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --line: #2a2f3a;
+    --text: #eef0f3; --muted: #9aa3ae; --faint: #6b7380;
+    --green: #34c26b; --red: #ff5b52; --amber: #ffb224; --blue: #4ea1ff;
+    --light-sq: #ead7b5; --dark-sq: #a77a55;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+               font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1500px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+
+  /* status bar: one sentence that says what is happening and what to do */
+  .status { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-radius: 14px;
+            background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--faint); }
+  .status.ok { border-left-color: var(--green); }
+  .status.warn { border-left-color: var(--amber); }
+  .status.bad { border-left-color: var(--red); }
+  .status.busy { border-left-color: var(--blue); }
+  .status .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--faint); flex: none; }
+  .status.ok .dot { background: var(--green); } .status.warn .dot { background: var(--amber); }
+  .status.bad .dot { background: var(--red); }
+  .status.busy .dot { background: var(--blue); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .status h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.01em; }
+  .status p { margin: 2px 0 0; color: var(--muted); }
+  .status .meta { margin-left: auto; text-align: right; color: var(--faint); font-size: 13px; white-space: nowrap; }
+
+  /* one screen, no scrolling: video and the two boards side by side, the cards below */
+  .top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+         gap: 16px; align-items: start; }
+  .cards { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 1250px) { .top { grid-template-columns: 1fr 1fr; } .top .video { grid-column: span 2; } }
+  @media (max-width: 800px) { .top, .cards { grid-template-columns: 1fr; } .top .video { grid-column: auto; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--muted);
+             text-transform: uppercase; letter-spacing: .07em; display: flex; justify-content: space-between; }
+  .card h2 span { text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .video { padding: 0; overflow: hidden; background: #000; }
+  .video img { display: block; width: 100%; height: auto; }
+
+  .stepper { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin: 4px 0 14px; }
+  .step { text-align: center; font-size: 11.5px; color: var(--faint); }
+  .step i { display: block; height: 6px; border-radius: 3px; background: var(--line); margin-bottom: 6px; }
+  .step.done i { background: var(--green); } .step.done { color: var(--muted); }
+  .step.now i { background: var(--blue); } .step.now { color: var(--text); font-weight: 600; }
+  .step.fail i { background: var(--red); } .step.fail { color: var(--red); font-weight: 600; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .big { font-size: 26px; font-weight: 650; margin-bottom: 2px; }
+  .good { color: var(--green); } .badc { color: var(--red); } .warnc { color: var(--amber); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 2px 9px; border-radius: 999px; background: rgba(255,91,82,.14); color: var(--red);
+          font-size: 13px; font-variant-numeric: tabular-nums; }
+  .moves { display: grid; grid-template-columns: 2.4em 1fr 1fr; gap: 3px 10px; max-height: 210px;
+           overflow: auto; font-variant-numeric: tabular-nums; }
+  .moves .n { color: var(--faint); }
+  .moves .last { color: var(--blue); font-weight: 600; }
+  button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 9px;
+           padding: 7px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+  button:disabled { opacity: .5; cursor: default; }
+  .note { color: var(--faint); font-size: 12.5px; margin-top: 10px; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: "DejaVu Sans", "Segoe UI Symbol", "Noto Sans Symbols2", sans-serif; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="status" id="status">
+    <span class="dot"></span>
+    <div><h1 id="headline">Connecting…</h1><p id="subline"></p></div>
+    <div class="meta" id="meta"></div>
+  </section>
+
+  <div class="top">
+    <div class="card video"><img src="/stream" alt="Live camera view of the board with the calibrated grid"></div>
+    <div class="card">
+      <h2>Game record <span>what the program believes</span></h2>
+      <svg id="record" viewBox="0 0 360 372" role="img" aria-label="Board as recorded by the program"></svg>
+    </div>
+    <div class="card">
+      <h2>Camera sees <span>guessed from height</span></h2>
+      <svg id="seen" viewBox="0 0 360 372" role="img" aria-label="Board as seen by the camera"></svg>
+      <div class="note">Red ring: the boards differ. Hatched: no depth there (unknown). Number: height in mm.</div>
+    </div>
+  </div>
+
+  <div class="cards">
+      <div class="card">
+        <h2>Arm <span id="armwhat"></span></h2>
+        <div class="stepper" id="stepper"></div>
+        <dl class="kv">
+          <dt>Target</dt><dd id="target">—</dd>
+          <dt>Fingertips over</dt><dd id="under">—</dd>
+          <dt>Distance from target</dt><dd id="error">—</dd>
+          <dt>Height above board</dt><dd id="height">—</dd>
+          <dt>Last grip reading</dt><dd id="grip">—</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2>Camera check <span id="age"></span></h2>
+        <div class="big" id="agree">—</div>
+        <div id="agreesub" style="color:var(--muted)"></div>
+        <div class="chips" id="chips" style="margin-top:10px"></div>
+        <div style="margin-top:12px"><button id="scan">Scan now</button></div>
+      </div>
+      <div class="card">
+        <h2>Moves</h2>
+        <div class="moves" id="moves"></div>
+      </div>
+  </div>
+</div>
+
+<script>
+const FILES = 'abcdefgh', S = 42, OX = 14, OY = 4;
+const GLYPH = {K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟',
+               X:'●', x:'●'};   // X: a piece whose type cannot be guessed (no height table)
+const STAGES = [['OBSERVE','Look'],['LOCATE','Find'],['PLAN','Plan'],['APPROACH','Approach'],
+                ['GRASP','Grip'],['LIFT','Lift'],['RETREAT','Place'],['HOME','Home']];
+const $ = id => document.getElementById(id);
+
+function parseFen(fen) {
+  const out = {};
+  if (!fen) return out;
+  fen.split(' ')[0].split('/').forEach((row, i) => {
+    let f = 0;
+    for (const c of row) { if (/\d/.test(c)) f += +c; else out[FILES[f++] + (8 - i)] = c; }
+  });
+  return out;
+}
+const at = sq => [OX + FILES.indexOf(sq[0]) * S, OY + (8 - +sq[1]) * S];   // White at the bottom
+
+// Camera piece -> letter: the table height nearest to what was measured.
+function guess(entry, heights) {
+  if (!entry || !entry.o) return null;
+  if (!heights || !Object.keys(heights).length) return entry.w === false ? 'x' : 'X';
+  let best = 'p', gap = 1e9;
+  for (const [type, h] of Object.entries(heights || {})) {
+    const d = Math.abs(entry.t - h);
+    if (d < gap) { gap = d; best = type; }
+  }
+  return entry.w === false ? best : best.toUpperCase();
+}
+
+function differs(sq, record, seen) {
+  const s = seen[sq];
+  if (!s || !s.s) return false;
+  const r = record[sq];
+  if (!!r !== !!s.o) return true;
+  return !!r && s.w !== null && s.w !== undefined && s.w !== (r === r.toUpperCase());
+}
+
+function board(svgId, pieces, seen, record, heights, planned, showHeights) {
+  let svg = '<defs><pattern id="h' + svgId + '" width="7" height="7" patternUnits="userSpaceOnUse" ' +
+            'patternTransform="rotate(45)"><rect width="7" height="7" fill="#2a2f3a"/>' +
+            '<line x1="0" y1="0" x2="0" y2="7" stroke="#59606d" stroke-width="2.5"/></pattern>' +
+            '<marker id="a' + svgId + '" markerWidth="5" markerHeight="5" refX="2.5" refY="2.5" orient="auto">' +
+            '<path d="M0,0 L5,2.5 L0,5 z" fill="#4ea1ff"/></marker></defs>';
+  for (let r = 1; r <= 8; r++) for (let f = 0; f < 8; f++) {
+    const sq = FILES[f] + r, [x, y] = at(sq), dark = (f + r) % 2 === 1, s = seen[sq];
+    svg += `<rect x="${x}" y="${y}" width="${S}" height="${S}" fill="${dark ? 'var(--dark-sq)' : 'var(--light-sq)'}"/>`;
+    if (svgId === 'seen' && s && !s.s)
+      svg += `<rect x="${x}" y="${y}" width="${S}" height="${S}" fill="url(#h${svgId})" opacity=".85"/>`;
+    const p = pieces[sq];
+    if (p) svg += `<text x="${x + S / 2}" y="${y + S * 0.78}" font-size="${S * 0.8}" text-anchor="middle" ` +
+                  `fill="${p === p.toUpperCase() ? '#fff' : '#111'}" stroke="${p === p.toUpperCase() ? '#222' : 'none'}" ` +
+                  `stroke-width=".8">${GLYPH[p]}</text>`;
+    if (showHeights && s && s.o)
+      svg += `<text x="${x + S - 3}" y="${y + 11}" font-size="9.5" text-anchor="end" fill="#1b1d22" font-weight="600">${s.t}</text>`;
+    if (record && differs(sq, record, seen))
+      svg += `<rect x="${x + 2.5}" y="${y + 2.5}" width="${S - 5}" height="${S - 5}" rx="4" fill="none" stroke="var(--red)" stroke-width="4"/>`;
+  }
+  for (let i = 0; i < 8; i++) {
+    svg += `<text x="${OX + i * S + S / 2}" y="${OY + 8 * S + 13}" font-size="11" text-anchor="middle" fill="#6b7380">${FILES[i]}</text>`;
+    svg += `<text x="6" y="${OY + i * S + S / 2 + 4}" font-size="11" text-anchor="middle" fill="#6b7380">${8 - i}</text>`;
+  }
+  if (planned) {
+    const [x1, y1] = at(planned.from), [x2, y2] = at(planned.to);
+    svg += `<line x1="${x1 + S / 2}" y1="${y1 + S / 2}" x2="${x2 + S / 2}" y2="${y2 + S / 2}" stroke="#4ea1ff" ` +
+           `stroke-width="7" stroke-linecap="round" marker-end="url(#a${svgId})" opacity=".9"/>`;
+  }
+  $(svgId).innerHTML = svg;
+}
+
+function setStatus(kind, headline, subline) {
+  $('status').className = 'status ' + kind;
+  $('headline').textContent = headline;
+  $('subline').textContent = subline || '';
+}
+
+function show(state) {
+  const live = state.live || {}, t = live.target || {}, stage = state.stage || {};
+  const record = parseFen(state.fen), seen = live.squares || {}, heights = live.heights || {};
+  const scanned = Object.keys(seen).length > 0;
+  const seenPieces = {};
+  for (const [sq, e] of Object.entries(seen)) { const g = guess(e, heights); if (g) seenPieces[sq] = g; }
+  const wrong = scanned && state.fen ? Object.keys(seen).filter(sq => differs(sq, record, seen)).sort() : [];
+
+  const active = state.planned && stage.name !== 'HOME';
+  board('record', record, seen, scanned ? record : null, heights, active ? state.planned : null, false);
+  board('seen', seenPieces, seen, state.fen && scanned ? record : null, heights, null, true);
+
+  // The one-line status: what is happening, what to do.
+  const turn = state.fen ? (state.fen.split(' ')[1] === 'w' ? 'White' : 'Black') : null;
+  const armSide = state.arm ? state.arm[0].toUpperCase() + state.arm.slice(1) : null;
+  const moving = state.planned && stage.name !== 'HOME';
+  if (moving && stage.outcome === 'failed') {
+    setStatus('bad', `Arm stopped during ${state.planned.san}`, `${(stage.name || '').toLowerCase()} failed: ${stage.reason || 'see terminal'} — answer r / h / q in the terminal`);
+  } else if (moving) {
+    setStatus('busy', `Arm playing ${state.planned.san} (${state.planned.from} → ${state.planned.to})`,
+              `${(stage.name || 'starting').toLowerCase()}…  keep hands clear of the board`);
+  } else if (scanned && state.fen && wrong.length > 3) {
+    setStatus('bad', `The board differs from the game record on ${wrong.length} squares`,
+              'Set the pieces to match the record, or start a new game (play) / pass the real position (--fen)');
+  } else if (scanned && state.fen && wrong.length) {
+    setStatus('warn', `Check ${wrong.join(', ')}`, 'The camera sees something different there from the game record');
+  } else if (turn && armSide && turn !== armSide) {
+    setStatus('ok', `Student's move (${turn})`, 'Make the move, step back, then press Enter in the terminal');
+  } else if (turn) {
+    setStatus('ok', `${turn} to move`, armSide ? 'The arm is thinking…' : 'Board and game record agree');
+  } else {
+    setStatus('', 'No game yet', 'Start one with: python3 scripts/lab_chess.py play --vision --execute');
+  }
+  $('meta').innerHTML = `live<br>${state.moves ? state.moves.length : 0} moves`;
+
+  // Arm card
+  $('armwhat').textContent = active ? `playing ${state.planned.san}` : 'idle';
+  const idx = STAGES.findIndex(s => s[0] === stage.name);
+  $('stepper').innerHTML = STAGES.map(([key, label], i) => {
+    let cls = '';
+    if (active && idx >= 0) cls = i < idx ? 'done' : i === idx ? (stage.outcome === 'failed' ? 'fail' : 'now') : '';
+    return `<div class="step ${cls}"><i></i>${label}</div>`;
+  }).join('');
+  const verdict = t.target ? (t.ok ? '<span class="good">on target</span>' : '<span class="badc">on its way</span>') : '';
+  $('target').innerHTML = t.target ? `${t.target} · ${verdict}` : '—';
+  $('under').textContent = t.under || 'off the board';
+  $('error').textContent = t.error_mm != null ? `${t.error_mm} mm` : '—';
+  $('height').textContent = t.above_board_mm != null ? `${t.above_board_mm} mm` : '—';
+  $('grip').textContent = state.grip_mm != null ? `${(+state.grip_mm).toFixed(1)} mm` : '—';
+
+  // Camera card
+  const nSeen = Object.values(seen).filter(e => e.o).length;
+  const nHidden = Object.values(seen).filter(e => !e.s).length;
+  const nRecord = Object.keys(record).length;
+  if (!scanned) { $('agree').textContent = 'No scan yet'; $('agree').className = 'big'; $('agreesub').textContent = ''; }
+  else if (!state.fen) { $('agree').textContent = `${nSeen} pieces seen`; $('agree').className = 'big'; $('agreesub').textContent = 'no game record to compare with'; }
+  else {
+    $('agree').textContent = wrong.length ? `${wrong.length} square${wrong.length > 1 ? 's' : ''} differ` : 'Board matches the game';
+    $('agree').className = 'big ' + (wrong.length ? 'badc' : 'good');
+    $('agreesub').textContent = `${nSeen} pieces seen, ${nRecord} in the record` + (nHidden ? `, ${nHidden} squares without depth` : '');
+  }
+  $('chips').innerHTML = wrong.slice(0, 12).map(sq => `<span class="chip">${sq}</span>`).join('') +
+                         (wrong.length > 12 ? `<span class="chip">+${wrong.length - 12} more</span>` : '');
+  $('age').textContent = live.scan_age_s != null ? `scanned ${live.scan_age_s.toFixed(0)} s ago` : '';
+
+  const moves = state.moves || [];
+  let html = '';
+  for (let i = 0; i < moves.length; i += 2) {
+    const last = i + 2 >= moves.length;
+    html += `<span class="n">${i / 2 + 1}.</span><span class="${last && !moves[i + 1] ? 'last' : ''}">${moves[i]}</span>` +
+            `<span class="${last && moves[i + 1] ? 'last' : ''}">${moves[i + 1] || ''}</span>`;
+  }
+  $('moves').innerHTML = html || '<span class="n" style="grid-column: span 3">No moves yet</span>';
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/state', {cache: 'no-store'});
+    show(await r.json());
+  } catch (e) {
+    setStatus('bad', 'Dashboard not connected', 'Is `lab_chess.py watch` still running?');
+  }
+  setTimeout(poll, 500);
+}
+$('scan').onclick = async () => {
+  $('scan').disabled = true;
+  try { await fetch('/scan', {method: 'POST'}); } finally { setTimeout(() => $('scan').disabled = false, 1500); }
+};
+poll();
+</script>
+</body>
+</html>

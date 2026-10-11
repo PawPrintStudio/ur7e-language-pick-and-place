@@ -9,6 +9,7 @@ Register addresses and unit ID follow the pinned OnRobot_ROS2_Driver/RG.hpp.
 
 import argparse
 import json
+import os
 import socket
 import struct
 import time
@@ -101,7 +102,7 @@ def read_register(sock, address, unit=65):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='192.168.56.101')
+    parser.add_argument('--host', default=os.environ.get('ROBOT_IP', '192.168.56.101'))
     parser.add_argument('--port', type=int, default=54321)
     parser.add_argument('--unit', type=int, choices=[65, 66, 67], default=65)
     parser.add_argument('--tool-io-user-confirmed', action='store_true', required=True)

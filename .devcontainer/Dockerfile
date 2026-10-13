@@ -2,7 +2,11 @@
 # `git clone`. Based on osrf/ros:humble-desktop-full (athackst pattern) —
 # desktop-full brings RViz and the GUI stack that plain ros:humble (CI image)
 # deliberately lacks.
-FROM osrf/ros:humble-desktop-full
+# That image is amd64 only. On a Raspberry Pi 5 (arm64) build from
+# ros:humble-ros-base instead: no RViz, everything else the same
+# (devcontainer.json reads it from ROS_BASE_IMAGE; docs/CHESS.md).
+ARG BASE_IMAGE=osrf/ros:humble-desktop-full
+FROM ${BASE_IMAGE}
 
 # Project stack, mirroring the Jetson install (RUNBOOK B3) plus sim extras:
 #   ros-humble-ur              driver + calibration + moveit config (Jetson)
@@ -40,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gdb \
     git \
     nano \
+    stockfish \
     && rm -rf /var/lib/apt/lists/*
 
 # pip-only dependencies, learned in the lab 2026-09-30 (RUNBOOK):
@@ -50,9 +55,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #                cause "process() takes no keyword arguments"); >=1.1 fixes it.
 #   pytest>=7  - the SDK's anyio pulls a pytest plugin that needs >=7; apt's
 #                6.2.5 then fails to even collect ("No module _pytest.scope").
+#   chess      - python-chess, the rules and the Stockfish bridge for
+#                scripts/lab_chess.py (stockfish itself is apt, above).
 # Installed system-wide here (before USER switches) so every user in the
 # image has them; --break-system-packages is not needed on 22.04.
-RUN pip3 install --no-cache-dir "anthropic>=1.10" "brotli>=1.1" "pytest>=7,<9"
+RUN pip3 install --no-cache-dir "anthropic>=1.10" "brotli>=1.1" "pytest>=7,<9" "chess>=1.10"
 
 # Real-hardware perception (2026-10-08): the webcam node's default
 # `backend:=auto` loads OWLv2 with no fallback, so without these it crashes

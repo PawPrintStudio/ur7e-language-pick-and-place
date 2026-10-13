@@ -10,6 +10,9 @@ mappings, no custom launch-time Command construction needed.
   <xacro:arg name="robot_ip" default="xxx.yyy.zzz.www"/>
   <xacro:arg name="ur_type" default="ur7e"/>
   <xacro:arg name="onrobot_type" default="rg2"/>
+  <!-- single: RG2 straight on the flange (chess arm); dual: Dual Quick Changer
+       (project-1 arm). Must match scripts/lab_tooling.yaml's mount. -->
+  <xacro:arg name="tool_mount" default="single"/>
   <xacro:arg name="tf_prefix" default=""/>
   <xacro:arg name="use_fake_hardware" default="true"/>
   <xacro:arg name="kinematics_parameters_file"
@@ -56,9 +59,10 @@ mappings, no custom launch-time Command construction needed.
   <joint name="$(arg tf_prefix)onrobot_base_link_joint" type="fixed">
     <parent link="$(arg tf_prefix)tool0"/>
     <child link="$(arg tf_prefix)onrobot_base_link"/>
-    <xacro:rg2_on_dual_quick_changer_origin/>
+    <xacro:if value="${'$(arg tool_mount)' == 'dual'}"><xacro:rg2_on_dual_quick_changer_origin/></xacro:if>
+    <xacro:unless value="${'$(arg tool_mount)' == 'dual'}"><origin xyz="0 0 0" rpy="0 0 ${-pi/2}"/></xacro:unless>
   </joint>
-  <xacro:dual_quick_changer prefix="$(arg tf_prefix)"/>
+  <xacro:if value="${'$(arg tool_mount)' == 'dual'}"><xacro:dual_quick_changer prefix="$(arg tf_prefix)"/></xacro:if>
   <!-- Cable connectors on the RG2, as in the vendored macro (its SRDF names them). -->
   <link name="$(arg tf_prefix)cable_connector_0">
     <collision><geometry><sphere radius="0.03"/></geometry></collision>

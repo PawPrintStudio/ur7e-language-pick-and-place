@@ -4,7 +4,7 @@
         "dockerfile": "Dockerfile",
         // Raspberry Pi 5: export ROS_BASE_IMAGE=ros:humble-ros-base first.
         "args": {
-            "BASE_IMAGE": "${localEnv:ROS_BASE_IMAGE:osrf/ros:humble-desktop-full}"
+            "BASE_IMAGE": "${localEnv:ROS_BASE_IMAGE}"
         }
     },
     "remoteUser": "ros",
@@ -35,7 +35,11 @@
         // Language backend credentials: forwarded from the host shell that
         // started VS Code (export it, or `set -a; source .env; set +a`
         // first). Empty when unset — the keyword backend needs nothing.
-        "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
+        "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+        // Which arm: the scripts and launch files read these (COLD_START.md §0).
+        "ROBOT_IP": "${localEnv:ROBOT_IP:192.168.56.101}",
+        "LAPTOP_IP": "${localEnv:LAPTOP_IP:192.168.56.1}",
+        "RG2_SERIAL": "${localEnv:RG2_SERIAL:1000042561}"
     },
     "mounts": [
         "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",

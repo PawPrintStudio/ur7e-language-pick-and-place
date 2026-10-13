@@ -104,6 +104,39 @@ PREEMPT_RT kernel on the Pi (watch for the velocity-veto popup), and the
    with neighbours, then a capture to the box.
 6. **A game** with the operator typing what the student played.
 
+## The camera in the loop (2026-10-10, `scripts/chess_vision.py`)
+
+Needs the corners fitted (`fit --square`) and the camera pose saved
+(`overlay`), and the ZED **rigidly mounted**: everything below assumes the
+camera never moves, so a moved camera reads as a moved board.
+
+| Command | What it does |
+|---|---|
+| `scan` | Stereo depth over the board: which squares hold a piece, its height, its centre (off-centre mm). `?` = hidden (arm, tall piece). |
+| `track [--apply]` | Has the board moved since it was calibrated? Fits the board's slide and turn from the grid the fixed camera sees; `--apply` moves the calibration with it (refuses beyond 30 mm / 5 deg). |
+| `move ... --vision` | Board check at the start, then each pick goes to the piece's **seen** centre and grips at 3/4 of its **measured** height (no per-piece table). |
+| `play ... --vision` | Also reads the student's move from the board (Enter after they move; confirm or type it) and checks the board after every arm move. |
+| `watch` | Shares its frames, so all of the above work while the live view runs. |
+
+Design decisions, measured on the real board at 0.85 m:
+
+- **OpenCV stereo, not the ZED SDK.** No working GPU here, none on the Pi 5.
+- **Lens tilt re-fitted every session** (`fit_row_rotation`): rows were 3-34 px apart, 0.65 px after.
+- **Heights relative to the board seen in the same frame.** Disparity read 39.6 px low (constant); each scan measures that offset on the calibrated board and removes it. Board noise 1.4 mm; a 40 mm pawn reads 41-42 mm.
+- **Pieces as 3-D points standing on a square**, not image regions: from 45 deg a tall piece covers the squares behind it in the image, never in 3-D. Clusters with no low points (stereo mismatches on the repeating squares) or too few points for their distance are dropped; the gripper is cut out with the arm's own pose.
+- **Board motion solved with the camera fixed** (x, y, turn: 3 unknowns), not by re-solving the camera's 6 from a partial grid (1-2 cm loose along the line of sight).
+- **Empty close = 9.3 mm** on this RG2: the generic miss check is now 12.3 mm (lab_pick's 6 mm called an empty close a hold).
+
+- **Piece centres are not corrected for "seeing only the front".** From 45 deg the
+  camera sees each head all round: hand-placed pieces read 0.2-1 mm off centre
+  uncorrected, 4-8 mm with a 2r/pi correction (2026-10-11, `DEPTH_BIAS = 0`).
+- **Heights read about 2 mm high** (95th percentile of a noisy top): pawn 41.7 for
+  40, king 82 for about 80.
+
+Not yet considered: the neighbouring pieces' positions when the jaws open (fixed
+32 mm, along the diagonal), and a carry height from the tallest piece actually
+standing (fixed `--hover`, 0.08 for chess). A moved camera still reads as a moved board.
+
 ## The turn protocol
 
 The student and the arm share a table. The arm moves only after the operator

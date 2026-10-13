@@ -125,7 +125,8 @@ class Rg2:
     functions its pendant nodes call. Widths in mm, force in N.
     """
 
-    def __init__(self, host, tool=None, serial='1000042561', max_force=25.0):
+    def __init__(self, host, tool=None, serial=os.environ.get('RG2_SERIAL', '1000042561'),
+                 max_force=25.0):
         """Connect; ``tool`` None finds the gripper by serial (the URCap's index drifts)."""
         self.host, self.max_force = host, max_force
         self.rpc = xmlrpc.client.ServerProxy(f'http://{host}:41414/',
@@ -598,7 +599,11 @@ class LabAdapters(Adapters):
             # 2026-10-02, and the lift then stalled at the joint limit).
             turn = max(-cfg['max_align_turn'], min(cfg['max_align_turn'], aligned - current_yaw))
             self.grasp_yaw = current_yaw + turn
-        self.tip_height = max(cfg['min_tip_clearance'], height - cfg['finger_reach'])
+        # A target may say where the fingertips go (chess: from the measured grip
+        # height); otherwise they close finger_reach below the object's top.
+        tip = target.detail.get('tip_above_table_m')
+        self.tip_height = max(cfg['min_tip_clearance'],
+                              height - cfg['finger_reach'] if tip is None else float(tip))
         x, y = target.xyz[0], target.xyz[1]
         if place is None:
             px, py = cfg['drop_xy'] or (x, y)
@@ -836,8 +841,8 @@ def check_tooling(args, tooling=None):
     if (args.execute and not tooling['verified'] and not args.allow_unverified_tooling
             and not simulated):
         raise RuntimeError(
-            'lab_tooling.yaml is not verified: the Dual Quick Changer mounting '
-            '(changer yaw, RG2 face/roll, TCP length) has not been checked on this arm. '
+            'lab_tooling.yaml is not verified: the tool mounting '
+            '(mount, RG2 roll, TCP length; changer yaw/face if dual) has not been checked on this arm. '
             'Check it (docs/vendor/cad/README.md), set verified: true, or pass '
             '--allow-unverified-tooling in simulation only')
     return tooling
@@ -943,7 +948,7 @@ def add_session_arguments(cli):
                      help='do not ask before confident commands')
     cli.add_argument('--backend', default='keyword', choices=available())
     cli.add_argument('--model', default='')
-    cli.add_argument('--robot-ip', default='192.168.56.101')
+    cli.add_argument('--robot-ip', default=os.environ.get('ROBOT_IP', '192.168.56.101'))
     cli.add_argument('--calibration', default=DEFAULT_CALIBRATION)
     # Upper bound only: the pendant slider is the real speed, and the gate
     # refuses to move when the slider is above this.

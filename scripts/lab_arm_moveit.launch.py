@@ -74,7 +74,7 @@ def setup(context):
                      'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']:
             ET.SubElement(state, 'joint', name=name,
                           value=str(joints[name] + (delta if name == 'wrist_3_joint' else 0)))
-    for first, second in lab_tooling.ADJACENT:
+    for first, second in lab_tooling.adjacent():
         ET.SubElement(srdf, 'disable_collisions', link1=first, link2=second, reason='Adjacent')
 
     repo = Path(__file__).resolve().parents[1]

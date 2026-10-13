@@ -9,6 +9,7 @@ Never uploads URScript, bypasses OnRobot, unlocks a stop, or starts a program.
 import argparse
 import json
 import math
+import os
 import select
 import socket
 import time
@@ -237,8 +238,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute-gripper", action="store_true")
     parser.add_argument("--supervised", action="store_true")
-    parser.add_argument("--bind", default="192.168.56.1")
-    parser.add_argument("--robot-ip", default="192.168.56.101")
+    parser.add_argument("--bind", default=os.environ.get('LAPTOP_IP', '192.168.56.1'))
+    parser.add_argument("--robot-ip", default=os.environ.get('ROBOT_IP', '192.168.56.101'))
     parser.add_argument("--port", type=int, default=50010)
     parser.add_argument("--close-mm", type=float, default=59.0)
     parser.add_argument("--open-mm", type=float, default=70.0)

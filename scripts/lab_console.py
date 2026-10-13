@@ -307,7 +307,7 @@ def main():
                           'node and a table calibration; see scripts/lab_pick.py)')
     cli.add_argument('--calibration', default=os.path.join(_HERE, 'lab_table.json'),
                      help='table calibration from scripts/lab_table_calibration.py')
-    cli.add_argument('--robot-ip', default='192.168.56.101')
+    cli.add_argument('--robot-ip', default=os.environ.get('ROBOT_IP', '192.168.56.101'))
     cli.add_argument('--drop-xy', type=float, nargs=2, metavar=('X', 'Y'),
                      help='where a plain "pick" sets the object down (default: in place)')
     cli.add_argument('--log-dir', default=os.path.join(_HERE, '..', 'log', 'runs'),

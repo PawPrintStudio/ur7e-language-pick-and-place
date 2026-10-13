@@ -19,7 +19,7 @@
 # reused as they are. It never presses Play for you and never bypasses a check.
 set -eo pipefail
 cd "$(dirname "$0")/.."
-ROBOT_IP=192.168.56.101
+ROBOT_IP=${ROBOT_IP:-192.168.56.101}
 # The container has no ping. Opening the dashboard port (29999) works on
 # both sides and also proves the controller itself is answering.
 robot_reachable() { timeout 3 bash -c "exec 3<>/dev/tcp/$ROBOT_IP/29999" 2>/dev/null; }
@@ -27,7 +27,7 @@ robot_reachable() { timeout 3 bash -c "exec 3<>/dev/tcp/$ROBOT_IP/29999" 2>/dev/
 # ---------------------------------------------------------------- host side
 if [[ ! -f /.dockerenv ]]; then
   echo "== host: bringing up the robot link"
-  nmcli con up ur-link
+  nmcli con up "${UR_LINK:-ur-link}"
   robot_reachable || { echo "== no reply from $ROBOT_IP: check the cable and the pendant network" >&2; exit 2; }
   echo "   robot answers at $ROBOT_IP"
   # VS Code hands the folder to an already-running window, which keeps the
@@ -62,7 +62,7 @@ OUT="log/lab/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 echo "== logs: $OUT"
 
-robot_reachable || { echo "== no reply from $ROBOT_IP: on the host, run  nmcli con up ur-link" >&2; exit 2; }
+robot_reachable || { echo "== no reply from $ROBOT_IP: on the host, run  nmcli con up ${UR_LINK:-ur-link}" >&2; exit 2; }
 # VS Code only forwards the key when it was started from a shell that had it;
 # the repo's .env is mounted here too, so read it directly when it's missing.
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -f .env ]]; then set -a; source .env; set +a; fi

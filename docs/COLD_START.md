@@ -18,6 +18,11 @@ Every command below is a copy-paste; "pendant" steps are the only manual ones.
 1. Robot controller on → pendant: **Power on**, **Brake release** (robot mode RUNNING).
 2. Ethernet cable laptop ↔ robot. On the laptop: `nmcli con up ur-link` (laptop
    becomes 192.168.56.1; `ping 192.168.56.101` must answer).
+   **Chess arm** (192.168.1.10, single RG2): once, `nmcli con add type ethernet ifname enp7s0
+   con-name ur-link-chess ipv4.method manual ipv4.addresses 192.168.1.2/24`. Then, before
+   `lab_up.sh` / VS Code: `export UR_LINK=ur-link-chess ROBOT_IP=192.168.1.10
+   LAPTOP_IP=192.168.1.2`. The container inherits them. (Same RG2 as project 1, serial
+   1000042561, the default; another gripper needs `RG2_SERIAL=<OnRobot Device info>`.)
 3. ZED on a USB-3 port, pointed at the pick area (see §3). Do not touch it after calibration.
 4. Pendant: load `ros2_external_control.urp`, speed slider at the level you
    are prepared to watch (25 % for anything new, 70 % for a rehearsed demo).

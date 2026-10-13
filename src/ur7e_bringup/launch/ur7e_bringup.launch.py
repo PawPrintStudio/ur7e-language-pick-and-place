@@ -13,7 +13,7 @@ copying them.  What this wrapper adds is *our* invariants:
   without it the driver computes FK from the *default* UR7e kinematics and
   every TCP pose is silently wrong (checksum ``calib_127880...`` vs our robot's
   ``calib_124458...``).  A forgettable CLI flag is how that mistake happens.
-* ``robot_ip`` defaults to the lab robot (192.168.56.101).  The URSim container
+* ``robot_ip`` defaults to ``$ROBOT_IP``, else the lab robot (192.168.56.101).  The URSim container
   is deliberately given the same IP on its Docker network (sim/ursim/), so
   tier-2 sim runs with identical arguments to the real lab.
 
@@ -26,7 +26,7 @@ Backends (architecture D7):
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -34,7 +34,7 @@ def generate_launch_description():
     declared_arguments = [
         DeclareLaunchArgument(
             "robot_ip",
-            default_value="192.168.56.101",
+            default_value=EnvironmentVariable("ROBOT_IP", default_value="192.168.56.101"),
             description="Robot controller IP. Default is the lab robot; the URSim "
             "container uses the same address (sim/ursim/docker-compose.yml). "
             "Ignored when use_mock_hardware is true.",

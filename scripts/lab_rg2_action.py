@@ -7,6 +7,7 @@ and force to 0<force<=10 N. Do not run alongside another gripper controller.
 Measured effort is unavailable and is reported as NaN, never as force feedback.
 """
 import math
+import os
 import threading
 import xmlrpc.client
 
@@ -18,16 +19,16 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from lab_rg2_native import (
-    MotionCanceled, TimeoutTransport, dashboard_gate, identify, move, validate_state,
+    MotionCanceled, TimeoutTransport, dashboard_gate, find_by_serial, identify, move, validate_state,
 )
 
 
 class GripperBench(Node):
     def __init__(self):
         super().__init__("lab_rg2_native_action")
-        self.host = self.declare_parameter("robot_ip", "192.168.56.101").value
-        self.tool = self.declare_parameter("tool_index", 2).value
-        self.serial = self.declare_parameter("serial", "1000042561").value
+        self.host = self.declare_parameter("robot_ip", os.environ.get('ROBOT_IP', '192.168.56.101')).value
+        self.tool = self.declare_parameter("tool_index", -1).value  # -1: find by serial
+        self.serial = self.declare_parameter("serial", os.environ.get('RG2_SERIAL', '1000042561')).value
         self.lock = threading.Lock()
         self.reserved = False
         self.server = ActionServer(
@@ -68,6 +69,8 @@ class GripperBench(Node):
 
         try:
             dashboard_gate(self.host)
+            if self.tool < 0:
+                self.tool = find_by_serial(rpc, self.serial)["deviceId"]
             identify(rpc, self.tool, self.serial)
             feedback(validate_state(rpc.rg_get_all_variables(self.tool)))
             state = move(rpc, self.host, self.tool,

@@ -229,7 +229,7 @@ def attach_target(executor, attach=True):
     # The RG2 holds it, and the RG2 sits 60 deg off the flange axis on the
     # Dual Quick Changer: hang the box from the RG2's TCP, not from tool0.
     held = AttachedCollisionObject(link_name='rg2_tcp',
-                                   touch_links=lab_tooling.TOUCH_LINKS + ['rg2_tcp'])
+                                   touch_links=lab_tooling.touch_links() + ['rg2_tcp'])
     held.object.id = 'lab_held_target'
     held.object.header.frame_id = 'rg2_tcp'
     req = ApplyPlanningScene.Request()
@@ -702,7 +702,7 @@ def command_check(args):
 def main():
     cli = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
-    cli.add_argument('--robot-ip', default='192.168.56.101')
+    cli.add_argument('--robot-ip', default=os.environ.get('ROBOT_IP', '192.168.56.101'))
     cli.add_argument('--execute', action='store_true', help='really move (default: plan only)')
     cli.add_argument('--max-speed-percent', type=float, default=50.0)
     cli.add_argument('--joint-rate', type=float, default=0.09)

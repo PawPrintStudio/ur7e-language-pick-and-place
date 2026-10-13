@@ -38,6 +38,19 @@ def test_rg2_tcp_matches_the_cad_estimate():
     assert tips[0] > 0.2    # far outside the old 0.20 x 0.20 on-axis box
 
 
+def test_single_mount_puts_the_rg2_on_the_flange_axis_without_the_changer():
+    single = dict(DEFAULTS, mount='single', rg2_roll_deg=-90.0)
+    tcp = lab_tooling.tool0_to_rg2_tcp(single)
+    assert np.allclose(tcp[:3, 3], [0, 0, single['rg2_tcp_m']], atol=1e-9)
+    assert np.allclose(tcp[:3, 2], [0, 0, 1], atol=1e-9)
+    robot = ET.Element('robot', name='t')
+    lab_tooling.add_to_urdf(robot, single)
+    assert [link.get('name') for link in robot.findall('link')] == ['lab_rg2', 'rg2_tcp']
+    assert all('lab_changer' not in pair and 'lab_soft_gripper' not in pair
+               for pair in lab_tooling.adjacent(single))
+    assert 'lab_changer' not in lab_tooling.touch_links(single)
+
+
 def test_changer_yaw_turns_everything_about_the_flange_axis():
     turned = lab_tooling.tool0_to_rg2_tcp(dict(DEFAULTS, changer_yaw_deg=90.0))[:3, 3]
     base = lab_tooling.tool0_to_rg2_tcp(DEFAULTS)[:3, 3]

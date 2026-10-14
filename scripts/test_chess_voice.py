@@ -153,7 +153,7 @@ def test_follow_speaks_new_events_only_and_skips_stale_ones(tmp_path):
     time.sleep(0.2)
     assert mouth.said == []                                         # already in the file: not spoken
     with open(path, 'a') as stream:
-        stream.write(json.dumps({'event': 'captured', 't': time.time() - 60, 'san': 'Nxd4'}) + '\n')
+        stream.write(json.dumps({'event': 'captured', 't': time.time() - 2 * v.STALE_EVENT_S, 'san': 'Nxd4'}) + '\n')
         stream.write(json.dumps({'event': 'check', 't': time.time(), 'san': 'Qh4+'}) + '\n')
         stream.write('not json\n')
     time.sleep(0.4)

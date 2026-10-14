@@ -1960,6 +1960,8 @@ def cmd_gesture(args):
                 ask_operator('clear', f'Gesture {name} from home. Everyone clear of the arm?',
                              [option(GO, 'Go', 'go'), option(STOP, 'Skip', 'stop')])
             event = next(e for e, (g, _) in chess_gestures.EVENT_GESTURE.items() if g == name)
+            chess_gestures.log_event(EVENTS_FILE, event, san='Nxd4', result='0-1', moves=20,
+                                     by='checkmate', rehearsal=True)     # the voice and jingle too
             chess_gestures.perform(event, executor, lab, adapters.geometry, executor.joint_rate,
                                    say, claps=not args.no_claps)
         return 0

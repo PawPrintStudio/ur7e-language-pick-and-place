@@ -361,6 +361,7 @@ class Piper:
 
 
 LEAD_S = 1.0   # the bubble appears this long after the sound is started: page poll + TV audio delay
+STALE_EVENT_S = 90.0   # an event older than this when the voice gets to it is skipped, with a log line
 
 
 def announce(event, line, path=SAID_FILE, seconds=None, lead=None):
@@ -404,14 +405,23 @@ def respond(event, detail, brain, mouth, log=print, said_file=SAID_FILE, effects
 
 def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print, effects=True):
     """Tail the events file forever, speaking each new line's event."""
+    import threading
     position = 0 if from_start else (os.path.getsize(path) if os.path.exists(path) else 0)
     log(f'VOICE    {json.dumps({"events": os.path.relpath(path), "model": getattr(brain, "model", None), "stop": "Ctrl+C"})}')
-    warm_every_s, warmed = 180.0, 0.0
+    warm_every_s, warmed, warming = 180.0, 0.0, [None]
+
+    def warm_in_background():
+        # Never on the event loop: a slow Ollama (2026-10-14: the first load took
+        # 47 s, and a busy laptop can stall it) must not make events go stale.
+        took = brain.warm()
+        log(f'MODEL    {json.dumps({"loaded": took is not None, "seconds": took})}')
+        warming[0] = None
+
     while True:
-        if hasattr(brain, 'warm') and time.time() - warmed > warm_every_s:
-            took = brain.warm()
-            log(f'MODEL    {json.dumps({"loaded": took is not None, "seconds": took})}')
+        if hasattr(brain, 'warm') and warming[0] is None and time.time() - warmed > warm_every_s:
             warmed = time.time()
+            warming[0] = threading.Thread(target=warm_in_background, daemon=True)
+            warming[0].start()
         if not os.path.exists(path):
             time.sleep(poll_s)
             continue
@@ -425,8 +435,10 @@ def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print, effects=
             except ValueError:
                 continue
             event = row.pop('event', None)
-            if time.time() - float(row.get('t', time.time())) > 30:
-                continue                  # an old event is not worth a late remark
+            age = time.time() - float(row.get('t', time.time()))
+            if age > STALE_EVENT_S:
+                log(f'SKIPPED  {json.dumps({"event": event, "age_s": round(age)})}')   # not worth a late remark
+                continue
             respond(event, row, brain, mouth, log, effects=effects)
         time.sleep(poll_s)
 

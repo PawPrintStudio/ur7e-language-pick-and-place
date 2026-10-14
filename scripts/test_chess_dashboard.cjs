@@ -79,6 +79,9 @@ test('HTTP failure dims stale data and disables scan; recovery restores access',
   let ok = false;
   const p = page(async () => ({ok, json:async () => boardState()}));
   await p.context.poll();
+  await p.context.poll();
+  assert.equal(p.classes.has('offline'), false);             // two misses: not yet
+  await p.context.poll();
   assert.equal(p.element('headline').textContent, 'Live updates paused');
   assert.equal(p.element('scan').disabled, true);
   assert.ok(p.classes.has('offline'));

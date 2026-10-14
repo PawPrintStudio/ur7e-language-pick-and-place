@@ -558,14 +558,19 @@ const gameAlive = () => currentState?.prompt_age_s != null && currentState.promp
 $('op-new').onclick = () => currentState?.prompt ? answer('new') : gameAlive() ? answer('new', '*') : resetRecord();
 $('op-quit').onclick = () => { if (currentState?.prompt) answer('quit'); else if (gameAlive()) answer('quit', '*'); };
 
+let missedPolls = 0;
 async function poll() {
   try {
     const r = await fetch('/state', {cache: 'no-store', signal: AbortSignal.timeout(4000)});
     if (!r.ok) throw new Error('State unavailable');
     show(await r.json());
     connected = true;
+    missedPolls = 0;
     document.body.classList.remove('offline');
   } catch (e) {
+    // One missed poll (watch restarting, a slow frame) must not dim the projector:
+    // the page goes grey only after three in a row, about two seconds.
+    if (++missedPolls < 3) { setTimeout(poll, 500); return; }
     connected = false;
     document.body.classList.add('offline');
     $('camera-overlay').innerHTML = '';

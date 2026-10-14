@@ -255,7 +255,12 @@ container has no sound card; the script refuses to run there):
 It plays through the PipeWire sink whose name contains `HDMI` (the TV);
 `--sink default` is the laptop speakers, `--sink Analog` by name. Check the
 TV's volume once: `wpctl status` lists the sinks, `wpctl set-volume 74 1.0`
-with the HDMI sink's number. `--say captured` tries the pipeline once;
+with the HDMI sink's number. Each emotion also has a short synthesized
+jingle (rising arpeggio for a capture, fanfare for a win, sad trombone for
+a loss, two beeps for check) that plays as the gesture starts, then the
+line; `--no-sfx` turns them off. `--lead 1.0` is how long the page holds the
+bubble after the sound starts (the TV's HDMI audio delay); tune it in
+half-second steps. `--say captured` tries the pipeline once;
 `--no-llm` speaks canned lines only; `--replay lines.json` scripts the
 answers. The voice files live under `log/` (not committed): download them
 again on a new laptop. What is being said is written to `log/chess/said.json`

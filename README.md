@@ -2,7 +2,9 @@
 
 Natural-language pick-and-place for a **Universal Robots UR7e**: say or type *"pick up the hammer"* and the arm finds the object, plans a grasp, and picks it up — through a standardized, repeatable workflow.
 
-Built on **ROS 2 Humble** running natively on an **NVIDIA Jetson Orin Nano** (JetPack 6.2.x), extending the proven driver + network setup from [ur7e-ros2-keyboard-controller](https://github.com/PawPrintStudio/ur7e-ros2-keyboard-controller).
+**For the live chess showcase, use the proven laptop and its ROS 2 Humble devcontainer.** Start with the [laptop showcase commands and presenter guide](docs/CHESS_SHOWCASE.md). The Jetson and Pi are outside this demo's deployment path.
+
+The original language-directed project extends the driver + network setup from [ur7e-ros2-keyboard-controller](https://github.com/PawPrintStudio/ur7e-ros2-keyboard-controller); the architecture below describes that earlier project.
 
 **New here, or running it yourself? Start with [docs/START_HERE.md](docs/START_HERE.md):** the layers, the environment, and every command for the end-to-end pick in simulation.
 

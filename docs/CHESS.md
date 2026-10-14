@@ -1,5 +1,9 @@
 # Phase 2: a chess match against a student
 
+**October 14 showcase: [laptop launch commands and presenter guide](CHESS_SHOWCASE.md).**
+Use the existing laptop devcontainer, single RG2 and live camera dashboard.
+The Pi section below is historical planning, not tomorrow's setup.
+
 Project 1 (language-directed picks) closed on 2026-10-10 on repeated real
 picks. Phase 2: the UR7e plays a full game of chess against a student on a
 real board, with the pieces it already knows how to pick. The deadline is
@@ -144,6 +148,55 @@ has entered the student's move and the student has stepped back; `play` asks
 "everyone clear?" before every arm move. The pendant slider stays at the
 rehearsed value; the operator keeps a hand by the stop. A failed step stops
 the loop and asks: retry from that step, finished by hand, or quit.
+
+## The operator console (2026-10-13)
+
+Every question `play` asks is also a button on
+**http://localhost:8091/#operator** (the same page `watch` serves; without
+`#operator` it is the projected audience view and has no controls). The
+terminal still works: whichever answers first wins. How it is wired:
+
+- `play` writes the open question into `log/chess/state.json` (`prompt`: id,
+  text, options) and a heartbeat every second; `watch` serves it at `/state`.
+- A click POSTs `/answer` with the prompt's id; `watch` writes
+  `log/chess/answer.json`; `play` reads it, drops it if the id is stale.
+  Answers are accepted from this computer only (127.0.0.1): the projected
+  page cannot move the arm, and neither can anything on the network.
+- **New game** and **Quit** are on every student prompt and at game over:
+  a new group is one click, the record restarts, the arm stays parked.
+  `reset` is only needed when `play` is not running.
+- `play --resume` carries on from the recorded game after a restart of T3.
+
+Prompts, in order of a turn: *student move* (Read the board / type it /
+New game / Quit), *I saw e4: right?* (Yes / No, read again / type it),
+*Robot plays b5, everyone clear?* (Go), one *b7 → b5: go?* per step
+(Go / Stop), and after a failed step *Retry / I finished it by hand*.
+The audience page turns each of these into a headline ("Your move · White",
+"Robot is about to play b5: stand clear", "Arm stopped during b5").
+
+## Calibration order when something moved
+
+The board corners are the only robot-side truth; the camera pose is fitted
+to them, and vision centres are checked against them, so camera and grid
+agreeing proves nothing about the robot. 2026-10-13: the stand was lowered,
+the corners were shifted in Z by hand (+60 mm, two notes in `lab_chess.json`)
+and never re-touched in X and Y; picks then missed by the same amount
+everywhere while the camera agreed with the grid within 2 mm.
+
+1. `touch --corner 1..4` (and `box`), `fit --square`: the real fix, 10 min.
+   Check with `goto e4 --touch`, `goto a1 --touch`, `goto h8 --touch`:
+   the fingertip must be within 3 mm of the centre, 10 mm up.
+2. `overlay --fen start`: refit the camera to the new corners; check a1 in
+   `log/chess/overlay.jpg`. Restart `watch`.
+3. If the corners cannot be re-touched: measure the miss with `goto --touch`
+   on two squares and `shift --dx .. --dy ..` (mm, base frame, ≤ 30 mm) the
+   other way; `watch` reloads the geometry. This is a patch, not a calibration.
+
+The tool length in `lab_tooling.yaml` (247 mm flange to tips) is 35-40 mm
+longer than the ruler says. It cancels between touch and move for a vertical
+tool, so picks are unaffected, but every camera-versus-model fingertip
+comparison and the collision model carry that error. Measure it with the
+jaws closed before trusting such comparisons.
 
 ## The improvement list, mapped
 

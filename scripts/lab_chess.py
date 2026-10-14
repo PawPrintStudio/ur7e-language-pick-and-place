@@ -2532,7 +2532,9 @@ def main():
             # 0.4 shook the arm before segments ramped in and out (retime.py);
             # with the ramps, 0.4 travel / 0.12 beside the pieces is demo-day
             # speed (2026-10-14). The envelope is 0.6; --joint-rate overrides.
-            p.set_defaults(hover=0.08, joint_rate=0.40, contact_rate=0.12)
+            # Demo day: the envelope itself (0.6, timed at 0.57) for travel; 0.15
+            # beside the pieces. --joint-rate 0.4 is the gentler setting.
+            p.set_defaults(hover=0.08, joint_rate=0.60, contact_rate=0.15)
         else:
             p.add_argument('--yes', action='store_true')
             p.description = f'{p.prog}: robot options {reason}'

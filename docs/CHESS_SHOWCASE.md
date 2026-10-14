@@ -114,7 +114,7 @@ python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --s
 This starts a **new standard position**, student White, robot Black. Reset the
 physical pieces first. Keep confirmations enabled; do not add `--yes`.
 The 100% approval ceiling does not set the pendant slider. Chess moves at
-0.40 rad/s (0.12 beside the pieces) with soft starts, under the 0.6 rad/s
+0.57 rad/s (0.15 beside the pieces) with soft starts, at the 0.6 rad/s
 software envelope; robot safety scaling also remains active. Add
 `--careful` for a per-step Go after any calibration change.
 

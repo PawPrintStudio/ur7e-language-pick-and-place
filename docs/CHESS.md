@@ -198,8 +198,8 @@ The audience page turns each of these into a headline ("Your move · White",
 
 A step took 72 s at the baseline. What changed, and where each knob lives:
 
-- **Two rates.** `play`, `move`, `goto` default to `--joint-rate 0.40`
-  (travel: hover, carry, home) and `--contact-rate 0.12` (descend, lift,
+- **Two rates.** `play`, `move`, `goto` default to `--joint-rate 0.60` (the envelope)
+  (travel: hover, carry, home) and `--contact-rate 0.15` (descend, lift,
   lower, back up); 0.4 shook the arm at segment boundaries on 2026-10-14.
   The envelope in `scripts/motion/ur_motion.py` is 0.6 rad/s nominal; the
   pendant slider scales everything below it.

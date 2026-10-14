@@ -59,7 +59,7 @@ def test_every_event_has_a_fact_and_a_kid_friendly_canned_line():
     assert v.sane('captured', 'That piece is mine now; my camera measured it first.')
 
 
-def test_the_bubble_is_announced_after_synthesis_and_before_playback(tmp_path, monkeypatch):
+def test_jingle_then_bubble_then_voice(tmp_path, monkeypatch):
     order = []
     said = str(tmp_path / 'said.json')
 
@@ -67,10 +67,29 @@ def test_the_bubble_is_announced_after_synthesis_and_before_playback(tmp_path, m
         def synthesize(self, text):
             order.append('synth'); return '/tmp/fake.wav'
 
+        def effect(self, event):
+            order.append(('effect', event, os.path.exists(said)))
+
         def play(self, path):
             order.append(('play', path, os.path.exists(said)))
     v.respond('check', {'san': 'Qh4+'}, Brain('Mind your king.'), Piperish(), log=lambda *a: None, said_file=said)
-    assert order == ['synth', ('play', '/tmp/fake.wav', True)]     # bubble written between the two
+    assert order == ['synth', ('effect', 'check', False), ('play', '/tmp/fake.wav', True)]
+    order.clear()
+    v.respond('check', {'san': 'Qh4+'}, Brain('Mind your king.'), Piperish(), log=lambda *a: None, said_file=said, effects=False)
+    assert order == ['synth', ('play', '/tmp/fake.wav', True)]
+
+
+def test_every_emotion_has_a_short_jingle_written_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(v, 'SFX_DIR', str(tmp_path))
+    import wave
+    for event in ('greeting', 'captured', 'lost', 'check', 'checked', 'won', 'lost_game', 'draw', 'ask'):
+        path = v.sfx_file(event)
+        with wave.open(path) as w:
+            seconds = w.getnframes() / w.getframerate()
+        assert 0.15 <= seconds <= 2.5, (event, seconds)
+    assert v.sfx_file('nothing') is None
+    stamp = os.path.getmtime(v.sfx_file('won'))
+    assert os.path.getmtime(v.sfx_file('won')) == stamp               # made once, reused
 
 
 def test_respond_prefers_the_model_falls_back_to_canned_and_tells_the_page(tmp_path):

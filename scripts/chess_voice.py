@@ -256,6 +256,54 @@ def player_for(sink=None):
     return ['aplay', '-q']
 
 
+# --- sound effects: one short synthesized jingle per emotion, played as the gesture starts ---
+# (notes as (frequency Hz, seconds); a chord is a tuple of frequencies)
+SFX = {
+    'greeting': [(523, .12), (659, .12), (784, .22)],                     # ding-ding-dong, up
+    'captured': [(392, .09), (523, .09), (659, .09), (784, .09), ((784, 988, 1175), .35)],   # rising arpeggio, chord
+    'check': [(880, .1), (0, .06), (880, .1), (0, .06), (1175, .25)],     # two sharp beeps, a high note
+    'lost': [(330, .18), (311, .18), (294, .3)],                          # sliding down, grumpy
+    'checked': [(440, .08), (0, .05), (415, .08), (0, .05), (392, .22)],  # worried, stepping down
+    'won': [(523, .11), (523, .11), (523, .11), (659, .3), (0, .05), (784, .11), (659, .11), (784, .5)],   # fanfare
+    'lost_game': [(392, .3), (370, .3), (349, .3), (330, .6)],            # sad trombone
+    'draw': [(523, .15), (523, .15), (0, .1), (523, .3)],
+    'ask': [(659, .08), (784, .12)],
+}
+SFX_DIR = os.path.join(_HERE, '..', 'log', 'chess', 'sfx')
+
+
+def sfx_wave(notes, rate=22050, volume=0.35):
+    """Square-ish chiptune samples (int16) for a note list; a plucky envelope per note."""
+    import numpy as np
+    out = []
+    for freqs, seconds in notes:
+        n = int(rate * seconds)
+        t = np.arange(n) / rate
+        if not freqs:
+            out.append(np.zeros(n)); continue
+        freqs = freqs if isinstance(freqs, tuple) else (freqs,)
+        tone = sum(np.sign(np.sin(2 * np.pi * f * t)) * 0.6 + np.sin(2 * np.pi * f * t) * 0.4 for f in freqs) / len(freqs)
+        envelope = np.minimum(1.0, t / 0.01) * np.exp(-3.0 * t / max(seconds, 0.05))
+        out.append(tone * envelope)
+    samples = np.concatenate(out) if out else np.zeros(1)
+    return (np.clip(samples * volume, -1, 1) * 32767).astype('<i2')
+
+
+def sfx_file(event, rate=22050):
+    """The effect's wav on disk (made once); None for events without one."""
+    notes = SFX.get(event)
+    if not notes:
+        return None
+    path = os.path.join(SFX_DIR, f'{event}.wav')
+    if not os.path.exists(path):
+        import wave
+        os.makedirs(SFX_DIR, exist_ok=True)
+        with wave.open(path, 'wb') as out:
+            out.setnchannels(1); out.setsampwidth(2); out.setframerate(rate)
+            out.writeframes(sfx_wave(notes, rate).tobytes())
+    return path
+
+
 class Piper:
     """Speak with Piper TTS through the laptop's audio; falls back to printing."""
 
@@ -281,7 +329,7 @@ class Piper:
             os.remove(path)
             return None
 
-    def play(self, path):
+    def play(self, path, keep=False):
         if path is None:
             return False
         try:
@@ -292,10 +340,20 @@ class Piper:
             print(f'NOTE: could not play ({error})', flush=True)
             return False
         finally:
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+            if not keep:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+    def effect(self, event):
+        """The emotion's jingle, as the gesture starts; silent for unknown events."""
+        try:
+            path = sfx_file(event)
+        except Exception as error:   # noqa: BLE001 - numpy missing, disk full: no jingle, still a line
+            print(f'NOTE: no sound effect ({error})', flush=True)
+            return False
+        return self.play(path, keep=True) if path else False
 
     def say(self, text):
         print(f'ROBOT    {text}', flush=True)
@@ -322,18 +380,19 @@ def announce(event, line, path=SAID_FILE, seconds=None, lead=None):
     return row
 
 
-def respond(event, detail, brain, mouth, log=print, said_file=SAID_FILE):
-    """Choose the line (model, else canned), show it, speak it. Returns the line."""
+def respond(event, detail, brain, mouth, log=print, said_file=SAID_FILE, effects=True):
+    """Jingle for the emotion, then the line (model, else canned): shown and spoken. Returns the line."""
     line = brain.line(event, detail) if brain is not None else None
     source = 'model'
     if not line:
         line, source = canned(event, detail), 'canned'
+    # Synthesize first (about a second), then the jingle while the arm's
+    # gesture is under way, then the bubble and the voice together.
+    wav = mouth.synthesize(line) if line and hasattr(mouth, 'synthesize') else None
+    if effects and hasattr(mouth, 'effect'):
+        mouth.effect(event)
     if line:
         log(f'LINE     {json.dumps({"event": event, "source": source})}')
-        # Synthesize first (about a second), then show the bubble and start the
-        # sound together: announcing before synthesis put the text a second
-        # ahead of the voice (2026-10-14).
-        wav = mouth.synthesize(line) if hasattr(mouth, 'synthesize') else None
         announce(event, line, said_file)
         print(f'ROBOT    {line}', flush=True)
         if wav is not None:
@@ -343,7 +402,7 @@ def respond(event, detail, brain, mouth, log=print, said_file=SAID_FILE):
     return line
 
 
-def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print):
+def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print, effects=True):
     """Tail the events file forever, speaking each new line's event."""
     position = 0 if from_start else (os.path.getsize(path) if os.path.exists(path) else 0)
     log(f'VOICE    {json.dumps({"events": os.path.relpath(path), "model": getattr(brain, "model", None), "stop": "Ctrl+C"})}')
@@ -368,7 +427,7 @@ def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print):
             event = row.pop('event', None)
             if time.time() - float(row.get('t', time.time())) > 30:
                 continue                  # an old event is not worth a late remark
-            respond(event, row, brain, mouth, log)
+            respond(event, row, brain, mouth, log, effects=effects)
         time.sleep(poll_s)
 
 
@@ -382,6 +441,7 @@ def main():
     cli.add_argument('--replay', help='JSON file of event -> line, instead of the model')
     cli.add_argument('--say', metavar='EVENT', help='speak one event and exit (a test of the pipeline)')
     cli.add_argument('--from-start', action='store_true', help='speak the events already in the file')
+    cli.add_argument('--no-sfx', action='store_true', help='no jingles with the gestures')
     cli.add_argument('--lead', type=float, default=LEAD_S,
                      help='seconds the bubble on the page waits after the sound starts (TV audio delay)')
     cli.add_argument('--sink', default='HDMI',
@@ -403,11 +463,12 @@ def main():
         if hasattr(brain, 'warm'):
             print(f'MODEL    loaded in {brain.warm()} s', flush=True)
         started = time.time()
-        respond(args.say, {'arm': 'black', 'san': 'Nxd4', 'result': '0-1', 'moves': 31}, brain, mouth)
+        respond(args.say, {'arm': 'black', 'san': 'Nxd4', 'result': '0-1', 'moves': 31, 'by': 'checkmate'},
+                brain, mouth, effects=not args.no_sfx)
         print(f'TIMING   {time.time() - started:.1f} s from event to the end of speech', flush=True)
         return 0
     try:
-        follow(args.events, brain, mouth, from_start=args.from_start)
+        follow(args.events, brain, mouth, from_start=args.from_start, effects=not args.no_sfx)
     except KeyboardInterrupt:
         return 0
 

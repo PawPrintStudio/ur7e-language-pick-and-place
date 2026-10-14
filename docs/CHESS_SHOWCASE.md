@@ -95,29 +95,44 @@ Before a game, verify the overlay's a1 and grid line up with the real board,
 scan age updates, and all pieces are visible. A striped square means unknown,
 not empty; the game record and camera estimate have different jobs.
 
+**T4 — the robot's voice, in a HOST terminal (not the container), TV on:**
+
+```bash
+.venv-voice/bin/python scripts/chess_voice.py
+```
+
+Wait for `MODEL {"loaded": true}` (up to a minute the first time) and an
+`AUDIO` line with `pw-play --target` (the TV over HDMI). The game does not
+depend on it; Ctrl+C stops it.
+
 **T3 — interactive game, after the physical rehearsal checks below:**
 
 ```bash
-python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --skill 1
+python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --skill 20 --hover 0.10
 ```
 
 This starts a **new standard position**, student White, robot Black. Reset the
 physical pieces first. Keep confirmations enabled; do not add `--yes`.
-The 100% approval ceiling does not set the pendant slider. Chess still requests
-0.09 rad/s within the existing 0.10 rad/s joint safety envelope and minimum
-waypoint timing; robot safety scaling also remains active. This is not maximum
-rated robot speed or proof of safe clearance.
+The 100% approval ceiling does not set the pendant slider. Chess moves at
+0.32 rad/s (0.10 beside the pieces) with soft starts, under the 0.6 rad/s
+software envelope; robot safety scaling also remains active. Add
+`--careful` for a per-step Go after any calibration change.
 
-Every prompt below is also a button on **http://localhost:8091/#operator**
-in a second browser window on the laptop (the projected page has no
-controls; answers are accepted from this computer only). **New game** there
-restarts the record for the next group without leaving `play`.
+Every prompt is also a button on **http://localhost:8091/#operator** in a
+second browser window on the laptop (the projected page has no controls;
+answers are accepted from this computer only). **New game** there restarts
+the record for the next group without leaving `play`, even while the arm is
+finishing a step; **Quit play** stops it.
 
 1. Invite one student to make a legal White move when the presenter permits it.
-2. Student steps back; the **operator** clicks **Read the board** (or Enter in T3).
-3. Read the detected move and confirm it, or type the real move (`e2e4`, `Nf3`).
-4. Confirm everyone is clear before approving the robot reply and each step.
-5. Let the arm finish; check the physical board before inviting the next move.
+2. Student steps back. The camera reads the board every few seconds and
+   shows `I saw ...` by itself; it stands after 5 s. Click **No** or type the
+   real move (`e2e4`, `Nf3`) only when it is wrong.
+3. Click **Clear: let the arm move** when everyone is clear; that approves
+   the whole move, a capture included.
+4. Let the arm finish (about 30 s a step); it reacts to captures, checks and
+   the result with a gesture and a spoken line. Check the physical board
+   before inviting the next move.
 
 **Check again** on the audience page requests a camera scan only. If camera
 move recognition is uncertain, type the move at the existing prompt; this

@@ -255,16 +255,19 @@ Confirm T1 says `chess stack up`, T2 is live, calibration is accepted and
 the physical pieces are at the normal start. In **T3 CONTAINER**:
 
 ```bash
-python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --skill 1
+python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --skill 20 --hover 0.10
 ```
 
 | Option | Meaning |
 |---|---|
 | `play` | Starts a new standard game (`--resume` carries on from the recorded one). Every prompt is also a button on **http://localhost:8091/#operator** on this laptop. |
-| `--vision` | Reads student moves and measures piece centres/heights for picking. |
+| `--vision` | Reads student moves (watching the board while the prompt waits) and measures piece centres/heights for picking. |
 | `--execute` | Enables real motion after operator confirmations. |
 | `--max-speed-percent 100` | Permits live speed scaling up to 100%; does not set the pendant slider or remove trajectory safety limits. |
-| `--skill 1` | Uses Stockfish skill level 1; replies may vary between games. |
+| `--skill 20` | Stockfish at full strength; `--skill 1` for a beatable robot. |
+| `--hover 0.10` | Carries pieces 10 cm over the tallest piece (8 cm warns). |
+| `--careful` | A Go per step as well as per move: first runs after a calibration change. |
+| `--no-gestures` | No wrist reactions. |
 
 Student is White; robot is Black. Keep confirmations; **do not add `--yes`**.
 If startup warns that board position could not be checked, stop and resolve

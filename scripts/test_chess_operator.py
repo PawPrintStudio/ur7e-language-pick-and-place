@@ -328,9 +328,12 @@ class FakeVision:
 
     def look(self, tips):
         geometry = square_board()
+        squares = {chess.square_name(s): {'occupied': False, 'seen': True, 'top_m': 0.0, 'centre': None}
+                   for s in chess.SQUARES}
         x, y = geometry.square_xy(self.square)
-        return ({self.square: {'occupied': True, 'centre': [x + 0.003, y, 0.0], 'top_m': self.top_m}},
-                None, None)
+        squares[self.square] = {'occupied': True, 'seen': True, 'centre': [x + 0.003, y, 0.0],
+                                'top_m': self.top_m}
+        return squares, None, None
 
 
 def test_a_measured_piece_grips_by_type_and_checks_its_width(monkeypatch):
@@ -349,6 +352,26 @@ def test_a_measured_piece_grips_by_type_and_checks_its_width(monkeypatch):
     target = adapters.seen_target('b1', board.piece_at(chess.B1), lambda x, y: 0.0, 0.0)
     assert target.detail['tip_above_table_m'] == pytest.approx(0.75 * 0.054 - lab_chess.PAD_BELOW_GRIP_M)
     assert adapters.expected_width_mm is None
+
+
+def test_a_capture_read_by_diff_with_margin_one_is_offered_not_refused(monkeypatch):
+    monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
+    board = chess.Board('rnbqkbnr/1ppp1ppp/p3p3/3N4/8/8/PPPPPPPP/R1BQKBNR w KQkq - 0 3')
+    capture, quiet = board.parse_san('Nxc7+'), board.parse_san('Ne7')
+    vision = FakeVision('c7')
+    vision.baseline = {'d5': {'seen': True, 'occupied': True}}
+    vision.cv.infer_move_diff = lambda position, before, after: (capture, 1, [(0, capture), (-1, quiet)])
+    vision.cv.infer_move = lambda *a: (capture, 1, [(0, capture), (-1, quiet)])
+    vision.cv.piece_colours = lambda squares, position: {}
+    asked = []
+    monkeypatch.setattr(lab_chess, 'ask_operator',
+                        lambda kind, text, options, allow_text=False, auto=None: asked.append(kind) or ('' if kind == 'student_move' else 'y'))
+    assert lab_chess.student_move(vision, None, board, 'White') == capture
+    assert asked == ['student_move', 'confirm_move']          # diff + margin 1: offered for confirmation
+    vision.baseline = None                                     # absolute reading: margin 1 is a coin toss
+    asked.clear()
+    assert lab_chess.student_move(vision, None, board, 'White') is None
+    assert asked == ['student_move']
 
 
 def test_a_wrong_piece_height_is_warned_about(monkeypatch, capsys):

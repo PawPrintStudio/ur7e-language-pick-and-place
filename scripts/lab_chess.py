@@ -2028,7 +2028,11 @@ def student_move(vision, executor, board, side):
             'runners_up': [board.san(m) for _, m in ranking[1:3]]}
     say('SEEN', seen)
     chess_gestures.log_event(EVENTS_FILE, 'seen', **seen)
-    if move is None or margin < 2:
+    # Absolute reading: a plain move shows two changed squares, so a margin of
+    # 1 is a coin toss. Diff reading: a capture only vacates its square, so it
+    # can beat a quiet move from the same square by exactly 1 (2026-10-14,
+    # Nxc7+ read right and refused); only a tie (0) is unsure there.
+    if move is None or margin < (1 if how == 'diff' else 2):
         print(board_text(squares))
         say('UNSURE', 'two moves explain the board equally well: type the move')
         chess_gestures.log_event(EVENTS_FILE, 'unsure', **seen)

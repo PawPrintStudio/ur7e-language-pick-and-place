@@ -79,7 +79,8 @@ def test_respond_prefers_the_model_falls_back_to_canned_and_tells_the_page(tmp_p
                      log=lambda *a: None, said_file=said) == 'Your king is sweating.'
     shown = json.load(open(said))
     assert shown['event'] == 'check' and shown['line'] == 'Your king is sweating.'
-    assert 2.0 <= shown['seconds'] <= 4.0 and time.time() - shown['t'] < 2
+    assert 2.0 <= shown['seconds'] <= 4.0
+    assert 0 < shown['t'] - time.time() <= v.LEAD_S + 0.1           # stamped a lead ahead, for the TV delay
     line = v.respond('check', {'san': 'Qh4+'}, Brain(None), mouth, log=lambda *a: None, said_file=said)
     assert line in [l for l in v.EVENTS['check'][1]]
     assert v.respond('unknown', {}, None, mouth, log=lambda *a: None, said_file=said) == ''

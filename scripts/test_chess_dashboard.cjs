@@ -232,7 +232,10 @@ test('the character goes into the widest free margin around the board, sized to 
 
 test('the cartoon arm shows a mood and a bubble while the voice speaks, fades after, thinks between', () => {
   const p = page(), state = boardState();
-  state.voice = {event:'captured', line:'That piece is mine now.', age_s:0.5, seconds:3};
+  state.voice = {event:'captured', line:'That piece is mine now.', age_s:-0.8, seconds:3};   // stamped ahead: not yet
+  p.show(state);
+  assert.equal(p.element('bubble').hidden, true);
+  state.voice.age_s = 0.5;
   p.show(state);
   assert.equal(p.element('robot')['data-mood'], 'smug');
   assert.match(p.element('robot').className, /speaking/);

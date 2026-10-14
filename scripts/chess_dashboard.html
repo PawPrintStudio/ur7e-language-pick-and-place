@@ -453,8 +453,9 @@ function show(state) {
 // The cartoon arm: a mood per event, a speech bubble while the voice speaks.
 const MOOD = {greeting:'happy', captured:'smug', lost:'annoyed', check:'smug', checked:'annoyed', won:'joy', lost_game:'sad', draw:'happy', ask:'happy'};
 function paintRobot(state) {
-  const voice = state.voice || null;
-  const speaking = voice && voice.age_s != null && voice.age_s < (voice.seconds || 3);
+  // A line stamped for a moment ahead (the voice's lead for the TV's audio delay) is not shown yet.
+  const voice = state.voice && state.voice.age_s != null && state.voice.age_s >= 0 ? state.voice : null;
+  const speaking = voice && voice.age_s < (voice.seconds || 3);
   let mood = 'neutral';
   if (voice) mood = MOOD[voice.event] || 'neutral';
   else if (state.thinking) mood = 'thinking';

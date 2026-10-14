@@ -302,10 +302,19 @@ class Piper:
         return self.play(self.synthesize(text))
 
 
-def announce(event, line, path=SAID_FILE, seconds=None):
-    """Tell the dashboard what is being said: watch serves it, the page shows the face and bubble."""
+LEAD_S = 1.0   # the bubble appears this long after the sound is started: page poll + TV audio delay
+
+
+def announce(event, line, path=SAID_FILE, seconds=None, lead=None):
+    """Tell the dashboard what is being said: watch serves it, the page shows the face and bubble.
+
+    ``lead`` (seconds) stamps the line for a moment in the future; the page
+    holds the bubble until then, so the text does not run ahead of a TV's
+    audio delay (2026-10-14: about a second ahead over HDMI).
+    """
     seconds = seconds if seconds is not None else round(1.0 + 0.45 * len(line.split()), 1)
-    row = {'event': event, 'line': line, 't': time.time(), 'seconds': seconds}
+    lead = LEAD_S if lead is None else lead
+    row = {'event': event, 'line': line, 't': time.time() + lead, 'seconds': seconds}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + '.tmp', 'w') as stream:
         json.dump(row, stream)
@@ -364,6 +373,7 @@ def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print):
 
 
 def main():
+    global LEAD_S
     cli = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     cli.add_argument('--events', default=EVENTS_FILE)
     cli.add_argument('--model', default=DEFAULT_MODEL, help='Ollama model name')
@@ -372,6 +382,8 @@ def main():
     cli.add_argument('--replay', help='JSON file of event -> line, instead of the model')
     cli.add_argument('--say', metavar='EVENT', help='speak one event and exit (a test of the pipeline)')
     cli.add_argument('--from-start', action='store_true', help='speak the events already in the file')
+    cli.add_argument('--lead', type=float, default=LEAD_S,
+                     help='seconds the bubble on the page waits after the sound starts (TV audio delay)')
     cli.add_argument('--sink', default='HDMI',
                      help='audio output: a substring of the PipeWire sink name (default HDMI: the TV); '
                           '"default" for the laptop speakers')
@@ -380,6 +392,7 @@ def main():
         print('BLOCKED  this is the container (no sound card): run chess_voice.py in a HOST terminal, '
               'from the repo folder on the laptop', flush=True)
         return 2
+    LEAD_S = max(0.0, args.lead)
     brain = None if args.no_llm else Replay(args.replay) if args.replay else Ollama(args.model)
     mouth = Piper(args.voice, sink=None if args.sink == 'default' else args.sink)
     print(f'AUDIO    {json.dumps({"player": " ".join(mouth.player), "voice": args.voice})}', flush=True)

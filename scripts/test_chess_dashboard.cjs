@@ -11,6 +11,7 @@ function page(fetch = async () => ({ok:true, json:async () => ({})}), {operator 
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {textContent:'', innerHTML:'', disabled:false, className:'',
+      style:{vars:{}, setProperty(name, value) { this.vars[name] = value; }},
       setAttribute(name, value) { this[name] = value; }});
     return elements.get(id);
   };
@@ -176,6 +177,32 @@ test('a confirmation with a timeout shows the countdown; the operator view marks
   state.prompt = {...state.prompt, timeout_s:null};
   p.show(state);
   assert.equal(p.element('op-count').textContent, '');
+});
+
+test('the character goes into the widest free margin around the board, sized to it, never on the board', () => {
+  const p = page(), state = boardState();
+  // The lab's close-up on 2026-10-14: board from 25 % to 73 % across, 29 % to 90 % down (frame 662 x 414).
+  const quad = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  state.live.camera = {width:2000, height:1500, bounds:[725, 572, 662, 414],
+    quads:{a1:quad(725 + 0.25 * 662, 572 + 0.29 * 414, 725 + 0.30 * 662, 572 + 0.35 * 414),
+           h8:quad(725 + 0.68 * 662, 572 + 0.85 * 414, 725 + 0.73 * 662, 572 + 0.90 * 414)}, labels:[], crops:{}};
+  const m = p.context.boardMargins(state.live.camera, true);
+  assert.ok(Math.abs(m.left - 0.25) < 0.01 && Math.abs(m.right - 0.27) < 0.01 && Math.abs(m.top - 0.29) < 0.01 && Math.abs(m.bottom - 0.10) < 0.01);
+  const top = p.context.robotPlacement(state.live.camera, true, 1200, 700);
+  assert.equal(top.side, 'top');
+  assert.ok(Math.abs(top.size - (0.29 * 700 - 24)) < 0.5, `size ${top.size}`);   // fits the 29 % strip
+  p.show(state);
+  assert.equal(p.element('robot')['data-side'], 'top');
+  assert.match(p.element('robot').style.vars['--robot-h'], /^\d+px$/);
+  // Whole-robot framing: the board is small in the middle; the margins are 45 % left, 40 % right,
+  // 46 % above, 37 % below, so the strip above wins and the face is capped at 200 px tall.
+  p.context.cameraView(false);
+  const wide = p.context.robotPlacement(state.live.camera, false, 1200, 700);
+  assert.equal(wide.side, 'top');
+  assert.equal(wide.size, 200);
+  // No camera data yet: the left corner, modest size.
+  const none = p.context.robotPlacement(null, true, 1200, 700);
+  assert.equal(none.side, 'left'); assert.equal(none.size, 276);
 });
 
 test('the cartoon arm shows a mood and a bubble while the voice speaks, fades after, thinks between', () => {

@@ -61,8 +61,17 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
 .legend .unknown { border:0; background:repeating-linear-gradient(45deg,#617583 0 2px,transparent 2px 4px); }
 .status { border-top:1px solid var(--line); padding:8px 0; display:flex; justify-content:space-between; align-items:center; gap:20px; flex:none; }
 /* The character lives over the camera's bottom-left corner, big enough for the projector. */
-.robot { position:absolute; left:12px; bottom:8px; display:flex; align-items:flex-end; gap:12px; pointer-events:none; z-index:2; }
-.robot-face { width:clamp(150px,18vw,260px); height:auto; flex:none; filter:drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+/* Placed by paintCamera in the widest margin around the board (never on it):
+   a side column stacks the bubble above the face; a top/bottom strip puts them side by side. */
+.robot { position:absolute; display:flex; gap:10px; pointer-events:none; z-index:2; --robot-w:220px; --robot-h:160px; }
+.robot[data-side="left"], .robot[data-side="right"] { flex-direction:column-reverse; bottom:10px; width:var(--robot-w); }
+.robot[data-side="left"] { left:10px; align-items:flex-start; }
+.robot[data-side="right"] { right:10px; align-items:flex-end; }
+.robot[data-side="top"], .robot[data-side="bottom"] { flex-direction:row; align-items:flex-end; left:10px; right:10px; height:var(--robot-h); }
+.robot[data-side="top"] { top:8px; } .robot[data-side="bottom"] { bottom:6px; }
+.robot-face { flex:none; filter:drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
+.robot[data-side="left"] .robot-face, .robot[data-side="right"] .robot-face { width:var(--robot-w); height:auto; }
+.robot[data-side="top"] .robot-face, .robot[data-side="bottom"] .robot-face { height:var(--robot-h); width:auto; }
 .robot #robot-head { transform-origin:58px 36px; transition:transform .4s; }
 .robot #eye-l, .robot #eye-r { transition:r .2s; }
 .robot #mouth, .robot #brow-l, .robot #brow-r { transition:d .3s; }
@@ -76,8 +85,10 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
 .robot.speaking #mouth { animation:talk .28s ease-in-out infinite alternate; }
 @keyframes talk { from { transform:scaleY(1); } to { transform:scaleY(2.2); } }
 .robot #mouth { transform-origin:83px 81px; }
-.bubble { position:relative; background:white; border:2px solid var(--maroon); border-radius:16px; padding:10px 16px; font-size:clamp(16px,1.6vw,24px); max-width:min(520px,40vw); line-height:1.3; margin-bottom:28px; }
-.bubble::before { content:""; position:absolute; left:-14px; top:50%; border:7px solid transparent; border-right-color:var(--maroon); }
+.bubble { position:relative; background:white; border:2px solid var(--maroon); border-radius:16px; padding:10px 16px; font-size:clamp(15px,1.4vw,22px); max-width:min(520px,40vw); line-height:1.3; }
+.robot[data-side="left"] .bubble, .robot[data-side="right"] .bubble { max-width:var(--robot-w); margin-bottom:6px; }
+.robot[data-side="top"] .bubble, .robot[data-side="bottom"] .bubble { margin-bottom:12px; }
+.robot[data-side="top"] .bubble::before, .robot[data-side="bottom"] .bubble::before { content:""; position:absolute; left:-14px; top:50%; border:7px solid transparent; border-right-color:var(--maroon); }
 .bubble[hidden] { display:none; }
 .bubble.fading { opacity:.55; }
 /* Operator view: the console first and large, the pictures small. */
@@ -87,7 +98,7 @@ body.operator .intro, body.operator .legend, body.operator .camera-caption, body
 body.operator .vision-view { flex:1; min-height:0; grid-template-columns:minmax(0,1fr) 220px; }
 body.operator .camera-frame { min-height:160px; }
 body.operator .board-card svg { max-height:160px; }
-body.operator .robot-face { width:90px; } body.operator .bubble { font-size:14px; max-width:300px; margin-bottom:10px; }
+body.operator .robot { --robot-w:90px !important; --robot-h:70px !important; } body.operator .bubble { font-size:13px; }
 body.operator #op-text { font-size:28px; }
 body.operator .op-buttons button { min-height:72px; font-size:22px; padding:12px 28px; }
 body.operator .op-standing button { min-height:52px; font-size:17px; }
@@ -147,7 +158,7 @@ body.operator .op-standing button { min-height:52px; font-size:17px; }
   <section class="camera-view" aria-label="Live camera with computer vision overlay">
     <div class="camera-toolbar"><h2>At the board<span>Live camera</span></h2><div class="view-switch" aria-label="Camera framing"><button id="board-view" type="button" aria-pressed="true">Board close-up</button><button id="room-view" type="button" aria-pressed="false">Whole robot</button></div></div>
     <div class="camera-frame"><img id="camera" src="/stream?view=board" alt="Live chess board with unobtrusive detection markers"><svg id="camera-overlay" aria-label="Select a square in the camera view"></svg><div id="camera-error" class="camera-error" role="status" hidden>Camera feed unavailable.<br>Ask the presenter to check the camera.</div>
-    <div class="robot" id="robot" data-mood="neutral" aria-hidden="true">
+    <div class="robot" id="robot" data-mood="neutral" data-side="left" aria-hidden="true">
       <svg viewBox="0 0 120 120" class="robot-face">
         <rect x="6" y="106" width="46" height="9" rx="3" fill="#5f6770"/>
         <path d="M29 106 L29 92" stroke="#b9c1c9" stroke-width="16" stroke-linecap="round"/>
@@ -222,8 +233,33 @@ $('cv-details').onclick = () => {
   if (currentState) { paintBoards(currentState); paintCamera(currentState); }
 };
 $('piece-cutout').onerror = () => { $('piece-cutout').hidden = true; };
+// The free margins around the board in the shown frame, as fractions of its width/height.
+function boardMargins(camera, framing) {
+  const quads = Object.values(camera?.quads || {});
+  if (!quads.length) return null;
+  const b = framing ? camera.bounds : [0, 0, camera.width, camera.height];
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const quad of quads) for (const [x, y] of quad) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  return {left: (x0 - b[0]) / b[2], right: 1 - (x1 - b[0]) / b[2], top: (y0 - b[1]) / b[3], bottom: 1 - (y1 - b[1]) / b[3]};
+}
+// Where the character fits without covering the board: the widest margin, sized to it.
+function robotPlacement(camera, framing, frameW, frameH) {
+  const m = boardMargins(camera, framing) || {left: 0.25, right: 0, top: 0, bottom: 0};
+  const side = Object.keys(m).reduce((best, k) => m[k] > m[best] ? k : best, 'left');
+  const room = side === 'left' || side === 'right' ? m[side] * frameW : m[side] * frameH;
+  const size = Math.max(70, Math.min(side === 'left' || side === 'right' ? 280 : 200, room - 24));
+  return {side, size};
+}
+function placeRobot(camera) {
+  const frame = $('camera-frame');
+  const w = frame.clientWidth || 1000, h = frame.clientHeight || 600;
+  const where = robotPlacement(camera, boardFraming, w, h);
+  $('robot').setAttribute('data-side', where.side);
+  $('robot').style.setProperty(where.side === 'left' || where.side === 'right' ? '--robot-w' : '--robot-h', `${Math.round(where.size)}px`);
+}
 function paintCamera(state) {
   const camera = state.live?.camera, seen = state.live?.squares || {};
+  placeRobot(camera);
   let overlay = '';
   if (camera) {
     const bounds = boardFraming ? camera.bounds : [0,0,camera.width,camera.height];

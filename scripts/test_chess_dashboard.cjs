@@ -19,7 +19,7 @@ function page(fetch = async () => ({ok:true, json:async () => ({})}), {operator 
   const context = vm.createContext({
     document: {getElementById:element, querySelectorAll:() => [], addEventListener:() => {},
       body:{classList:{add:x => classes.add(x), remove:x => classes.delete(x)}}},
-    fetch, AbortSignal, setTimeout:() => {},
+    fetch, AbortSignal, setTimeout:() => {}, console:{error:() => {}},
     location: {hash: operator ? '#operator' : '', search: ''},
   });
   vm.runInContext(source, context);
@@ -89,6 +89,16 @@ test('HTTP failure dims stale data and disables scan; recovery restores access',
   await p.context.poll();
   assert.equal(p.element('scan').disabled, false);
   assert.equal(p.classes.has('offline'), false);
+});
+
+test('a drawing error is logged and never shown as a lost connection; every id the script uses exists in the page', async () => {
+  const p = page(async () => ({ok:true, json:async () => ({fen:'not a fen at all', moves:'oops'})}));
+  await p.context.poll();
+  assert.equal(p.classes.has('offline'), false);
+  assert.notEqual(p.element('headline').textContent, 'Live updates paused');
+  const ids = new Set([...html.matchAll(/ id="([^"]+)"/g)].map(m => m[1]));
+  for (const used of new Set([...source.matchAll(/\$\('([^']+)'\)/g)].map(m => m[1])))
+    assert.ok(ids.has(used), `script uses $('${used}') but no element has that id`);
 });
 
 test('failed scan request explains the failure without an unhandled rejection', async () => {

@@ -39,36 +39,63 @@ SAID_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'said.json')   # what is b
 DEFAULT_MODEL = 'qwen2.5:3b'          # answers in about a second on a 6 GB GPU
 DEFAULT_VOICE = 'en_US-lessac-medium'
 OLLAMA = 'http://127.0.0.1:11434'
-MAX_WORDS = 20
+MAX_WORDS = 22
 
-PERSONA = ('You are Ro-Boko, a robot arm playing chess against a student at a '
-           'university makerspace. Speak in the first person as the robot, to the '
-           'student. You are confident, a little dramatic and kind; a touch of trash '
-           'talk is fine, never mean. Never praise the student for a capture YOU made. '
-           'Answer with ONE sentence of at most 20 words, no quotes, no emoji, no '
-           'stage directions. Do not invent moves, squares or pieces beyond the one '
-           'you are told about. Examples of your style: "That piece is mine now." '
-           '"I meant to give that one away. Mostly." "Check. Mind your king."')
+PERSONA = ('You are Ro-Boko, a friendly robot arm playing chess with children and '
+           'families visiting a university makerspace. Speak in the first person as '
+           'the robot, to the child in front of you. You are warm, playful, a little '
+           'dramatic and always encouraging; gentle teasing is fine, never mean, never '
+           'scary, nothing a parent would frown at. Never praise the child for a '
+           'capture YOU made. When you are given a FACT about how you work, weave it '
+           'in simply, the way you would tell a curious eight-year-old, without '
+           'technical words. Answer with ONE sentence of at most 22 words, no quotes, '
+           'no emoji, no stage directions. Do not invent moves, squares or pieces '
+           'beyond the one you are told about. Examples of your style: '
+           '"That piece is mine now; my camera spotted it from above." '
+           '"Check! I looked at thousands of moves in one second to find that one." '
+           '"Nice move; you got one past my eyes."')
+
+# One thing about how the robot works, per event, told the simple way. Each
+# line is offered to the model as the FACT to weave in, and used as a canned
+# line on its own when the model is slow.
+FACTS = {
+    'greeting': ['A camera above the board shows me every piece in 3D, so I know where to reach.',
+                 'I think with a chess program that tries thousands of moves before picking one.'],
+    'captured': ['My camera measures how tall each piece is so my fingers close at the right height.',
+                 'I grab pieces from the corner, where the neighbours give my fingers the most room.'],
+    'lost': ['I only see the board between moves, so you surprised me there.',
+             'My chess program already knew that could happen; it chose the move anyway.'],
+    'check': ['I looked at thousands of moves in a second and picked the one that bothers your king.',
+              'Before I move, I plan the whole path so my arm never bumps a piece.'],
+    'won': ['A computer can look at more moves than any person, but you made me work for it.'],
+    'lost_game': ['Even a robot that checks thousands of moves can be beaten by a good plan.'],
+    'draw': ['Neither of us could win: my program and your brain agreed on that.'],
+}
 
 # What each event means, for the prompt and as the fallback line.
 EVENTS = {
-    'greeting': ('A new student sits down to play against you; you, the robot, play {arm}.',
-                 ['Welcome. I am Ro-Boko. Make your move when you are ready.',
-                  'A new challenger. I play {arm}; show me what you have got.']),
-    'captured': ('You, the robot, just took one of the student\'s pieces with the move {san}.',
-                 ['That piece is mine now.', 'Thank you for the {san}. I will keep it.',
-                  'One fewer piece for you to worry about.']),
-    'lost': ('The student just took one of YOUR pieces with the move {san}; you are the one who lost material.',
-             ['I meant to give that one away. Mostly.', 'Noted. I will remember {san}.',
-              'A fair trade, I am sure. Let us see.']),
-    'check': ('You, the robot, just put the student\'s king in check with {san}.', ['Check. Mind your king.',
-                                                   'Your king looks nervous.']),
-    'won': ('You, the robot, just WON the game against the student ({result}) after {moves} moves.',
-            ['Good game. The arm wins this one.', 'Checkmate, as calculated. Play again?']),
-    'lost_game': ('The student just beat you: you, the robot, LOST the game ({result}) after {moves} moves.',
-                  ['Well played. You have beaten a robot today.',
-                   'I resign with dignity. Rematch?']),
-    'draw': ('The game ended in a draw ({result}).', ['A draw. Honour on both sides.']),
+    'greeting': ('A new child sits down to play against you; you, the robot, play {arm}.',
+                 ['Hello, I am Ro-Boko! My camera watches the board from above; make your move when you are ready.',
+                  'Welcome, challenger! I play {arm}; my chess brain tries thousands of moves before I pick one.']),
+    'captured': ('You, the robot, just took one of the child\'s pieces with the move {san}.',
+                 ['That piece is mine now; my camera measured exactly how tall it was before I grabbed it.',
+                  'Thank you for the {san}; I plan my whole arm path so I never bump the other pieces.',
+                  'One for my box! I pick pieces up from the corner, where my fingers have the most room.']),
+    'lost': ('The child just took one of YOUR pieces with the move {san}; you are the one who lost material.',
+             ['Oh! You got one past my camera; I only look at the board between moves.',
+              'Nice {san}; my chess program saw that coming and chose the move anyway.',
+              'A fair trade, I hope; let us see what my program says next.']),
+    'check': ('You, the robot, just put the child\'s king in check with {san}.',
+              ['Check! I looked at thousands of moves in one second to find that one.',
+               'Check; mind your king, I planned that move before my arm even started moving.']),
+    'won': ('You, the robot, just WON the game against the child ({result}) after {moves} moves.',
+            ['Good game! A computer can check more moves than anyone, but you made me work for it.',
+             'I won this one; play again and see if you can trick my camera?']),
+    'lost_game': ('The child just beat you: you, the robot, LOST the game ({result}) after {moves} moves.',
+                  ['You beat a robot today! Even one that checks thousands of moves can lose to a good plan.',
+                   'Well played; I bow my gripper to you. Rematch?']),
+    'draw': ('Your game with the child ended in a draw ({result}).',
+             ['A draw! Neither of us could win: my program and your brain agreed on that.']),
 }
 
 
@@ -93,11 +120,33 @@ def canned(event, detail):
         return lines[0].split('{')[0].strip()
 
 
-def prompt_for(event, detail):
+def prompt_for(event, detail, teach=True):
+    """The model rewrites a canned line rather than inventing one.
+
+    2026-10-14: asked to react freely, the 3B model praised the child for the
+    robot's own captures and drifted to "Good job!". Paraphrasing a line that
+    already carries the meaning and the fact keeps it on track.
+    """
     situation = EVENTS[event][0].format(**{k: detail.get(k, '?') for k in ('arm', 'san', 'result', 'moves')})
-    fen = detail.get('fen')
-    return (f'{situation}' + (f' Position (FEN): {fen}.' if fen else '')
-            + ' Say one line to the student.')
+    line = canned(event, detail)
+    fact = random.choice(FACTS.get(event, [''])) if teach else ''
+    return (f'{situation} Say this to the child in your own words, keeping its meaning'
+            + (' and this fact about how you work: ' + fact if fact else '')
+            + f'. The line: "{line}"')
+
+
+PRAISE = ('good job', 'nice move', 'well done', 'great move', 'your move was', 'good thinking',
+          'good eye', 'you got', 'you did')
+
+
+def sane(event, line):
+    """Reject a model line that gets the perspective wrong or says nothing."""
+    low = (line or '').lower()
+    if len(low.split()) < 4:
+        return False
+    if event in ('captured', 'check', 'won', 'greeting') and any(p in low for p in PRAISE):
+        return False
+    return True
 
 
 class Ollama:
@@ -135,8 +184,9 @@ class Ollama:
         if event not in EVENTS:
             return None
         try:
-            answer = self._generate(prompt_for(event, detail), PERSONA, 40, self.timeout_s)
-            return one_sentence(answer.get('response', '')) or None
+            answer = self._generate(prompt_for(event, detail), PERSONA, 48, self.timeout_s)
+            line = one_sentence(answer.get('response', ''))
+            return line if sane(event, line) else None
         except (urllib.error.URLError, OSError, ValueError, TimeoutError):
             return None
 

@@ -41,6 +41,22 @@ def test_canned_lines_fill_the_detail_and_survive_missing_keys():
     assert v.canned('nothing', {}) == ''
 
 
+def test_every_event_has_a_fact_and_a_kid_friendly_canned_line():
+    for event, (situation, lines) in v.EVENTS.items():
+        assert v.FACTS[event], event
+        assert 'child' in situation
+        for line in lines:
+            assert len(line.split()) <= 24, line
+            assert not any(word in line.lower() for word in ('stupid', 'loser', 'idiot', 'dumb'))
+    prompt = v.prompt_for('check', {'san': 'Qh4+'})
+    assert 'fact about how you work' in prompt and 'child' in prompt and 'The line:' in prompt
+    assert 'fact about' not in v.prompt_for('check', {'san': 'Qh4+'}, teach=False)
+    assert not v.sane('captured', 'Good job figuring out that move!')      # the robot captured, not the child
+    assert not v.sane('check', 'Oops!')
+    assert v.sane('lost', 'Nice move, you got one past my camera.')
+    assert v.sane('captured', 'That piece is mine now; my camera measured it first.')
+
+
 def test_respond_prefers_the_model_falls_back_to_canned_and_tells_the_page(tmp_path):
     mouth, said = Mouth(), str(tmp_path / 'said.json')
     assert v.respond('check', {'san': 'Qh4+'}, Brain('Your king is sweating.'), mouth,

@@ -121,20 +121,44 @@ wait_until() {  # wait_until <seconds> <what> <log> <test...>
   echo "   ready: $what"
 }
 has_service() { timeout 20 ros2 service list | grep -qx "$1"; }
-controller_active() {
-  timeout 20 ros2 control list_controllers | grep scaled_joint_trajectory_controller | grep -q active
+controller_ready() {
+  # The showcase image has controller_manager_msgs but not the ros2controlcli
+  # plugin. Query the service directly and match the exact controller/state.
+  timeout 20 python3 - "$1" <<'PY'
+import sys
+import rclpy
+from controller_manager_msgs.srv import ListControllers
+
+rclpy.init()
+node = rclpy.create_node('lab_controller_readiness')
+ready = False
+allowed_states = ('active', 'inactive') if sys.argv[1] == 'configured' else ('active',)
+try:
+    client = node.create_client(ListControllers, '/controller_manager/list_controllers')
+    if client.wait_for_service(timeout_sec=5.0):
+        future = client.call_async(ListControllers.Request())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=5.0)
+        if future.done() and future.result() is not None:
+            ready = any(c.name == 'scaled_joint_trajectory_controller' and c.state in allowed_states
+                        for c in future.result().controller)
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+sys.exit(0 if ready else 1)
+PY
 }
 in_log() { grep -q "$2" "$OUT/$1.log"; }
 
 echo "== 1/4 driver"
 start driver ros2 launch ur7e_bringup ur7e_bringup.launch.py launch_rviz:=false
-wait_until 90 "scaled_joint_trajectory_controller active" driver controller_active
+wait_until 90 "scaled_joint_trajectory_controller configured" driver controller_ready configured
 
 echo
 echo "   >>> Pendant: set the speed slider (it is the speed; cap ${SPEED} %), then press PLAY. <<<"
 echo
 wait_until 180 "pendant Play (reverse interface connected)" driver \
   in_log driver "Robot connected to reverse interface"
+wait_until 30 "scaled_joint_trajectory_controller active" driver controller_ready active
 
 echo "== 2/4 MoveIt (KDL)"
 start moveit ros2 launch scripts/lab_arm_moveit.launch.py ik:=kdl

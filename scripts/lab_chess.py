@@ -22,6 +22,7 @@ corner 1 toward 2, ranks from corner 1 toward 4. ``box`` is a point on the
 rim of the captured-pieces box; taken pieces are let go just above it.
 """
 import argparse
+from contextlib import contextmanager
 import json
 import math
 import os
@@ -59,13 +60,110 @@ def say(tag, payload):
     print(f'{tag:8} {text}', flush=True)
 
 
-def ask(prompt, auto_yes=False):
-    if auto_yes:
-        return True
+# --- the operator's answers: from the dashboard or the terminal, whichever is first ----
+
+ANSWER_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'answer.json')
+GO, STOP, NEW_GAME, QUIT = 'y', 'n', 'new', 'quit'
+_stdin_closed = False
+
+
+class NewGame(Exception):
+    """The operator asked for a fresh game (a new group at the board)."""
+
+
+class QuitGame(Exception):
+    """The operator stopped the match."""
+
+
+def option(key, label, style=''):
+    return {'key': key, 'label': label, 'style': style}
+
+
+def _answer_from_file(prompt_id):
+    """The dashboard's answer to this prompt, or None. A stale answer is dropped."""
     try:
-        return input(f'{prompt} [y/N] ').strip().lower() in ('y', 'yes')
-    except EOFError:
-        return False
+        with open(ANSWER_FILE) as stream:
+            data = json.load(stream)
+    except (OSError, ValueError):
+        return None
+    try:
+        os.remove(ANSWER_FILE)
+    except FileNotFoundError:
+        pass
+    if data.get('id') != prompt_id:
+        return None
+    return str(data.get('answer', '')).strip()
+
+
+def _line_from_terminal(timeout_s):
+    """A line typed in the terminal within ``timeout_s``, or None (also at EOF)."""
+    global _stdin_closed
+    if _stdin_closed:
+        time.sleep(timeout_s)
+        return None
+    import select
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], timeout_s)
+    except (OSError, ValueError):            # no usable stdin (a service, a test)
+        _stdin_closed = True
+        return None
+    if not ready:
+        return None
+    line = sys.stdin.readline()
+    if line == '':
+        _stdin_closed = True
+        return None
+    return line.strip()
+
+
+def ask_operator(kind, text, options, allow_text=False, auto=None):
+    """Show a prompt on the operator page and in the terminal; return the answer.
+
+    The answer is an option key (``GO``, ``STOP``, ...) or, with ``allow_text``,
+    whatever was typed. Every prompt carries an id, so a click left over from an
+    earlier question never answers this one. ``NEW_GAME`` and ``QUIT`` raise when
+    they are among the options: the game loop restarts or stops.
+
+    Why a file and not a socket: ``watch`` already serves the page and owns the
+    only HTTP port; ``play`` is a separate process (often another terminal).
+    The same state.json hand-off the dashboard reads is enough for one operator.
+    """
+    if auto is not None:
+        return auto
+    prompt_id = f'{time.time():.3f}-{random.randrange(1 << 20):x}'
+    keys = {o['key']: o['label'] for o in options}
+    publish_state(prompt={'id': prompt_id, 'kind': kind, 'text': text, 'options': options,
+                          'allow_text': allow_text}, beat=time.time())
+    hint = ', '.join(f'{k or "Enter"} = {v}' for k, v in keys.items())
+    if allow_text:
+        hint += ', or type it'
+    print(f'{text} [{hint}] ', end='', flush=True)
+    try:
+        last_beat = time.time()
+        while True:
+            answer = _answer_from_file(prompt_id)
+            if answer is None:
+                answer = _line_from_terminal(0.2)
+            if answer is None:
+                if time.time() - last_beat > 1.0:
+                    publish_state(beat=time.time())
+                    last_beat = time.time()
+                continue
+            print()
+            low = answer.lower()
+            if low in ('new', 'new game') and NEW_GAME in keys:
+                raise NewGame
+            if low in ('quit', 'q', 'resign') and QUIT in keys:
+                raise QuitGame
+            if low in ('y', 'yes', 'go'):
+                low = GO
+            if low in keys:
+                return low
+            if allow_text:
+                return answer
+            print(f'{answer!r} is not one of: {hint}')
+    finally:
+        publish_state(prompt=None, beat=time.time())
 
 
 # --- the board ---------------------------------------------------------------------------
@@ -252,7 +350,7 @@ def look_score(gray, geometry, pose, matrix, dist, position):
 
 
 def locate_camera(geometry, gray, matrix, dist, position=None, flip=False, previous=None,
-                  with_world=False, every=False):
+                  with_world=False, every=False, grids=None):
     """Camera pose from whatever part of the board's grid is visible.
 
     Returns (base_from_camera 4x4, the corners used (px), rms px, corners used).
@@ -264,7 +362,7 @@ def locate_camera(geometry, gray, matrix, dist, position=None, flip=False, previ
     """
     import cv2
     position = position or chess.Board()
-    grids = visible_grids(gray)
+    grids = visible_grids(gray) if grids is None else grids
     if not grids:
         raise RuntimeError('no part of the board grid found: check the board is in view '
                            'and lit evenly')
@@ -500,6 +598,43 @@ def track_board(geometry, device=None, conf=ZED_CONF, position=None, path=GEOMET
     raise last
 
 
+def board_region_grids(geometry, gray, matrix, dist, base_from_camera, margin_px=20):
+    """Find conventional grids near the saved board, excluding background patterns.
+
+    Coordinates are returned in the original image; the camera intrinsics and
+    the downstream pose/board-motion acceptance thresholds remain unchanged.
+    ``margin_px`` widens the crop when the board may have moved since the pose
+    was saved (a re-touch after the stand moved: overlay uses 80).
+    """
+    import cv2
+    camera_from_base = np.linalg.inv(base_from_camera)
+    world = np.array([geometry.point(u, v)
+                      for u, v in ((0, 0), (1, 0), (1, 1), (0, 1))])
+    projected = cv2.projectPoints(world, cv2.Rodrigues(camera_from_base[:3, :3])[0],
+                                 camera_from_base[:3, 3], matrix,
+                                 np.asarray(dist, float))[0].reshape(-1, 2)
+    if not np.isfinite(projected).all():
+        return []
+    low = np.maximum(np.floor(projected.min(0) - margin_px).astype(int), 0)
+    high = np.minimum(np.ceil(projected.max(0) + margin_px).astype(int),
+                      [gray.shape[1], gray.shape[0]])
+    if np.any(high - low < 16):
+        return []
+    crop = gray[low[1]:high[1], low[0]:high[0]]
+    grids = []
+    for cols, rows in ((7, 7), (3, 7), (7, 3), (3, 5), (5, 3)):
+        ok, points = cv2.findChessboardCorners(
+            crop, (cols, rows), cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE)
+        if not ok:
+            continue
+        points = cv2.cornerSubPix(crop, points, (5, 5), (-1, -1),
+                                 (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER, 40, .001))
+        grids.append(points.reshape(rows, cols, 2) + low)
+        if rows == cols == 7:
+            break
+    return grids
+
+
 def _track_frame(geometry, gray, matrix, dist, base_from_camera, position):
     """track_board on one grey frame."""
     import chess_vision
@@ -509,9 +644,14 @@ def _track_frame(geometry, gray, matrix, dist, base_from_camera, position):
     # into a board motion (x, y, turn) and the smallest one is the answer.
     centre = geometry.point(0.5, 0.5)
     best = None
-    for _, image, _, used, world in locate_camera(
-            geometry, gray, matrix, dist,
-            position if position is not None else chess.Board(None), every=True):
+    position = position if position is not None else chess.Board(None)
+    regional = board_region_grids(geometry, gray, matrix, dist, base_from_camera)
+    try:
+        candidates = locate_camera(geometry, gray, matrix, dist, position,
+                                   every=True, grids=regional)
+    except RuntimeError:
+        candidates = locate_camera(geometry, gray, matrix, dist, position, every=True)
+    for _, image, _, used, world in candidates:
         shift, rms = chess_vision.board_motion(world, image.reshape(-1, 2), base_from_camera,
                                                matrix, dist, centre)
         mm, deg = chess_vision.shift_size(shift, centre)
@@ -613,6 +753,48 @@ def read_state():
         return {}
 
 
+@contextmanager
+def game_state_lock():
+    """Keep reset from replacing the record while a chess command owns it."""
+    import fcntl
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE + '.lock', 'a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('another chess command is active; quit T3 before resetting '
+                               'or starting a new game') from None
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def new_game_state(board, arm_white=False):
+    """Replace the record completely; never retain a previous failure or grip."""
+    state = dict(fen=board.fen(), planned=None, moves=move_list(board),
+                 arm='white' if arm_white else 'black',
+                 stamp=time.strftime('%Y-%m-%dT%H:%M:%S'))
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE + '.tmp', 'w') as stream:
+        json.dump(state, stream)
+    os.replace(STATE_FILE + '.tmp', STATE_FILE)
+    for stale in (TARGET_FILE, ANSWER_FILE):
+        try:
+            os.remove(stale)
+        except FileNotFoundError:
+            pass
+
+
+def cmd_reset(args):
+    new_game_state(chess.Board(), args.arm_white)
+    say('RESET', 'new game record: standard starting position, White to move. '
+                'Moves, targets and previous failure cleared. No robot motion started.')
+    say('NEXT', 'restore the physical pieces to the starting position; '
+               'start play separately when ready. Calibration is unchanged.')
+    return 0
+
+
 def move_list(board):
     """The game so far in SAN, for the dashboard."""
     replay, out = board.root(), []
@@ -640,13 +822,25 @@ def serve_dashboard(port, latest, lan=False):
             self.wfile.write(body)
 
         def do_GET(self):  # noqa: N802 - name fixed by http.server
-            if self.path.startswith('/stream'):
+            if self.path.startswith('/piece?'):
+                import cv2
+                from urllib.parse import parse_qs, urlsplit
+                square = parse_qs(urlsplit(self.path).query).get('square', [''])[0]
+                snapshot = latest.get('camera_snapshot')
+                box = snapshot[1]['crops'].get(square) if snapshot else None
+                if box is None:
+                    self.send_error(404, 'No visible piece on this square')
+                    return
+                x, y, w, h = box
+                crop = snapshot[0][y:y+h, x:x+w]
+                self.send(cv2.imencode('.jpg', crop)[1].tobytes(), 'image/jpeg')
+            elif self.path.startswith('/stream'):
                 self.send_response(200)
                 self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
                 self.end_headers()
                 try:
                     while True:
-                        jpeg = latest.get('jpeg')
+                        jpeg = latest.get('board_jpeg' if self.path == '/stream?view=board' else 'jpeg')
                         if jpeg:
                             self.wfile.write(b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
                                              + jpeg + b'\r\n')
@@ -654,7 +848,12 @@ def serve_dashboard(port, latest, lan=False):
                 except (BrokenPipeError, ConnectionResetError):
                     return
             elif self.path.startswith('/state'):
-                self.send(json.dumps(dict(read_state(), live=latest.get('live', {}))).encode(),
+                state = read_state()
+                # How long since play last said it is alive: the operator page
+                # greys its buttons out when the game process is gone.
+                beat = state.get('beat')
+                state['prompt_age_s'] = None if beat is None else round(time.time() - beat, 1)
+                self.send(json.dumps(dict(state, live=latest.get('live', {}))).encode(),
                           'application/json')
             else:
                 with open(DASHBOARD_HTML, 'rb') as stream:
@@ -663,6 +862,25 @@ def serve_dashboard(port, latest, lan=False):
         def do_POST(self):  # noqa: N802
             if self.path.startswith('/scan'):
                 latest['scan_now'] = True
+            elif self.path.startswith('/answer'):
+                # The operator's click. Only from this computer: the projected
+                # page is read-only for the audience, and arm motion is never
+                # approved from across the network.
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_error(403, 'Operator answers are accepted from this computer only')
+                    return
+                length = int(self.headers.get('Content-Length') or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b'{}')
+                    answer = {'id': str(data['id']), 'answer': str(data.get('answer', ''))[:80],
+                              'stamp': time.strftime('%Y-%m-%dT%H:%M:%S')}
+                except (ValueError, KeyError, TypeError):
+                    self.send_error(400, 'expected {"id": ..., "answer": ...}')
+                    return
+                os.makedirs(os.path.dirname(ANSWER_FILE), exist_ok=True)
+                with open(ANSWER_FILE + '.tmp', 'w') as stream:
+                    json.dump(answer, stream)
+                os.replace(ANSWER_FILE + '.tmp', ANSWER_FILE)
             self.send(b'{}', 'application/json')
 
         def log_message(self, *args):
@@ -709,49 +927,38 @@ def tip_status(geometry, tips, target, tolerance_m=0.005):
 def draw_board_state(out, geometry, px, view):
     """What the camera sees against what the game says, and the arm's next move.
 
-    * squares with no depth (neither board nor piece matched in stereo: textureless
-      dark wood, glare, or the arm in the way): grey hatching, unknown, not empty;
-    * every square where seen and expected disagree: red; a piece where one
-      should be: green rim;
-    * every piece found: a disc in its colour at its real centre, with its height;
+    * unknown depth stays on the companion board, leaving the camera unobstructed;
+    * disagreement: red outline; detected pieces: open green corner brackets;
+    * piece-type estimates stay on the companion board, not on the real pieces;
     * the planned move: a blue arrow, and an orange one to the box for a capture.
     """
     import cv2
     squares, colours = view.get('squares') or {}, view.get('colours') or {}
     expected = view.get('expected')
+
+    def corners(quad, colour):
+        # Short strokes at square corners leave the physical piece untouched.
+        quad = np.round(quad.mean(axis=0) + (quad - quad.mean(axis=0)) * 0.78).astype(int)
+        for i, vertex in enumerate(quad):
+            for neighbour in (quad[(i - 1) % 4], quad[(i + 1) % 4]):
+                end = np.round(vertex + 0.16 * (neighbour - vertex)).astype(int)
+                cv2.line(out, tuple(vertex), tuple(end), colour, 1, cv2.LINE_AA)
+
     for name, entry in squares.items():
         f, r = ord(name[0]) - ord('a'), int(name[1]) - 1
         quad = px([geometry.point(u / 8, v / 8) for u, v in
                    ((f, r), (f + 1, r), (f + 1, r + 1), (f, r + 1))])
         if not entry['seen']:
-            mask = np.zeros(out.shape[:2], np.uint8)
-            cv2.fillConvexPoly(mask, quad, 255)
-            hatch = out.copy()
-            for k in range(-out.shape[0], out.shape[1], 9):
-                cv2.line(hatch, (k, 0), (k + out.shape[0], out.shape[0]), (150, 150, 150), 2)
-            out[mask > 0] = hatch[mask > 0]
             continue
+        wrong = False
         if expected is not None:
             piece = expected.piece_at(chess.parse_square(name))
             wrong = (piece is not None) != entry['occupied'] or (
                 piece is not None and name in colours and colours[name] != piece.color)
             if wrong:
-                cv2.polylines(out, [quad], True, (0, 0, 255), 3, cv2.LINE_AA)
-            elif piece is not None:
-                cv2.polylines(out, [quad], True, (0, 200, 0), 2, cv2.LINE_AA)
-    side = max(8, int(np.linalg.norm(px([geometry.point(0, 0)])[0]
-                                     - px([geometry.point(1 / 8, 0)])[0])))
-    for name, entry in squares.items():
-        if not entry['occupied']:
-            continue
-        x, y = entry['centre'][:2]
-        (cx, cy), = px([[x, y, geometry.z_at(x, y)]])
-        white = colours.get(name)
-        fill = (235, 235, 235) if white else (40, 40, 40) if white is False else (0, 220, 255)
-        cv2.circle(out, (int(cx), int(cy)), side // 3, fill, -1, cv2.LINE_AA)
-        cv2.circle(out, (int(cx), int(cy)), side // 3, (0, 165, 255), 2, cv2.LINE_AA)
-        cv2.putText(out, f"{1000 * entry['top_m']:.0f}", (int(cx) - side // 3, int(cy) - side // 3 - 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2, cv2.LINE_AA)
+                corners(quad, (65, 65, 225))
+        if entry['occupied'] and not wrong:
+            corners(quad, (80, 210, 130))
     planned = view.get('planned')
     if planned:
         a, b = (px([[*geometry.square_xy(s), geometry.z_at(*geometry.square_xy(s))]])[0]
@@ -762,17 +969,81 @@ def draw_board_state(out, geometry, px, view):
                             cv2.LINE_AA, tipLength=0.08)
         cv2.arrowedLine(out, tuple(int(v) for v in a), tuple(int(v) for v in b), (255, 120, 0), 5,
                         cv2.LINE_AA, tipLength=0.2)
-    legend = ('disc: piece found (height mm)   red: differs from the game   green rim: as '
-              'expected   hatched: no depth there   blue arrow: next arm move')
-    cv2.rectangle(out, (0, out.shape[0] - 34), (out.shape[1], out.shape[0]), (0, 0, 0), -1)
-    cv2.putText(out, legend, (12, out.shape[0] - 11), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                (230, 230, 230), 1, cv2.LINE_AA)
+
+
+def board_closeup(frame, geometry, base_from_camera, matrix, dist, with_bounds=False):
+    """Frame the calibrated board plus headroom for pieces; never change CV inputs."""
+    import cv2
+    def result(bounds):
+        x, y, w, h = bounds
+        crop = frame[y:y+h, x:x+w]
+        return (crop, bounds) if with_bounds else crop
+    full = [0, 0, frame.shape[1], frame.shape[0]]
+    camera_from_base = np.linalg.inv(base_from_camera)
+    points = []
+    for u, v in ((0, 0), (1, 0), (1, 1), (0, 1)):
+        for height in (0, 0.12):
+            point = np.array(geometry.point(u, v), dtype=float)
+            point[2] += height
+            points.append(point)
+    points = np.asarray(points)
+    camera_points = points @ camera_from_base[:3, :3].T + camera_from_base[:3, 3]
+    if not np.isfinite(camera_points).all() or np.any(camera_points[:, 2] <= 0):
+        return (frame, full) if with_bounds else frame
+    pixels = cv2.projectPoints(points, cv2.Rodrigues(camera_from_base[:3, :3])[0],
+                               camera_from_base[:3, 3], matrix, np.asarray(dist, float))[0].reshape(-1, 2)
+    if not np.isfinite(pixels).all():
+        return (frame, full) if with_bounds else frame
+    low, high = pixels.min(axis=0), pixels.max(axis=0)
+    centre = (low + high) / 2
+    width = max((high[0] - low[0]) * 1.25, (high[1] - low[1]) * 1.25 * 1.6)
+    height = width / 1.6
+    h, w = frame.shape[:2]
+    width, height = min(w, width), min(h, height)
+    x = int(np.clip(centre[0] - width / 2, 0, w - width))
+    y = int(np.clip(centre[1] - height / 2, 0, h - height))
+    crop = frame[y:y + int(height), x:x + int(width)]
+    return result([x, y, int(width), int(height)]) if min(crop.shape[:2]) >= 32 else result(full)
+
+
+def camera_annotations(frame, geometry, base_from_camera, matrix, dist, view, bounds):
+    """Pixel coordinates for read-only browser overlays and raw object thumbnails."""
+    import cv2
+    transform = np.linalg.inv(base_from_camera)
+    def px(points):
+        return cv2.projectPoints(np.asarray(points, float), cv2.Rodrigues(transform[:3, :3])[0],
+                                 transform[:3, 3], matrix, np.asarray(dist, float))[0].reshape(-1, 2)
+    h, w = frame.shape[:2]
+    data = dict(width=w, height=h, bounds=bounds, quads={}, crops={}, labels=[])
+    for f in range(8):
+        for r in range(8):
+            name = f'{"abcdefgh"[f]}{r+1}'
+            quad = px([geometry.point(u/8, v/8) for u, v in
+                       ((f, r), (f+1, r), (f+1, r+1), (f, r+1))])
+            data['quads'][name] = np.round(quad, 1).tolist()
+            entry = view['squares'].get(name)
+            if entry and entry['seen'] and entry['occupied']:
+                x, y = entry['centre'][:2]
+                z = geometry.z_at(x, y)
+                top = float(np.clip(entry['top_m'], 0.01, 0.15))
+                radius = geometry.square_m * 0.32
+                points = px([[x+dx, y+dy, z+dz] for dx in (-radius, radius)
+                             for dy in (-radius, radius) for dz in (0, top+0.008)])
+                low = np.maximum(0, np.floor(points.min(axis=0)-4)).astype(int)
+                high = np.minimum([w, h], np.ceil(points.max(axis=0)+4)).astype(int)
+                if np.all(high-low > 2):
+                    data['crops'][name] = [*low.tolist(), *(high-low).tolist()]
+    for i in range(8):
+        for text, u, v in (("abcdefgh"[i], (i+.5)/8, -.055), (str(i+1), -.055, (i+.5)/8)):
+            data['labels'].append([text, *np.round(px([geometry.point(u, v)])[0], 1).tolist()])
+    return data
 
 
 def draw_watch(bgr, geometry, base_from_camera, matrix, dist, tips, status, view=None):
     """The overlay plus the target square (green: on it, red: not) and the fingertips."""
     import cv2
-    out = draw_overlay(bgr, geometry, base_from_camera, matrix, dist, labels='edges')
+    # The calibration grid belongs in the setup view; it obscures a live game.
+    out = bgr.copy()
     camera_from_base = np.linalg.inv(base_from_camera)
     rvec, tvec = cv2.Rodrigues(camera_from_base[:3, :3])[0], camera_from_base[:3, 3]
 
@@ -790,9 +1061,6 @@ def draw_watch(bgr, geometry, base_from_camera, matrix, dist, tips, status, view
         f, r = ord(target[0]) - ord('a'), int(target[1]) - 1
         quad = px([geometry.point(u / 8, v / 8) for u, v in
                    ((f, r), (f + 1, r), (f + 1, r + 1), (f, r + 1))])
-        layer = out.copy()
-        cv2.fillConvexPoly(layer, quad, colour)
-        out = cv2.addWeighted(layer, 0.45, out, 0.55, 0)
         cv2.polylines(out, [quad], True, colour, 3, cv2.LINE_AA)
     if tips is not None:
         tip, = px([tips])
@@ -800,16 +1068,6 @@ def draw_watch(bgr, geometry, base_from_camera, matrix, dist, tips, status, view
         cv2.line(out, tuple(tip), tuple(floor), colour, 2, cv2.LINE_AA)   # straight down
         cv2.circle(out, tuple(floor), 7, colour, 2, cv2.LINE_AA)
         cv2.circle(out, tuple(tip), 5, colour, -1, cv2.LINE_AA)
-    if target is None:
-        text = f'no target   tips over {status.get("under") or "-"}'
-    else:
-        verdict = 'ON TARGET' if status['ok'] else 'OFF TARGET'
-        text = (f'{verdict}  target {target}  tips over {status.get("under") or "-"}  '
-                f'{status["error_mm"]} mm off  {status["above_board_mm"]} mm up')
-    if tips is None:
-        text = 'no robot pose (is the driver running?)'
-    cv2.rectangle(out, (0, 0), (out.shape[1], 50), (0, 0, 0), -1)
-    cv2.putText(out, text, (15, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, colour, 2, cv2.LINE_AA)
     return out
 
 
@@ -940,10 +1198,18 @@ def cmd_watch(args):
             if pair[1] is not None:
                 scanner.offer(pair, tips, now=latest.pop('scan_now', False))
             view = scanner.view()
-            latest['live'] = dict(scanner.summary(view), target=status, heights=heights)
             out = draw_watch(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), geometry,
                              base_from_camera, matrix, dist, tips, status, view)
             latest['jpeg'] = cv2.imencode('.jpg', out, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+            closeup, bounds = board_closeup(out, geometry, base_from_camera, matrix, dist, with_bounds=True)
+            latest['board_jpeg'] = cv2.imencode('.jpg', closeup, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+            raw = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            annotations = camera_annotations(raw, geometry, base_from_camera, matrix, dist, view, bounds)
+            latest['camera_snapshot'] = (raw, annotations)
+            # Publish a complete snapshot once: HTTP readers must never see a
+            # new scan before its camera geometry is attached (overlay flicker).
+            latest['live'] = dict(scanner.summary(view), target=status, heights=heights,
+                                  camera=annotations)
     except KeyboardInterrupt:
         return 0
     finally:
@@ -981,8 +1247,21 @@ def cmd_overlay(args):
         with open(args.geometry) as stream:
             saved = json.load(stream).get('camera')
         previous = None if saved is None else np.array(saved['base_from_camera'])[:3, 3]
-        base_from_camera, detected, rms, used = locate_camera(
-            geometry, gray, matrix, dist, position, args.flip, previous)
+        # With a pose already saved, look for the grid where the board was last
+        # seen first (2026-10-13: the whole-image detector picked up floor and
+        # table patterns on this view and the fit was refused); the whole-image
+        # search stays as the fallback and for a first calibration.
+        regional = [] if saved is None else board_region_grids(
+            geometry, gray, matrix, dist, np.array(saved['base_from_camera']), margin_px=80)
+        try:
+            if not regional:
+                raise RuntimeError('no grid near the saved board')
+            base_from_camera, detected, rms, used = locate_camera(
+                geometry, gray, matrix, dist, position, args.flip, previous, grids=regional)
+        except RuntimeError as regional_error:
+            say('NOTE', f'board-region search: {regional_error}; searching the whole image')
+            base_from_camera, detected, rms, used = locate_camera(
+                geometry, gray, matrix, dist, position, args.flip, previous)
     except RuntimeError as error:
         say('BLOCKED', str(error))
         return 1
@@ -1338,7 +1617,10 @@ def close_session(session):
 def run_steps(orchestrator, steps, auto_yes):
     """Run each (from, to) through the orchestrator; return how many finished."""
     for done, (frm, to) in enumerate(steps):
-        if not ask(f'{frm} -> {to}: go?', auto_yes):
+        answer = ask_operator('step', f'{frm} -> {to}: go?',
+                              [option(GO, f'Go: {frm} → {to}', 'go'), option(STOP, 'Stop', 'stop')],
+                              auto=GO if auto_yes else None)
+        if answer != GO:
             say('RESULT', {'outcome': 'declined', 'step': f'{frm} {to}'})
             return done
         record = orchestrator.run(f'{frm} {to}')
@@ -1406,6 +1688,36 @@ def cmd_fit(args):
                 'file_yaw_deg': round(math.degrees(geometry.file_yaw()), 1),
                 'box': None if box is None else [round(v, 4) for v in box],
                 'file': os.path.relpath(args.geometry)})
+    return 0
+
+
+def cmd_shift(args):
+    """Slide the whole calibration (corners and box) by millimetres in base_link.
+
+    The honest fix for a board that is off everywhere by the same amount is to
+    re-touch the corners. This is the ten-second fallback when that cannot be
+    done: measure the miss with ``goto --touch`` on two squares (the fingertip
+    is 10 mm over where the arm thinks the centre is) and move the board the
+    other way. The camera pose stays: it is relative to the robot, and ``watch``
+    reloads the geometry on its own.
+    """
+    geometry = BoardGeometry.load(args.geometry)
+    delta = np.array([args.dx, args.dy, args.dz], float) / 1000
+    size = float(np.linalg.norm(delta))
+    if size > 0.03:
+        say('BLOCKED', f'{size * 1000:.0f} mm is more than 30 mm: re-touch the corners instead')
+        return 1
+    before = geometry.square_xy('e4')
+    moved = BoardGeometry(geometry.corners + delta,
+                          None if geometry.box is None else geometry.box + delta, geometry.notes)
+    moved.notes[f'shift_{time.strftime("%Y%m%d-%H%M%S")}'] = (
+        f'slid by {[args.dx, args.dy, args.dz]} mm: {args.why or "operator measured a miss"}; '
+        're-touch the corners to replace this')
+    moved.save(args.geometry)
+    after = moved.square_xy('e4')
+    say('SHIFT', {'mm': [args.dx, args.dy, args.dz], 'e4_before': [round(v, 4) for v in before],
+                  'e4_after': [round(v, 4) for v in after], 'file': os.path.relpath(args.geometry),
+                  'next': 'goto e4 --touch to check; watch reloads the geometry by itself'})
     return 0
 
 
@@ -1541,18 +1853,29 @@ def cmd_move(args):
         close_session(session)
 
 
-def seen_move(vision, executor, board, side):
-    """The student's move, read from the board: a move, None (type it instead) or 'quit'."""
-    answer = input(f'Student ({side}): make your move, then press Enter '
-                   '(or type it, or quit): ').strip()
-    if answer.lower() in ('quit', 'resign', 'q'):
-        return 'quit'
+GAME_OPTIONS = [option(NEW_GAME, 'New game', 'warn'), option(QUIT, 'Quit', 'stop')]
+
+
+def student_move(vision, executor, board, side):
+    """The student's move: read from the board (--vision) or typed; None = ask again.
+
+    Raises NewGame / QuitGame from the operator's buttons.
+    """
+    if vision is not None:
+        options = [option('', 'Read the board', 'go')] + GAME_OPTIONS
+        text = f'Student ({side}): make your move, then read the board (or type the move)'
+    else:
+        options = list(GAME_OPTIONS)
+        text = f'Student ({side}): type the move, e.g. e5 or e7e5'
+    answer = ask_operator('student_move', text, options, allow_text=True)
     if answer:
         try:
             return parse_move(board, answer)
         except ValueError as error:
             say('REFUSED', str(error))
             return None
+    if vision is None:
+        return None
     squares, _, _ = vision.look(executor_tips(executor))
     move, margin, ranking = vision.cv.infer_move(
         board, squares, vision.cv.piece_colours(squares, board))
@@ -1562,9 +1885,13 @@ def seen_move(vision, executor, board, side):
         print(board_text(squares))
         say('UNSURE', 'two moves explain the board equally well: type the move')
         return None
-    check = input(f'I saw {board.san(move)}. Enter or y = yes, or type the real move: ').strip()
-    if check.lower() in ('', 'y', 'yes'):       # 2026-10-11: "yes" was taken for a move
+    check = ask_operator('confirm_move', f'I saw {board.san(move)}. Right?',
+                         [option(GO, f'Yes, {board.san(move)}', 'go'),
+                          option(STOP, 'No: read again')] + GAME_OPTIONS, allow_text=True)
+    if check == GO:
         return move
+    if check == STOP:
+        return None
     try:
         return parse_move(board, check)
     except ValueError as error:
@@ -1581,79 +1908,123 @@ def check_position(vision, executor, board):
         print(board_text(squares))
         say('CHECK', {'squares_not_as_expected': wrong,
                       'hint': 'fix the board by hand to match the game, then continue'})
-        input('Board fixed? Press Enter: ')
+        ask_operator('board_fixed', f'The camera disagrees on {", ".join(wrong)}: '
+                                    'fix the board to match the game record',
+                     [option(GO, 'Board fixed', 'go')])
     else:
         say('CHECK', 'board matches the game')
 
 
-def cmd_play(args):
-    board = chess.Board(args.fen) if args.fen else chess.Board()
-    arm = chess.WHITE if args.arm_white else chess.BLACK
-    engine = Engine(args.engine, args.skill, args.think, args.seed)
-    say('ENGINE', engine.name)
-    publish_state(fen=board.fen(), planned=None, moves=move_list(board),
-                  arm='white' if arm == chess.WHITE else 'black')
-    session = None if args.steps_only else open_session(args, board)
-    try:
-        while not board.is_game_over(claim_draw=True):
-            print(f'\n{board}\n')
-            side = 'White' if board.turn == chess.WHITE else 'Black'
-            if board.turn != arm:
-                vision = session[2].vision if session is not None else None
-                if vision is not None:
-                    move = seen_move(vision, session[0], board, side)
-                    if move == 'quit':
-                        say('GAME', 'stopped by the operator')
-                        return 0
-                    if move is not None:
-                        say('STUDENT', board.san(move))
-                        board.push(move)
-                        publish_state(fen=board.fen(), planned=None, moves=move_list(board))
-                        continue
-                text = input(f'Student ({side}): move, e.g. e5 or e7e5 (quit to stop): ').strip()
-                if text.lower() in ('quit', 'resign', 'q'):
-                    say('GAME', 'stopped by the operator')
-                    return 0
-                try:
-                    move = parse_move(board, text)
-                except ValueError as error:
-                    say('REFUSED', str(error))
-                    continue
-                say('STUDENT', board.san(move))
-                board.push(move)
-                publish_state(fen=board.fen(), planned=None, moves=move_list(board))
+def arm_move(board, move, session, args):
+    """Run the arm's move (every step approved by the operator). Returns when the board is right."""
+    steps, note = steps_for(board, move)
+    say('ARM', {'san': board.san(move), 'steps': [f'{a} {b}' for a, b in steps]})
+    if session is not None:
+        ask_operator('clear', f'Robot plays {board.san(move)} ({" then ".join(f"{a} → {b}" for a, b in steps)}). '
+                              'Everyone clear of the board?',
+                     [option(GO, 'Clear: let the arm move', 'go')] + GAME_OPTIONS,
+                     auto=GO if args.yes else None)
+        remaining = list(steps)
+        while remaining:
+            done = run_steps(session[3], remaining, args.yes)
+            remaining = remaining[done:]
+            if not remaining:
+                break
+            answer = ask_operator('failed', f'The arm did not finish {remaining[0][0]} → {remaining[0][1]}',
+                                  [option('r', 'Retry this step', 'go'),
+                                   option('h', 'I finished the move by hand')] + GAME_OPTIONS)
+            if answer == 'h':
+                break
+    if note:
+        say('NOTE', note)
+        if session is not None:
+            ask_operator('swap', note, [option(GO, 'Swapped', 'go')], auto=GO if args.yes else None)
+
+
+def play_game(board, arm, engine, session, args):
+    """One game to the end. Raises NewGame / QuitGame when the operator says so."""
+    while not board.is_game_over(claim_draw=True):
+        print(f'\n{board}\n')
+        side = 'White' if board.turn == chess.WHITE else 'Black'
+        if board.turn != arm:
+            vision = session[2].vision if session is not None else None
+            executor = session[0] if session is not None else None
+            move = student_move(vision, executor, board, side)
+            if move is None:
                 continue
-            move = engine.choose(board)
-            publish_state(planned=planned_move(board, move))
-            steps, note = steps_for(board, move)
-            say('ARM', {'san': board.san(move), 'steps': [f'{a} {b}' for a, b in steps]})
-            if session is not None:
-                if not args.yes:
-                    input('Everyone clear of the board? Press Enter to let the arm move: ')
-                remaining = list(steps)
-                while remaining:
-                    done = run_steps(session[3], remaining, args.yes)
-                    remaining = remaining[done:]
-                    if not remaining:
-                        break
-                    answer = input('The arm did not finish. r = retry from this step, '
-                                   'h = I finished it by hand, q = quit: ').strip().lower()
-                    if answer == 'h':
-                        break
-                    if answer != 'r':
-                        say('GAME', 'stopped after a failed move')
-                        return 1
-            if note:
-                say('NOTE', note)
-                if session is not None and not args.yes:
-                    input('Swapped? Press Enter: ')
+            say('STUDENT', board.san(move))
             board.push(move)
             publish_state(fen=board.fen(), planned=None, moves=move_list(board))
-            if session is not None and session[2].vision is not None:
-                check_position(session[2].vision, session[0], board)
-        say('GAME', {'result': board.result(claim_draw=True), 'moves': len(board.move_stack)})
-        return 0
+            continue
+        publish_state(thinking=True)
+        move = engine.choose(board)
+        publish_state(planned=planned_move(board, move), thinking=False)
+        arm_move(board, move, session, args)
+        board.push(move)
+        publish_state(fen=board.fen(), planned=None, moves=move_list(board))
+        if session is not None and session[2].vision is not None:
+            check_position(session[2].vision, session[0], board)
+    result = board.result(claim_draw=True)
+    say('GAME', {'result': result, 'moves': len(board.move_stack)})
+    publish_state(result=result)
+    return result
+
+
+def cmd_play(args):
+    """The match: games one after another until the operator quits.
+
+    Every game starts from the opening unless --resume (the recorded position,
+    e.g. after play was restarted). New game / Quit are offered on every prompt,
+    so a new group at the board is one click, with the arm parked.
+    """
+    arm_white = args.arm_white
+    if args.resume and not args.fen:
+        recorded = read_state()
+        if not recorded.get('fen'):
+            say('BLOCKED', 'nothing to resume: no recorded game')
+            return 2
+        # Replay the recorded moves so the move list survives; a record whose
+        # moves do not reach its position falls back to the bare position.
+        board = chess.Board()
+        try:
+            for san in recorded.get('moves') or []:
+                board.push_san(san)
+            if board.fen() != recorded['fen']:
+                raise ValueError('moves and position disagree')
+        except ValueError:
+            board = chess.Board(recorded['fen'])
+        arm_white = recorded.get('arm') == 'white'
+        say('POSITION', {'from': 'the recorded game', 'fen': board.fen(),
+                         'arm': 'white' if arm_white else 'black'})
+    else:
+        board = chess.Board(args.fen) if args.fen else chess.Board()
+    engine = Engine(args.engine, args.skill, args.think, args.seed)
+    say('ENGINE', engine.name)
+    if args.resume and not args.fen:
+        publish_state(planned=None, prompt=None, result=None, thinking=False)
+    else:
+        new_game_state(board, arm_white)
+    session = None if args.steps_only else open_session(args, board)
+    try:
+        while True:
+            arm = chess.WHITE if arm_white else chess.BLACK
+            if session is not None:
+                session[2].board = board          # the adapter answers DETECT from this board
+            try:
+                result = play_game(board, arm, engine, session, args)
+                ask_operator('game_over', f'Game over: {result} after {len(board.move_stack)} moves',
+                             GAME_OPTIONS)
+                say('GAME', 'over; waiting for the operator')
+                continue
+            except NewGame:
+                say('GAME', 'new game: set the pieces up; the record starts over')
+                board = chess.Board()
+                new_game_state(board, arm_white)
+            except QuitGame:
+                say('GAME', 'stopped by the operator')
+                return 0
     finally:
+        publish_state(prompt=None, thinking=False)
         engine.close()
         if session is not None:
             close_session(session)
@@ -1665,6 +2036,10 @@ def main():
     cli.add_argument('--geometry', default=GEOMETRY_FILE, help='board geometry (lab_chess.json)')
     cli.add_argument('--pieces', default=PIECES_FILE, help='piece table (lab_chess.yaml)')
     sub = cli.add_subparsers(dest='command', required=True)
+
+    p = sub.add_parser('reset', help='reset the game record to the starting position; no robot motion')
+    p.add_argument('--arm-white', action='store_true', help='robot plays White (default: Black)')
+    p.set_defaults(run=cmd_reset)
 
     p = sub.add_parser('touch', help='record the fingertip on a board corner or the box rim')
     p.add_argument('--corner', required=True, choices=CORNERS + (BOX,))
@@ -1708,6 +2083,13 @@ def main():
     p.set_defaults(run=cmd_fit)
     p = sub.add_parser('squares', help='print every square centre (no robot)')
     p.set_defaults(run=cmd_squares)
+    p = sub.add_parser('shift', help='slide the calibration by mm (fallback for a constant miss; '
+                                     're-touching the corners is the real fix)')
+    p.add_argument('--dx', type=float, default=0.0, help='mm along base x')
+    p.add_argument('--dy', type=float, default=0.0, help='mm along base y')
+    p.add_argument('--dz', type=float, default=0.0, help='mm up')
+    p.add_argument('--why', help='what was measured, for the notes')
+    p.set_defaults(run=cmd_shift)
 
     try:
         from lab_pick import add_session_arguments      # needs ROS; the three commands below do too
@@ -1731,8 +2113,11 @@ def main():
     p.add_argument('--steps-only', action='store_true', help='print the steps, no robot')
     p.set_defaults(run=cmd_move)
     arm.append(p)
-    p = sub.add_parser('play', help='a match; the student types their move, the arm plays')
-    p.add_argument('--fen')
+    p = sub.add_parser('play', help='the match: prompts on the operator page '
+                                    '(http://localhost:8091/#operator) and in this terminal')
+    p.add_argument('--fen', help='start from this position (default: the opening)')
+    p.add_argument('--resume', action='store_true',
+                   help='carry on from the recorded game (log/chess/state.json) after a restart')
     p.add_argument('--arm-white', action='store_true',
                    help='the arm plays White (default: Black)')
     p.add_argument('--engine', default='stockfish', help='UCI engine binary, or none')
@@ -1762,6 +2147,9 @@ def main():
         say('BLOCKED', f'{args.command} needs the ROS graph {reason}')
         return 2
     try:
+        if args.command in ('reset', 'play', 'move', 'goto'):
+            with game_state_lock():
+                return args.run(args)
         return args.run(args)
     except (FileNotFoundError, ValueError, RuntimeError) as error:
         say('BLOCKED', str(error))

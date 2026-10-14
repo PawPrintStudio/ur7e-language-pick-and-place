@@ -5,6 +5,7 @@ No robot, no ROS graph. Needs python-chess. Run with::
     python3 -m pytest -q scripts/test_lab_chess.py
 """
 import math
+import json
 import os
 import sys
 
@@ -22,10 +23,99 @@ pytestmark = pytest.mark.skipif(lab_chess is None, reason='python-chess is not i
 Z = 0.012   # board top above the table in the fake lab
 
 
+@pytest.fixture(autouse=True)
+def isolate_dashboard_state(tmp_path, monkeypatch):
+    """Offline tests must never replace a live game's target or saved state."""
+    if lab_chess is not None:
+        monkeypatch.setattr(lab_chess, 'TARGET_FILE', str(tmp_path / 'target.json'))
+        monkeypatch.setattr(lab_chess, 'STATE_FILE', str(tmp_path / 'state.json'))
+
+
 def square_board(z=Z):
     """A 400 mm board with a1 at the origin, files along +x, ranks along +y."""
     return lab_chess.BoardGeometry([[0, 0, z], [0.4, 0, z], [0.4, 0.4, z], [0, 0.4, z]],
                                    box=[0.5, -0.1, 0.05])
+
+
+def test_reset_clears_old_game_without_opening_robot_session(monkeypatch):
+    from pathlib import Path
+    lab_chess.publish_state(fen=chess.Board().fen(), moves=['e4'],
+                            planned={'from': 'b7', 'to': 'b5'},
+                            stage={'name': 'APPROACH', 'outcome': 'failed'},
+                            grip_mm=21.8, obsolete='discard me')
+    Path(lab_chess.TARGET_FILE).write_text(json.dumps({'target': 'b5'}))
+    untouched = Path(lab_chess.STATE_FILE).parent / 'calibration.json'
+    untouched.write_text('unchanged')
+    def no_robot(*args, **kwargs):
+        pytest.fail('reset must not open a robot session')
+    monkeypatch.setattr(lab_chess, 'open_session', no_robot)
+    monkeypatch.setattr(sys, 'argv', ['lab_chess.py', 'reset'])
+    assert lab_chess.main() == 0
+    state = lab_chess.read_state()
+    assert state['fen'] == chess.STARTING_FEN
+    assert state['moves'] == [] and state['planned'] is None
+    assert state['arm'] == 'black'
+    assert not {'stage', 'grip_mm', 'obsolete'} & state.keys()
+    assert not Path(lab_chess.TARGET_FILE).exists()
+    assert untouched.read_text() == 'unchanged'
+
+
+def test_reset_refuses_while_game_owns_record_then_releases_lock(monkeypatch):
+    lab_chess.publish_state(moves=['e4'])
+    monkeypatch.setattr(sys, 'argv', ['lab_chess.py', 'reset', '--arm-white'])
+    with lab_chess.game_state_lock():
+        assert lab_chess.main() == 2
+        assert lab_chess.read_state()['moves'] == ['e4']
+    assert lab_chess.main() == 0
+    assert lab_chess.read_state()['arm'] == 'white'
+    assert lab_chess.main() == 0  # repeat reset is harmless
+
+
+def test_board_closeup_preserves_pixels_and_handles_invalid_projection():
+    import numpy as np
+    pytest.importorskip('cv2')
+    frame = np.zeros((800, 1200, 3), dtype=np.uint8)
+    transform = np.eye(4)
+    transform[2, 3] = -1
+    matrix = np.array([[800., 0, 300], [0, 800., 250], [0, 0, 1.]])
+    crop = lab_chess.board_closeup(frame, square_board(), transform, matrix, np.zeros(5))
+    assert 32 < crop.shape[0] < frame.shape[0]
+    assert 32 < crop.shape[1] < frame.shape[1]
+    assert np.shares_memory(crop, frame)  # display crop, no resampling or CV mutation
+    transform[2, 3] = 1  # board behind the camera: retain usable full image
+    assert lab_chess.board_closeup(frame, square_board(), transform, matrix, np.zeros(5)) is frame
+
+
+def test_camera_markers_leave_piece_centre_unpainted():
+    import numpy as np
+    pytest.importorskip('cv2')
+    frame = np.full((600, 600, 3), 87, dtype=np.uint8)
+    def px(points):
+        return (np.asarray(points)[:, :2] * 1000 + 100).astype(int)
+    view = {'squares': {'a1': {'seen': True, 'occupied': True}},
+            'expected': chess.Board(), 'colours': {'a1': True}}
+    lab_chess.draw_board_state(frame, square_board(), px, view)
+    assert np.all(frame[118:133, 118:133] == 87)
+    assert np.any(frame != 87)
+
+
+def test_camera_annotations_project_all_squares_and_crop_only_visible_pieces():
+    import numpy as np
+    pytest.importorskip('cv2')
+    frame = np.zeros((800, 1200, 3), dtype=np.uint8)
+    transform = np.eye(4)
+    transform[2, 3] = -1
+    matrix = np.array([[800., 0, 300], [0, 800., 250], [0, 0, 1.]])
+    view = {'squares': {
+        'a1': {'seen':True, 'occupied':True, 'centre':[.025,.025], 'top_m':.04},
+        'b1': {'seen':False, 'occupied':True}}}
+    data = lab_chess.camera_annotations(frame, square_board(), transform, matrix,
+                                        np.zeros(5), view, [0,0,1200,800])
+    assert len(data['quads']) == 64 and len(data['labels']) == 16
+    assert set(data['crops']) == {'a1'}
+    x,y,w,h = data['crops']['a1']
+    assert 0 <= x < x+w <= 1200 and 0 <= y < y+h <= 800
+    assert not frame.any()
 
 
 def test_square_centres_axis_aligned():
@@ -258,6 +348,35 @@ def look_at(eye, target):
     pose[:3, :3] = np.c_[x, np.cross(z, x), z]
     pose[:3, 3] = eye
     return pose
+
+
+def test_board_region_tracking_keeps_pixel_coordinates_and_detects_shift(monkeypatch):
+    pytest.importorskip('cv2')
+    np = lab_chess.np
+    g = lab_chess.BoardGeometry([[0.198, 0.841, -0.102], [-0.093, 0.839, -0.106],
+                                 [-0.093, 0.551, -0.105], [0.198, 0.551, -0.101]])
+    matrix = np.array([[900.0, 0, 640], [0, 900, 360], [0, 0, 1]])
+    truth = look_at(np.array([0.05, 1.25, 0.35]), [0.05, 0.70, -0.10])
+    moved = lab_chess.BoardGeometry(np.asarray(g.corners) + [0.005, 0, 0])
+    gray = render_board(moved, truth, matrix)
+    def no_background_search(_):
+        raise AssertionError('The board-region detector should suffice')
+    monkeypatch.setattr(lab_chess, 'visible_grids', no_background_search)
+    _, mm, deg, rms, used = lab_chess._track_frame(
+        g, gray, matrix, np.zeros(5), truth, chess.Board(None))
+    assert used == 49
+    assert mm == pytest.approx(5.0, abs=1.0)
+    assert abs(deg) < 0.3
+    assert rms < 1.0
+
+
+def test_board_region_detector_handles_board_outside_image():
+    pytest.importorskip('cv2')
+    np = lab_chess.np
+    g = lab_chess.BoardGeometry([[0, 0, 1], [.3, 0, 1], [.3, .3, 1], [0, .3, 1]])
+    matrix = np.array([[900., 0, 10000], [0, 900, 10000], [0, 0, 1]])
+    assert lab_chess.board_region_grids(
+        g, np.zeros((480, 640), np.uint8), matrix, np.zeros(5), np.eye(4)) == []
 
 
 def test_overlay_recovers_the_camera_and_the_a1_corner():

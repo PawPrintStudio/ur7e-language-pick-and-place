@@ -55,10 +55,19 @@ def square_name(f, r):
 class BoardCamera:
     """Stereo points of the board in the robot base frame, heights above the board."""
 
-    def __init__(self, geometry, base_from_camera, conf, mode='FHD', depth_range=(0.4, 1.6)):
+    def __init__(self, geometry, base_from_camera, conf, mode='FHD', depth_range=None):
         self.geometry = geometry
         self.base_from_camera = np.asarray(base_from_camera, float)
         self.camera_from_base = np.linalg.inv(self.base_from_camera)
+        if depth_range is None:
+            # The disparity search must bracket the board wherever the camera is.
+            # The ZED reads disparity about 40 px low (corrected after matching,
+            # see ``points``), which makes the far edge look up to 1.5x further
+            # than it is: 2026-10-13, with the camera raised to 0.84 m, a fixed
+            # (0.4, 1.6) window lost the three far files of the board.
+            reach = np.linalg.norm(np.asarray(geometry.corners, float)
+                                   - self.base_from_camera[:3, 3], axis=1)
+            depth_range = (0.6 * reach.min(), 1.8 * reach.max())
         self.rig = StereoRig.from_zed_conf(conf, mode, depth_range=depth_range)
         self.refined = None
 

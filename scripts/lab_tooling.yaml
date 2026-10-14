@@ -14,6 +14,13 @@
 # for a straight-down tool every height comes from the corner touches, so a
 # length error cancels between touch and move. rg2_roll_deg is still a guess:
 # check the jaw direction on the first `goto --touch` hover.
+# 2026-10-13: verification revoked after confirmed fingertip/board contact.
+# With no subsequent arm movement, the calibration calculation reports the
+# tips 64.3 mm above the saved board. Reconcile board/tool geometry before
+# restoring this gate; a guessed Z correction is not verification.
+# 2026-10-13 (later): restored at Nikola's direction for the final walkthrough
+# test; Nikola determined the setup safe to run. No value below was changed and
+# no new measurement is recorded here; see docs/CHESS_B7_CONTACT.md.
 verified: true
 mount: single           # 'single': RG2 on the flange axis; 'dual': Dual Quick Changer
 rg2_roll_deg: -90.0     # RG2 turned about the flange axis (jaw direction); -90 = Gazebo's mount

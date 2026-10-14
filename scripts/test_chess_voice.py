@@ -54,6 +54,22 @@ def test_ollama_failure_is_none_not_an_exception():
     brain = v.Ollama(url='http://127.0.0.1:9', timeout_s=0.5)     # nothing listens here
     assert brain.line('check', {'san': 'Qh4+'}) is None
     assert brain.line('unknown', {}) is None
+    assert brain.warm(timeout_s=0.5) is None
+
+
+def test_follow_keeps_the_model_warm(tmp_path):
+    class Warmable(Brain):
+        warmed = 0
+
+        def warm(self):
+            self.warmed += 1
+            return 0.1
+    brain, path = Warmable('x'), tmp_path / 'events.jsonl'
+    thread = threading.Thread(target=v.follow, args=(str(path), brain, Mouth()),
+                              kwargs={'poll_s': 0.05, 'log': lambda *a: None}, daemon=True)
+    thread.start()
+    time.sleep(0.2)
+    assert brain.warmed == 1                                        # once at startup, then every few minutes
 
 
 def test_follow_speaks_new_events_only_and_skips_stale_ones(tmp_path):

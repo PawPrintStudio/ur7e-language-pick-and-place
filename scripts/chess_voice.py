@@ -40,26 +40,30 @@ OLLAMA = 'http://127.0.0.1:11434'
 MAX_WORDS = 20
 
 PERSONA = ('You are Ro-Boko, a robot arm playing chess against a student at a '
-           'university makerspace. You are confident, a little dramatic and kind; '
-           'a touch of trash talk is fine, never mean. Answer with ONE sentence of '
-           'at most 20 words, no quotes, no emoji, no stage directions.')
+           'university makerspace. Speak in the first person as the robot, to the '
+           'student. You are confident, a little dramatic and kind; a touch of trash '
+           'talk is fine, never mean. Never praise the student for a capture YOU made. '
+           'Answer with ONE sentence of at most 20 words, no quotes, no emoji, no '
+           'stage directions. Do not invent moves, squares or pieces beyond the one '
+           'you are told about. Examples of your style: "That piece is mine now." '
+           '"I meant to give that one away. Mostly." "Check. Mind your king."')
 
 # What each event means, for the prompt and as the fallback line.
 EVENTS = {
-    'greeting': ('A new student sits down to play you; you are {arm}.',
+    'greeting': ('A new student sits down to play against you; you, the robot, play {arm}.',
                  ['Welcome. I am Ro-Boko. Make your move when you are ready.',
                   'A new challenger. I play {arm}; show me what you have got.']),
-    'captured': ('You just captured a piece with {san}.',
+    'captured': ('You, the robot, just took one of the student\'s pieces with the move {san}.',
                  ['That piece is mine now.', 'Thank you for the {san}. I will keep it.',
                   'One fewer piece for you to worry about.']),
-    'lost': ('The student just captured one of your pieces with {san}.',
+    'lost': ('The student just took one of YOUR pieces with the move {san}; you are the one who lost material.',
              ['I meant to give that one away. Mostly.', 'Noted. I will remember {san}.',
               'A fair trade, I am sure. Let us see.']),
-    'check': ('You just gave check with {san}.', ['Check. Mind your king.',
+    'check': ('You, the robot, just put the student\'s king in check with {san}.', ['Check. Mind your king.',
                                                    'Your king looks nervous.']),
-    'won': ('You just won the game ({result}) after {moves} moves.',
+    'won': ('You, the robot, just WON the game against the student ({result}) after {moves} moves.',
             ['Good game. The arm wins this one.', 'Checkmate, as calculated. Play again?']),
-    'lost_game': ('You just lost the game ({result}) after {moves} moves.',
+    'lost_game': ('The student just beat you: you, the robot, LOST the game ({result}) after {moves} moves.',
                   ['Well played. You have beaten a robot today.',
                    'I resign with dignity. Rematch?']),
     'draw': ('The game ended in a draw ({result}).', ['A draw. Honour on both sides.']),
@@ -95,21 +99,42 @@ def prompt_for(event, detail):
 
 
 class Ollama:
-    """One short completion from a local model; None on any failure or timeout."""
+    """One short completion from a local model; None on any failure or timeout.
 
-    def __init__(self, model=DEFAULT_MODEL, url=OLLAMA, timeout_s=3.0):
-        self.model, self.url, self.timeout_s = model, url, timeout_s
+    Measured 2026-10-14 on the RTX 3050: 0.3 s warm, 47 s for the first load
+    from disk. So the model is loaded once at startup (``warm``), asked to
+    stay loaded (``keep_alive``), and nudged every few minutes by ``follow``;
+    Ollama's default is to drop it after five idle minutes, longer than a
+    student takes to think.
+    """
+
+    def __init__(self, model=DEFAULT_MODEL, url=OLLAMA, timeout_s=3.0, keep_alive='2h'):
+        self.model, self.url, self.timeout_s, self.keep_alive = model, url, timeout_s, keep_alive
+
+    def _generate(self, prompt, system, num_predict, timeout_s):
+        body = json.dumps({'model': self.model, 'system': system, 'prompt': prompt, 'stream': False,
+                           'keep_alive': self.keep_alive,
+                           'options': {'num_predict': num_predict, 'temperature': 0.7}}).encode()
+        request = urllib.request.Request(f'{self.url}/api/generate', data=body,
+                                         headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            return json.load(response)
+
+    def warm(self, timeout_s=180.0):
+        """Load the model now; returns the seconds it took, or None when it cannot."""
+        started = time.time()
+        try:
+            self._generate('Say: ready.', 'Answer with one word.', 2, timeout_s)
+        except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+            return None
+        return round(time.time() - started, 1)
 
     def line(self, event, detail):
         if event not in EVENTS:
             return None
-        body = json.dumps({'model': self.model, 'system': PERSONA, 'prompt': prompt_for(event, detail),
-                           'stream': False, 'options': {'num_predict': 40, 'temperature': 0.9}}).encode()
-        request = urllib.request.Request(f'{self.url}/api/generate', data=body,
-                                         headers={'Content-Type': 'application/json'})
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                return one_sentence(json.load(response).get('response', '')) or None
+            answer = self._generate(prompt_for(event, detail), PERSONA, 40, self.timeout_s)
+            return one_sentence(answer.get('response', '')) or None
         except (urllib.error.URLError, OSError, ValueError, TimeoutError):
             return None
 
@@ -175,7 +200,12 @@ def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print):
     """Tail the events file forever, speaking each new line's event."""
     position = 0 if from_start else (os.path.getsize(path) if os.path.exists(path) else 0)
     log(f'VOICE    {json.dumps({"events": os.path.relpath(path), "model": getattr(brain, "model", None), "stop": "Ctrl+C"})}')
+    warm_every_s, warmed = 180.0, 0.0
     while True:
+        if hasattr(brain, 'warm') and time.time() - warmed > warm_every_s:
+            took = brain.warm()
+            log(f'MODEL    {json.dumps({"loaded": took is not None, "seconds": took})}')
+            warmed = time.time()
         if not os.path.exists(path):
             time.sleep(poll_s)
             continue
@@ -211,7 +241,11 @@ def main():
         print(f'NOTE: no Piper voice at log/chess/voices/{args.voice}.onnx: lines are printed, not spoken '
               f'(python -m piper.download_voices {args.voice} --data-dir log/chess/voices)', flush=True)
     if args.say:
+        if hasattr(brain, 'warm'):
+            print(f'MODEL    loaded in {brain.warm()} s', flush=True)
+        started = time.time()
         respond(args.say, {'arm': 'black', 'san': 'Nxd4', 'result': '0-1', 'moves': 31}, brain, mouth)
+        print(f'TIMING   {time.time() - started:.1f} s from event to the end of speech', flush=True)
         return 0
     try:
         follow(args.events, brain, mouth, from_start=args.from_start)

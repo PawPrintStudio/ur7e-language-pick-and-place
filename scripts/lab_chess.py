@@ -1872,6 +1872,28 @@ def cmd_teach_home(args):
         close_session(session)
 
 
+def cmd_gesture(args):
+    """One gesture (or all) from home: plan-only by default, the arm with --execute."""
+    names = list(chess_gestures.GESTURES) if args.name == 'all' else [args.name]
+    session = open_session(args, chess.Board())
+    executor, lab, adapters, _ = session
+    try:
+        for name in names:
+            if not args.execute:
+                points, report = chess_gestures.plan(executor, adapters.geometry, name)
+                say('GESTURE', report if points else f'{name}: skipped: {report}')
+                continue
+            if not args.yes:
+                ask_operator('clear', f'Gesture {name} from home. Everyone clear of the arm?',
+                             [option(GO, 'Go', 'go'), option(STOP, 'Skip', 'stop')])
+            event = next(e for e, (g, _) in chess_gestures.EVENT_GESTURE.items() if g == name)
+            chess_gestures.perform(event, executor, lab, adapters.geometry, executor.joint_rate,
+                                   say, claps=not args.no_claps)
+        return 0
+    finally:
+        close_session(session)
+
+
 def cmd_goto(args):
     from lab_pick import tool_yaw
     session = open_session(args, chess.Board())
@@ -2259,6 +2281,11 @@ def main():
     p = sub.add_parser('teach-home', help='save the present arm pose as chess_home')
     p.set_defaults(run=cmd_teach_home)
     arm.append(p)
+    p = sub.add_parser('gesture', help='one gesture from home (plan-only unless --execute)')
+    p.add_argument('name', choices=list(chess_gestures.GESTURES) + ['all'])
+    p.add_argument('--no-claps', action='store_true', help='no jaw claps')
+    p.set_defaults(run=cmd_gesture)
+    arm.append(p)
     p = sub.add_parser('goto', help='hover over a square; --touch points at it 10 mm up')
     p.add_argument('square')
     p.add_argument('--touch', action='store_true')
@@ -2306,7 +2333,7 @@ def main():
             p.add_argument('--yes', action='store_true')
             p.description = f'{p.prog}: robot options {reason}'
     args = cli.parse_args()
-    if getattr(args, 'command', '') in ('teach-home', 'goto', 'move', 'play') \
+    if getattr(args, 'command', '') in ('teach-home', 'goto', 'move', 'play', 'gesture') \
             and add_session_arguments is None \
             and not getattr(args, 'steps_only', False):
         say('BLOCKED', f'{args.command} needs the ROS graph {reason}')

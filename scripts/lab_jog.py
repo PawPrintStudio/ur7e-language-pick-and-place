@@ -54,6 +54,7 @@ from ur_dashboard_msgs.msg import SafetyMode
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'motion'))
 from ur_motion import JOINTS, MAX_JOINT_VEL, MotionClient  # noqa: E402
+import retime as _retime  # noqa: E402
 
 from arm_language import schema  # noqa: E402
 
@@ -142,13 +143,16 @@ class JogExecutor(Node):
         self.speed = msg.data
         self.speed_time = time.monotonic()
 
-    def fresh(self, settle_s=1.0, patience_s=4.0):
+    def fresh(self, settle_s=None, patience_s=4.0):
         """Spin briefly, then return a fresh, stationary RobotState.
 
         An arm that has just finished a goal (or just let go of something)
         can still show a few hundred microradians per second of motion for
         a moment, so "still moving" is only an error after ``patience_s``.
+        ``settle_s`` defaults to ``self.settle_s`` (1.0; chess uses 0.3: ten
+        segments a step made the settling alone a quarter of the step).
         """
+        settle_s = getattr(self, 'settle_s', 1.0) if settle_s is None else settle_s
         deadline = time.monotonic() + patience_s
         while True:
             until = time.monotonic() + settle_s
@@ -374,18 +378,8 @@ class JogExecutor(Node):
         sends the anchor at t=0, so that duplicate is dropped. Each following
         waypoint gets the time its largest joint step needs at ``rate``.
         """
-        rate = min(rate, MAX_JOINT_VEL * 0.95)
-        pts = []
-        previous = start
-        t = 0.0
-        for pose in points:
-            step = max(abs(pose[j] - previous[j]) for j in JOINTS)
-            if step < 1e-6 and not pts:
-                continue  # the planner's copy of the start state
-            t += max(MIN_WAYPOINT_DT, step / rate)
-            pts.append((pose, t))
-            previous = pose
-        return pts
+        start = {j: start[j] for j in JOINTS}
+        return _retime.retime(start, points, rate, MIN_WAYPOINT_DT, MAX_JOINT_VEL)
 
     def audit(self, start, points):
         """Bounds the console reports before asking to execute."""

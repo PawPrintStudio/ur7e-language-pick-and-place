@@ -251,6 +251,59 @@ def infer_move(position, squares, colours=None):
     return ranking[0][1], margin, ranking[:5]
 
 
+def infer_move_diff(position, before, after, colours_after=None):
+    """The legal move whose occupancy CHANGES best match two scans: (move, margin, ranking).
+
+    ``before`` is the scan after the arm's last move (the student has not
+    touched the board), ``after`` the scan after the student's move. Only
+    squares seen in both count, and only whether they changed: a back-rank
+    square the camera always misses, or always reads the same, says nothing
+    either way. That is what the absolute comparison (``infer_move``) gets
+    wrong on this board (spec S6).
+
+    A capture needs the colour on its destination (``colours_after``, square
+    -> is-white): a piece lifted off its square and still in the hand looks
+    exactly like "captured somewhere along its line" in occupancy alone
+    (2026-10-14: a bishop in the hand read as Bxa6, and the arm then took its
+    own pawn). The destination still showing the captured side's colour
+    counts strongly against; an unknown colour leaves the capture unproven.
+    """
+    import chess
+    colours_after = colours_after or {}
+    both = [n for n, e in before.items() if e['seen'] and after.get(n, {}).get('seen')]
+    observed = {n: before[n]['occupied'] != after[n]['occupied'] for n in both}
+    # Tiebreak (2026-10-14): a knight leaving g1 was seen, but f3/h3/e2 were
+    # hidden in BOTH scans by the parked gripper, so three moves tied at 0.
+    # Squares seen only in the new scan still say whether a destination is
+    # occupied now; they count a quarter, never enough to beat a changed square.
+    new_only = [n for n, e in after.items() if e['seen'] and n not in both]
+    ranking = []
+    for move in position.legal_moves:
+        result = position.copy()
+        result.push(move)
+        score = 0
+        for name in both:
+            square = chess.parse_square(name)
+            expected = (position.piece_at(square) is not None) != (result.piece_at(square) is not None)
+            if expected != observed[name]:
+                score -= 1
+        for name in new_only:
+            if (result.piece_at(chess.parse_square(name)) is not None) != after[name]['occupied']:
+                score -= 0.25
+        if position.is_capture(move) and not position.is_en_passant(move):
+            seen_white = colours_after.get(chess.square_name(move.to_square))
+            if seen_white is None:
+                score -= 1                      # unproven: a lifted piece looks the same
+            elif seen_white != position.turn:
+                score -= 2                      # the captured side is still standing there
+        ranking.append((score, move))
+    ranking.sort(key=lambda s: -s[0])
+    if not ranking:
+        return None, 0, []
+    margin = ranking[0][0] - (ranking[1][0] if len(ranking) > 1 else -99)
+    return ranking[0][1], margin, ranking[:5]
+
+
 def board_shift(base_from_camera, apparent_base_from_camera):
     """How the board moved (4x4, base frame), from the camera pose the grid now implies.
 

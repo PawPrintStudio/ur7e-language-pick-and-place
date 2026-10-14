@@ -126,6 +126,20 @@ Use **source**, not `bash`: the settings must remain in your current terminal.
 It does not start a driver, camera, calibration or motion.
 Label the windows T1, T2 and T3 so you can find them during a demonstration.
 
+**Where each thing runs.** The prompt tells you which side you are on:
+`ros@nikola-LOQ:/workspaces/AI_arm$` is the container, `~/Pr/Makerspace/AI_arm`
+is the laptop itself. The container reads the repo folder live, so a `git
+pull` needs no rebuild, but a **running** `watch`, `play` or voice keeps its
+old code until restarted.
+
+| Where | What |
+|---|---|
+| Container (T1, T2, T3) | `lab_up.sh`, `watch`, `play`, `gesture`, `goto`, `touch`/`fit`/`overlay` |
+| Laptop (T4) | `.venv-voice/bin/python scripts/chess_voice.py` (sound card, GPU), the two browser windows |
+
+A container terminal from any laptop terminal: `docker exec -it <container> bash`
+(`docker ps` names it), then `cd /workspaces/AI_arm`.
+
 ## 3. Day-of setup — reuse the accepted calibration
 
 Start with the camera calibration completed and accepted during preparation.
@@ -209,6 +223,22 @@ types from height; the legal game record has a separate role. Before `play`,
 the record may still be from October 11: its difference count is not a count
 of invisible squares.
 
+## 5b. T4 on the HOST — the robot's voice (optional)
+
+In a **host** terminal, not the container (the prompt must not say
+`/workspaces`; the script refuses inside the container), with the TV on:
+
+```bash
+.venv-voice/bin/python scripts/chess_voice.py
+```
+
+It speaks one line per game event (greeting, captures, checks, the result)
+from a local model, or a canned line when the model is slow, through the
+HDMI output (the TV). The first line must say `AUDIO` with `pw-play --target`;
+if it says `aplay`, the TV sink was not found: `wpctl status`. Ctrl+C stops
+it; the game does not depend on it. Setup commands are in CHESS.md,
+"Reactions".
+
 ## 6. T3 — read-only checks before a game
 
 With the physical pieces at the standard start and the arm clear of the
@@ -239,16 +269,19 @@ Confirm T1 says `chess stack up`, T2 is live, calibration is accepted and
 the physical pieces are at the normal start. In **T3 CONTAINER**:
 
 ```bash
-python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --skill 1
+python3 scripts/lab_chess.py play --vision --execute --max-speed-percent 100 --skill 20 --hover 0.10
 ```
 
 | Option | Meaning |
 |---|---|
 | `play` | Starts a new standard game (`--resume` carries on from the recorded one). Every prompt is also a button on **http://localhost:8091/#operator** on this laptop. |
-| `--vision` | Reads student moves and measures piece centres/heights for picking. |
+| `--vision` | Reads student moves (watching the board while the prompt waits) and measures piece centres/heights for picking. |
 | `--execute` | Enables real motion after operator confirmations. |
 | `--max-speed-percent 100` | Permits live speed scaling up to 100%; does not set the pendant slider or remove trajectory safety limits. |
-| `--skill 1` | Uses Stockfish skill level 1; replies may vary between games. |
+| `--skill 20` | Stockfish at full strength; `--skill 1` for a beatable robot. |
+| `--hover 0.10` | Carries pieces 10 cm over the tallest piece (8 cm warns). |
+| `--careful` | A Go per step as well as per move: first runs after a calibration change. |
+| `--no-gestures` | No wrist reactions. |
 
 Student is White; robot is Black. Keep confirmations; **do not add `--yes`**.
 If startup warns that board position could not be checked, stop and resolve
@@ -264,12 +297,16 @@ laptop (not the projected one: the projected page shows the same game with no
 controls). Every prompt below appears there as buttons and in T3 as text;
 answer in either place.
 
-1. At the student prompt, invite one legal physical White move.
-2. Student withdraws; operator clicks **Read the board** (or Enter in T3).
-3. Check `I saw ...`. Click **Yes** only if correct, or type the actual move,
-   such as `e2e4`. A typed move must describe what physically happened.
-4. Read the robot's reply. Click **Clear: let the arm move** only when
-   everyone is clear, then **Go** for each step deliberately.
+1. At the student prompt, invite one legal physical White move. The camera
+   reads the board every few seconds; do not press anything until the
+   student has let go of the piece.
+2. `I saw ...` appears by itself once three readings agree (or click **Read
+   the board**). Look at the real board, then click **Yes**, or **No**, or
+   type the actual move, such as `e2e4`. Never confirm while a piece is
+   still in the student's hand.
+3. Read the robot's reply. Click **Clear: let the arm move** only when
+   everyone is clear; that approves the whole move (a capture is two steps).
+   With `play --careful` there is also a **Go** per step.
 5. Wait for completion and check the real board before inviting another move.
    Resolve any post-move disagreement honestly (**Board fixed**).
 
@@ -357,6 +394,11 @@ robot shutdown procedure separately.
 | Missing `chess_home` | Resolve the taught pose through the lab procedure; do not substitute the old arm's home. |
 | Motion failure/protective stop | Keep people clear, inspect the cause, and do not repeatedly retry. |
 | Failed-motion prompt offers `h` | Use only after the operator actually completed the remaining move by hand. |
+| Operator page button says "Sent" but nothing happens, or "not served by this watch" | `watch` is older than the page: Ctrl+C and restart it in T2, reload the page. |
+| Voice speaks but no jingle, or speaks every line twice | Restart `chess_voice.py` after pulling; make sure only one is running (`pgrep -af chess_voice`). |
+| `ModuleNotFoundError: chess` | That terminal is the laptop, not the container. |
+| Gesture "skipped: execution gate closed" | The pendant program is not running (after a stop): press Play, run it again. |
+| `I saw …` shows a capture the student did not make | A piece held in the hand; click No, let the student finish, read again. |
 
 T1 logs: `log/lab/<timestamp>/driver.log` and `moveit.log`. Calibration image:
 `log/chess/overlay.jpg`. Board/camera geometry: `scripts/lab_chess.json`.

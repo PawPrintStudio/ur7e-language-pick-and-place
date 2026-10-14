@@ -269,7 +269,8 @@ answer in either place.
 3. Check `I saw ...`. Click **Yes** only if correct, or type the actual move,
    such as `e2e4`. A typed move must describe what physically happened.
 4. Read the robot's reply. Click **Clear: let the arm move** only when
-   everyone is clear, then **Go** for each step deliberately.
+   everyone is clear; that approves the whole move (a capture is two steps).
+   With `play --careful` there is also a **Go** per step.
 5. Wait for completion and check the real board before inviting another move.
    Resolve any post-move disagreement honestly (**Board fixed**).
 

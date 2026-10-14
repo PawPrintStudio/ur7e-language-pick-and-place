@@ -151,9 +151,12 @@ def ask_operator(kind, text, options, allow_text=False, auto=None):
                 continue
             print()
             low = answer.lower()
-            if low in ('new', 'new game') and NEW_GAME in keys:
+            # New game and Quit are standing buttons on the operator page:
+            # accepted on every prompt, so a group can leave mid-move. The
+            # arm finishes the step it is on; nothing is interrupted.
+            if low in ('new', 'new game'):
                 raise NewGame
-            if low in ('quit', 'q', 'resign') and QUIT in keys:
+            if low in ('quit', 'q', 'resign'):
                 raise QuitGame
             if low in ('y', 'yes', 'go'):
                 low = GO
@@ -862,6 +865,19 @@ def serve_dashboard(port, latest, lan=False):
         def do_POST(self):  # noqa: N802
             if self.path.startswith('/scan'):
                 latest['scan_now'] = True
+            elif self.path.startswith('/reset'):
+                # The standing New game button when no game is running: the
+                # same record reset as `lab_chess.py reset`, refused while a
+                # chess command owns the record (answer that prompt instead).
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_error(403, 'Reset is accepted from this computer only')
+                    return
+                try:
+                    with game_state_lock():
+                        new_game_state(chess.Board(), read_state().get('arm') == 'white')
+                except RuntimeError as error:
+                    self.send_error(409, str(error))
+                    return
             elif self.path.startswith('/answer'):
                 # The operator's click. Only from this computer: the projected
                 # page is read-only for the audience, and arm motion is never
@@ -1665,17 +1681,19 @@ def park_arm(session):
         say('WARNING', f'could not park the arm: {error}')
 
 
-def run_steps(session, steps, auto_yes):
+def run_steps(session, steps, auto_yes, confirm_steps=True):
     """Run each (from, to) through the orchestrator; return how many finished.
 
     The arm parks at home after the last step only: between the two steps of
     a capture it waits at the box's hover, where the next pick starts.
+    ``confirm_steps=False``: the move was approved as a whole ("everyone
+    clear"); no prompt per step.
     """
     _, _, adapters, orchestrator = session
     for done, (frm, to) in enumerate(steps):
         answer = ask_operator('step', f'{frm} -> {to}: go?',
                               [option(GO, f'Go: {frm} → {to}', 'go'), option(STOP, 'Stop', 'stop')],
-                              auto=GO if auto_yes else None)
+                              auto=GO if auto_yes or not confirm_steps else None)
         if answer != GO:
             say('RESULT', {'outcome': 'declined', 'step': f'{frm} {to}'})
             return done
@@ -1899,7 +1917,10 @@ def cmd_move(args):
     publish_state(fen=board.fen(), planned=planned_move(board, move), moves=move_list(board))
     session = open_session(args, board)
     try:
-        done = run_steps(session, steps, args.yes)
+        try:
+            done = run_steps(session, steps, args.yes)
+        except (NewGame, QuitGame):            # the page's standing buttons: a single move just stops
+            done = 0
         park_arm(session)
         if done == len(steps):
             if note:
@@ -1984,7 +2005,8 @@ def arm_move(board, move, session, args):
                      auto=GO if args.yes else None)
         remaining = list(steps)
         while remaining:
-            done = run_steps(session, remaining, args.yes)
+            # "Everyone clear" approved the whole move; --careful asks per step too.
+            done = run_steps(session, remaining, args.yes, confirm_steps=args.careful)
             remaining = remaining[done:]
             if not remaining:
                 break
@@ -2182,6 +2204,9 @@ def main():
                    help='carry on from the recorded game (log/chess/state.json) after a restart')
     p.add_argument('--arm-white', action='store_true',
                    help='the arm plays White (default: Black)')
+    p.add_argument('--careful', action='store_true',
+                   help='ask before every step as well as before the move '
+                        '(first runs after a calibration change)')
     p.add_argument('--engine', default='stockfish', help='UCI engine binary, or none')
     p.add_argument('--skill', type=int, default=1, help='Stockfish Skill Level 0..20')
     p.add_argument('--think', type=float, default=0.5, help='seconds per engine move')

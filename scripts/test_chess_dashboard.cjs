@@ -135,6 +135,33 @@ test('operator page: buttons follow the prompt, one click posts one answer with 
   assert.equal(p.element('op-buttons').innerHTML, '');
 });
 
+test('standing New game: answers the prompt with a game, resets the record without one; move list shows', async () => {
+  const posts = [];
+  const p = page(async (url, init) => { posts.push([url, init?.body ? JSON.parse(init.body) : null]); return {ok:true, json:async () => ({})}; },
+                 {operator:true});
+  const state = boardState();
+  state.moves = ['e4', 'h6', 'd4']; state.arm = 'black';
+  state.prompt = {...PROMPT, options:[...PROMPT.options, {key:'new', label:'New game'}, {key:'quit', label:'Quit'}]};
+  state.prompt_age_s = 0.5;
+  p.show(state);
+  assert.equal(p.element('moves').innerHTML, '1. e4 <b>h6</b> 2. d4');
+  assert.doesNotMatch(p.element('op-buttons').innerHTML, /data-key="new"/);   // the standing button covers it
+  assert.equal(p.element('op-new').disabled, false);
+  await p.element('op-new').onclick();
+  assert.deepEqual(posts, [['/answer', {id:'p1', answer:'new'}]]);
+  posts.length = 0;
+  state.prompt = null; state.prompt_age_s = 1;                          // arm moving: nothing to answer
+  p.show(state);
+  assert.equal(p.element('op-new').disabled, true);
+  assert.match(p.element('op-standing-note').textContent, /Wait for the arm/);
+  state.prompt_age_s = null;                                             // no game at all: /reset
+  p.show(state);
+  assert.equal(p.element('op-new').disabled, false);
+  await p.element('op-new').onclick();
+  assert.deepEqual(posts, [['/reset', null]]);
+  assert.match(p.element('op-note').textContent, /Record reset/);
+});
+
 test('operator page: a dead game greys the buttons out; typed moves only where allowed', () => {
   const p = page(undefined, {operator:true}), state = boardState();
   state.prompt = {...PROMPT, kind:'student_move', allow_text:true}; state.prompt_age_s = 30;

@@ -162,15 +162,18 @@ terminal still works: whichever answers first wins. How it is wired:
   `log/chess/answer.json`; `play` reads it, drops it if the id is stale.
   Answers are accepted from this computer only (127.0.0.1): the projected
   page cannot move the arm, and neither can anything on the network.
-- **New game** and **Quit** are on every student prompt and at game over:
-  a new group is one click, the record restarts, the arm stays parked.
-  `reset` is only needed when `play` is not running.
+- **New game** and **Quit** are standing buttons, taken on every prompt:
+  a new group is one click, the record restarts, the arm parks. With no
+  game running, New game resets the record through `POST /reset` (the same
+  as `lab_chess.py reset`, refused while a chess command holds the lock).
 - `play --resume` carries on from the recorded game after a restart of T3.
 
-Prompts, in order of a turn: *student move* (Read the board / type it /
-New game / Quit), *I saw e4: right?* (Yes / No, read again / type it),
-*Robot plays b5, everyone clear?* (Go), one *b7 → b5: go?* per step
-(Go / Stop), and after a failed step *Retry / I finished it by hand*.
+Prompts, in order of a turn (2026-10-14, spec S2): *student move* (Read the
+board / type it), *I saw e4: right?* (Yes / No, read again / type it),
+*Robot plays b5, everyone clear?* (Go: approves the whole move), and after
+a failed step *Retry / I finished it by hand*. `play --careful` adds one
+*b7 → b5: go?* per step, for the first runs after a calibration change. The
+audience page shows the move list with the robot's moves in bold.
 The audience page turns each of these into a headline ("Your move · White",
 "Robot is about to play b5: stand clear", "Arm stopped during b5").
 

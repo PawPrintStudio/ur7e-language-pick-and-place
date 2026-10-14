@@ -87,6 +87,10 @@ is not running the page has no reset at all.
 states (student prompt, mid-move, no game); `reset` and the button leave the
 same record.
 
+**Status 2026-10-14: implemented** (`--careful`, standing New game / Quit,
+`POST /reset`, move list; 4 new tests). Mid-move means between steps: the
+arm finishes the step it is on, then parks.
+
 ## S3. Emotion: gestures and sounds on game events
 
 **Design.** Events from the game loop (`play`): `captured` (the arm took a

@@ -87,6 +87,11 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
 .op-form[hidden] { display:none; }
 .op-form input { font:inherit; font-size:17px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; width:220px; }
 #op-note { font-size:12px; color:var(--muted); margin:8px 0 0; min-height:18px; }
+.op-standing { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
+.op-standing button { min-height:40px; }
+.op-standing button.warn { color:var(--amber); border-color:var(--amber); }
+#moves { font-size:14px; color:var(--text); margin:6px 0 0; line-height:1.7; word-spacing:2px; }
+#moves b { color:var(--maroon); font-weight:600; }
 @media(max-width:850px) { .vision-view { grid-template-columns:1fr; gap:20px; } .camera-frame { height:auto; aspect-ratio:16/10; } .board-pair { grid-template-columns:repeat(2,minmax(0,1fr)); border-left:0; padding-left:0; } .board-card svg { max-height:320px; } .legend { justify-content:center; } }
 @media(max-width:600px) {
  .masthead { padding:14px; gap:16px; } .university-mark { width:155px; } .intro h1 { font-size:30px; } .intro p { font-size:14px; } .school-caption { display:none; }
@@ -120,7 +125,7 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
   </div>
   <div class="legend"><span><i></i>Difference</span><span><i class="unknown"></i>Unknown depth</span></div>
   <section class="status" id="status">
-    <div role="status" aria-live="polite" aria-atomic="true"><h2 id="headline">Connecting…</h2><p id="subline"></p></div>
+    <div role="status" aria-live="polite" aria-atomic="true"><h2 id="headline">Connecting…</h2><p id="subline"></p><p id="moves"></p></div>
     <div class="camera-check"><div id="agree" class="big">Waiting for camera</div><div id="age"></div><button id="scan" type="button" disabled>Check again</button></div>
   </section>
   <div id="scan-note" role="status" hidden></div>
@@ -130,6 +135,7 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
     <div id="op-buttons" class="op-buttons"></div>
     <form id="op-form" class="op-form" hidden><input id="op-input" placeholder="type the move: e4, Nf3, e7e5" autocomplete="off" aria-label="Typed answer"><button type="submit">Send</button></form>
     <p id="op-note"></p>
+    <div class="op-standing"><button id="op-new" type="button" class="warn">New game</button><button id="op-quit" type="button">Quit play</button><span id="op-standing-note">New game restarts the record for the next group; the arm parks.</span></div>
   </section>
 </main>
 <script>
@@ -345,7 +351,20 @@ function show(state) {
     $('agree').className = 'big ' + (wrong.length ? 'badc' : nHidden ? 'warnc' : 'good');
   }
   $('age').textContent = live.scan_age_s != null ? `scanned ${live.scan_age_s.toFixed(0)} s ago` : '';
+  paintMoves(state);
   paintOperator(state);
+}
+
+// The game so far: "1. e4 h6 2. d4 b5", the robot's moves in bold.
+function paintMoves(state) {
+  const moves = state.moves || [], robotWhite = state.arm === 'white';
+  const parts = [];
+  for (let i = 0; i < moves.length; i++) {
+    const robot = (i % 2 === 0) === robotWhite;
+    if (i % 2 === 0) parts.push(`${i / 2 + 1}.`);
+    parts.push(robot ? `<b>${moves[i]}</b>` : moves[i]);
+  }
+  $('moves').innerHTML = parts.join(' ');
 }
 
 // --- the operator console: #operator on the laptop; the projected page never shows it ---
@@ -359,6 +378,15 @@ function paintOperator(state) {
   const alive = state.prompt_age_s != null && state.prompt_age_s < 6;   // play beats every second
   $('op-alive').textContent = alive ? 'game running' : 'no game running';
   $('op-alive').className = alive ? 'good' : '';
+  // Standing buttons: with a game, they answer the open prompt (any prompt
+  // takes new/quit); between prompts the arm is moving and nothing can be
+  // answered; with no game, New game resets the record through /reset.
+  const pending = prompt && answeredPrompt === prompt.id;
+  $('op-new').disabled = alive ? (!prompt || pending) : false;
+  $('op-quit').disabled = !alive || !prompt || pending;
+  $('op-standing-note').textContent = alive ? (prompt ? 'New game restarts the record for the next group; the arm parks.'
+                                                      : 'Wait for the arm to finish this step.')
+                                            : 'No game running: New game clears the old record on the screens.';
   if (!prompt) {
     $('op-text').textContent = alive ? (state.thinking ? 'Robot is thinking…' : 'Arm is moving: watch the board.')
                                      : 'No game running. Start play in T3.';
@@ -366,9 +394,8 @@ function paintOperator(state) {
     $('op-form').hidden = true;
     return;
   }
-  const pending = answeredPrompt === prompt.id;
   $('op-text').textContent = prompt.text;
-  $('op-buttons').innerHTML = prompt.options.map(o =>
+  $('op-buttons').innerHTML = prompt.options.filter(o => o.key !== 'new' && o.key !== 'quit').map(o =>
     `<button type="button" class="${o.style || ''}" data-key="${o.key}" ${(!alive || pending) ? 'disabled' : ''}>${o.label}</button>`).join('');
   $('op-form').hidden = !prompt.allow_text;
   $('op-input').disabled = !alive || pending;
@@ -400,6 +427,18 @@ $('op-form').onsubmit = event => {
   const text = $('op-input').value.trim();
   if (text) { answer(text); $('op-input').value = ''; }
 };
+async function resetRecord() {
+  $('op-note').textContent = 'Resetting the game record…';
+  try {
+    const r = await fetch('/reset', {method: 'POST', signal: AbortSignal.timeout(4000)});
+    if (!r.ok) throw new Error(r.status === 409 ? 'a game owns the record: answer its prompt' : `HTTP ${r.status}`);
+    $('op-note').textContent = 'Record reset: standard position, White to move.';
+  } catch (e) {
+    $('op-note').textContent = `Not reset (${e.message}).`;
+  }
+}
+$('op-new').onclick = () => currentState?.prompt ? answer('new') : resetRecord();
+$('op-quit').onclick = () => { if (currentState?.prompt) answer('quit'); };
 
 async function poll() {
   try {

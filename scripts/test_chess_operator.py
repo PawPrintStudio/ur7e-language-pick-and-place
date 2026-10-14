@@ -76,17 +76,72 @@ def test_typed_text_is_returned_only_where_allowed(capsys):
     assert 'not one of' in capsys.readouterr().out
 
 
-def test_new_game_and_quit_raise_only_when_offered():
+def test_new_game_and_quit_are_taken_on_every_prompt():
     answer_when_asked('new')
     with pytest.raises(lab_chess.NewGame):
         lab_chess.ask_operator('student_move', 'move?', lab_chess.GAME_OPTIONS, allow_text=True)
     answer_when_asked('quit')
     with pytest.raises(lab_chess.QuitGame):
         lab_chess.ask_operator('game_over', 'over', lab_chess.GAME_OPTIONS)
-    # On a step prompt "quit" is not an option: it is just a wrong answer, then Stop.
+    # The page's standing buttons: a step prompt takes them too (the step is not started).
     answer_when_asked('quit')
-    answer_when_asked('n', delay_s=0.6)
-    assert lab_chess.ask_operator('step', 'go?', [lab_chess.option('y', 'Go'), lab_chess.option('n', 'Stop')]) == 'n'
+    with pytest.raises(lab_chess.QuitGame):
+        lab_chess.ask_operator('step', 'go?', [lab_chess.option('y', 'Go'), lab_chess.option('n', 'Stop')])
+
+
+def test_the_whole_move_is_approved_once_unless_careful(monkeypatch):
+    asked = []
+    monkeypatch.setattr(lab_chess, 'ask_operator',
+                        lambda kind, text, options, allow_text=False, auto=None: asked.append((kind, auto)) or (auto or 'y'))
+
+    class Orchestrator:
+        def run(self, text):
+            return type('R', (), {'run_id': 'r', 'outcome': 'succeeded', 'reason': 'ok', 'message': '',
+                                  'duration_s': 0.0, 'retries': 0})()
+    lab = RecordingLab()
+    adapters = lab_chess.ChessAdapters(lab, square_board(), lab_chess.load_pieces())
+    session = (None, lab, adapters, Orchestrator())
+    assert lab_chess.run_steps(session, [('d4', 'box'), ('c6', 'd4')], False, confirm_steps=False) == 2
+    assert asked == [('step', 'y'), ('step', 'y')]           # auto-approved: no prompt shown
+    asked.clear()
+    assert lab_chess.run_steps(session, [('d4', 'box')], False, confirm_steps=True) == 1
+    assert asked == [('step', None)]                          # --careful: the prompt is shown
+
+
+def test_the_dashboard_server_answers_and_resets(monkeypatch):
+    import urllib.request
+    server = lab_chess.serve_dashboard(0, {'live': {}})
+    port = server.server_address[1]
+
+    def post(path, body=None):
+        req = urllib.request.Request(f'http://127.0.0.1:{port}{path}', method='POST',
+                                     data=None if body is None else json.dumps(body).encode(),
+                                     headers={'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(req, timeout=3) as r:
+                return r.status
+        except urllib.error.HTTPError as error:
+            return error.code
+    try:
+        lab_chess.publish_state(fen='8/8/8/8/8/8/8/8 w - - 0 1', moves=['e4'], arm='white',
+                                prompt={'id': 'p1', 'kind': 'step', 'text': 'go?', 'options': []},
+                                beat=time.time())
+        assert post('/answer', {'id': 'p1', 'answer': 'y'}) == 200
+        with open(lab_chess.ANSWER_FILE) as stream:
+            assert json.load(stream)['answer'] == 'y'
+        assert post('/answer', {'nope': 1}) == 400
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}/state', timeout=3) as r:
+            state = json.load(r)
+        assert state['prompt']['id'] == 'p1' and 0 <= state['prompt_age_s'] < 5
+        # Reset: refused while a chess command owns the record, else a fresh record keeping the arm's side.
+        with lab_chess.game_state_lock():
+            assert post('/reset') == 409
+        assert post('/reset') == 200
+        state = lab_chess.read_state()
+        assert state['fen'] == chess.STARTING_FEN and state['moves'] == [] and state['arm'] == 'white'
+        assert 'prompt' not in state
+    finally:
+        server.shutdown()
 
 
 def test_auto_yes_skips_the_prompt():

@@ -126,6 +126,20 @@ Use **source**, not `bash`: the settings must remain in your current terminal.
 It does not start a driver, camera, calibration or motion.
 Label the windows T1, T2 and T3 so you can find them during a demonstration.
 
+**Where each thing runs.** The prompt tells you which side you are on:
+`ros@nikola-LOQ:/workspaces/AI_arm$` is the container, `~/Pr/Makerspace/AI_arm`
+is the laptop itself. The container reads the repo folder live, so a `git
+pull` needs no rebuild, but a **running** `watch`, `play` or voice keeps its
+old code until restarted.
+
+| Where | What |
+|---|---|
+| Container (T1, T2, T3) | `lab_up.sh`, `watch`, `play`, `gesture`, `goto`, `touch`/`fit`/`overlay` |
+| Laptop (T4) | `.venv-voice/bin/python scripts/chess_voice.py` (sound card, GPU), the two browser windows |
+
+A container terminal from any laptop terminal: `docker exec -it <container> bash`
+(`docker ps` names it), then `cd /workspaces/AI_arm`.
+
 ## 3. Day-of setup — reuse the accepted calibration
 
 Start with the camera calibration completed and accepted during preparation.
@@ -380,6 +394,11 @@ robot shutdown procedure separately.
 | Missing `chess_home` | Resolve the taught pose through the lab procedure; do not substitute the old arm's home. |
 | Motion failure/protective stop | Keep people clear, inspect the cause, and do not repeatedly retry. |
 | Failed-motion prompt offers `h` | Use only after the operator actually completed the remaining move by hand. |
+| Operator page button says "Sent" but nothing happens, or "not served by this watch" | `watch` is older than the page: Ctrl+C and restart it in T2, reload the page. |
+| Voice speaks but no jingle, or speaks every line twice | Restart `chess_voice.py` after pulling; make sure only one is running (`pgrep -af chess_voice`). |
+| `ModuleNotFoundError: chess` | That terminal is the laptop, not the container. |
+| Gesture "skipped: execution gate closed" | The pendant program is not running (after a stop): press Play, run it again. |
+| `I saw …` shows a capture the student did not make | A piece held in the hand; click No, let the student finish, read again. |
 
 T1 logs: `log/lab/<timestamp>/driver.log` and `moveit.log`. Calibration image:
 `log/chess/overlay.jpg`. Board/camera geometry: `scripts/lab_chess.json`.

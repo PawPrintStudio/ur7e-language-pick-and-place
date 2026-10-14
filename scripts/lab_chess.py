@@ -2529,9 +2529,10 @@ def main():
             # the carried piece's top. open_session warns when that is too low to clear
             # the tallest piece in lab_chess.yaml. Rates (2026-10-14): 0.4 rad/s
             # travel, 0.12 beside the pieces; the pendant slider scales both.
-            # 0.4 shook the arm at segment boundaries (2026-10-14); 0.32 with
-            # the ramped starts in retime.py is the operator's "80 %".
-            p.set_defaults(hover=0.08, joint_rate=0.32, contact_rate=0.10)
+            # 0.4 shook the arm before segments ramped in and out (retime.py);
+            # with the ramps, 0.4 travel / 0.12 beside the pieces is demo-day
+            # speed (2026-10-14). The envelope is 0.6; --joint-rate overrides.
+            p.set_defaults(hover=0.08, joint_rate=0.40, contact_rate=0.12)
         else:
             p.add_argument('--yes', action='store_true')
             p.description = f'{p.prog}: robot options {reason}'

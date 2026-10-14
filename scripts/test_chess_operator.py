@@ -146,6 +146,7 @@ def test_the_dashboard_server_answers_and_resets(monkeypatch):
         with open(lab_chess.ANSWER_FILE) as stream:
             assert json.load(stream)['answer'] == 'y'
         assert post('/answer', {'nope': 1}) == 400
+        assert post('/something-newer', {}) == 404                   # a stale watch must not say "ok"
         with urllib.request.urlopen(f'http://127.0.0.1:{port}/state', timeout=3) as r:
             state = json.load(r)
         assert state['prompt']['id'] == 'p1' and 0 <= state['prompt_age_s'] < 5

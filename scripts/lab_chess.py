@@ -953,6 +953,11 @@ def serve_dashboard(port, latest, lan=False):
                 with open(ANSWER_FILE + '.tmp', 'w') as stream:
                     json.dump(answer, stream)
                 os.replace(ANSWER_FILE + '.tmp', ANSWER_FILE)
+            else:
+                # A page newer than this server (2026-10-14: Ask clicked against a
+                # watch started before /ask existed, answered 200, did nothing).
+                self.send_error(404, f'{self.path} is not served by this watch: restart watch')
+                return
             self.send(b'{}', 'application/json')
 
         def log_message(self, *args):

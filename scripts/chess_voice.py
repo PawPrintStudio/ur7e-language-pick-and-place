@@ -70,6 +70,10 @@ FACTS = {
     'won': ['A computer can look at more moves than any person, but you made me work for it.'],
     'lost_game': ['Even a robot that checks thousands of moves can be beaten by a good plan.'],
     'draw': ['Neither of us could win: my program and your brain agreed on that.'],
+    'ask': ['A camera above the board shows me every piece in 3D.',
+            'I move with six motors, one in each joint, like six elbows.',
+            'My chess program tries thousands of moves before I pick one.',
+            'I measure how tall a piece is before I grab it, so my fingers close at the right height.'],
 }
 
 # What each event means, for the prompt and as the fallback line.
@@ -96,6 +100,13 @@ EVENTS = {
                    'Well played; I bow my gripper to you. Rematch?']),
     'draw': ('Your game with the child ended in a draw ({result}).',
              ['A draw! Neither of us could win: my program and your brain agreed on that.']),
+    # The presenter's button: a question, or nothing (then something about itself).
+    'ask': ('The presenter asks you, in front of the children: "{question}"',
+            ['I see the board with a camera above it, think with a chess program, and move with six motors.',
+             'My fingers are rubber pads; I squeeze each piece just hard enough to lift it.',
+             'Before every move I plan the whole path of my arm so I never bump another piece.',
+             'My chess program looks at thousands of moves every second; I only play one of them.',
+             'I am a robot arm, so I have no eyes: a camera on a stand is how I watch the board.']),
 }
 
 
@@ -116,7 +127,7 @@ def canned(event, detail):
         return ''
     try:
         return random.choice(lines).format(**detail)
-    except (KeyError, IndexError):
+    except (KeyError, IndexError, ValueError):
         return lines[0].split('{')[0].strip()
 
 
@@ -127,7 +138,16 @@ def prompt_for(event, detail, teach=True):
     robot's own captures and drifted to "Good job!". Paraphrasing a line that
     already carries the meaning and the fact keeps it on track.
     """
-    situation = EVENTS[event][0].format(**{k: detail.get(k, '?') for k in ('arm', 'san', 'result', 'moves')})
+    keys = {k: detail.get(k, '?') for k in ('arm', 'san', 'result', 'moves', 'question')}
+    if event == 'ask':
+        question = (detail.get('question') or '').strip()
+        fact = random.choice(FACTS['ask'])
+        if not question:
+            return ('The presenter pressed your button: tell the children one interesting thing '
+                    f'about how you work, for example: {fact}')
+        return (EVENTS['ask'][0].format(**keys) + ' Answer the question honestly in one '
+                f'simple sentence for children; if it is about how you work, this is true: {fact}')
+    situation = EVENTS[event][0].format(**keys)
     line = canned(event, detail)
     fact = random.choice(FACTS.get(event, [''])) if teach else ''
     return (f'{situation} Say this to the child in your own words, keeping its meaning'

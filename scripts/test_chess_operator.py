@@ -187,16 +187,54 @@ def test_a_timed_confirmation_stands_unless_answered_and_a_poll_can_answer():
                                   poll=poll) == lab_chess.BoardWatcher.SEEN
 
 
-def test_the_board_watcher_needs_two_agreeing_confident_readings(monkeypatch):
-    readings = iter([(None, 0, 'diff', {}), ('e4', 2, 'diff', {}), ('e4', 2, 'diff', {}),
-                     ('d4', 1, 'diff', {}), ('d4', 0, 'diff', {}), ('d4', 1, 'diff', {}), ('d4', 1, 'diff', {})])
+def test_the_board_watcher_needs_three_agreeing_confident_readings(monkeypatch):
+    readings = iter([(None, 0, 'diff', {}), ('e4', 2, 'diff', {}), ('e4', 2, 'diff', {}), ('e4', 2, 'diff', {}),
+                     ('d4', 1, 'diff', {}), ('d4', 0, 'diff', {}), ('d4', 1, 'diff', {}), ('d4', 1, 'diff', {}),
+                     ('d4', 1, 'diff', {})])
     monkeypatch.setattr(lab_chess, 'read_student_move', lambda vision, executor, board: next(readings))
     monkeypatch.setattr(lab_chess, 'WATCH_EVERY_S', 0.0)
     watcher = lab_chess.BoardWatcher(object(), None, chess.Board())
-    assert [watcher.poll() for _ in range(3)] == [None, None, lab_chess.BoardWatcher.SEEN]
+    assert [watcher.poll() for _ in range(4)] == [None, None, None, lab_chess.BoardWatcher.SEEN]
     assert watcher.result[0] == 'e4'
     watcher = lab_chess.BoardWatcher(object(), None, chess.Board())
-    assert [watcher.poll() for _ in range(4)] == [None, None, None, lab_chess.BoardWatcher.SEEN]  # a dip to 0 resets
+    assert [watcher.poll() for _ in range(5)] == [None] * 4 + [lab_chess.BoardWatcher.SEEN]  # a dip to 0 resets
+
+
+def test_the_confirmation_waits_for_the_operator_unless_auto_confirm(monkeypatch):
+    monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
+    board = chess.Board()
+    e4 = board.parse_san('e4')
+    vision = FakeVision('e4')
+    vision.baseline = {}
+    vision.cv.infer_move_diff = lambda *a: (e4, 2, [(0, e4)])
+    vision.cv.piece_colours = lambda squares, position: {}
+    asked = []
+    monkeypatch.setattr(lab_chess, 'ask_operator',
+                        lambda kind, text, options, allow_text=False, auto=None, **kw: asked.append((kind, kw.get('timeout_s'))) or ('' if kind == 'student_move' else 'y'))
+    lab_chess.student_move(vision, None, board, 'White')
+    assert asked[-1] == ('confirm_move', None)                 # default: a real click
+    monkeypatch.setattr(lab_chess, 'AUTO_CONFIRM', True)
+    lab_chess.student_move(vision, None, board, 'White')
+    assert asked[-1] == ('confirm_move', lab_chess.CONFIRM_SECONDS)
+
+
+def test_the_arm_checks_the_colour_before_a_capture(monkeypatch):
+    monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
+    # Black to move; the record says a white bishop stands on a6 (a misread), the camera sees black.
+    board = chess.Board('rnbqkbnr/1ppppppp/B7/8/4P3/8/PPPP1PPP/RNBQK1NR b KQkq - 0 2')
+    capture = board.parse_san('bxa6')
+    vision = FakeVision('a6')
+    answers = []
+    monkeypatch.setattr(lab_chess, 'ask_operator',
+                        lambda kind, text, options, allow_text=False, auto=None, **kw: answers.append(kind) or 'u')
+    vision.cv.piece_colours = lambda squares, position: {'a6': False}    # black piece on a6
+    assert lab_chess.capture_agrees(vision, None, board, capture) is False
+    assert answers == ['record_mismatch']
+    vision.cv.piece_colours = lambda squares, position: {'a6': True}     # a white piece: as recorded
+    assert lab_chess.capture_agrees(vision, None, board, capture) is True
+    vision.cv.piece_colours = lambda squares, position: {}               # colour unknown: no objection
+    assert lab_chess.capture_agrees(vision, None, board, capture) is True
+    assert answers == ['record_mismatch']
 
 
 def test_auto_yes_skips_the_prompt():
@@ -413,7 +451,7 @@ def test_a_capture_read_by_diff_with_margin_one_is_offered_not_refused(monkeypat
     capture, quiet = board.parse_san('Nxc7+'), board.parse_san('Ne7')
     vision = FakeVision('c7')
     vision.baseline = {'d5': {'seen': True, 'occupied': True}}
-    vision.cv.infer_move_diff = lambda position, before, after: (capture, 1, [(0, capture), (-1, quiet)])
+    vision.cv.infer_move_diff = lambda *a: (capture, 1, [(0, capture), (-1, quiet)])
     vision.cv.infer_move = lambda *a: (capture, 1, [(0, capture), (-1, quiet)])
     vision.cv.piece_colours = lambda squares, position: {}
     asked = []

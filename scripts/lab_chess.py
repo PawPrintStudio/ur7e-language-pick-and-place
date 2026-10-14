@@ -919,6 +919,21 @@ def serve_dashboard(port, latest, lan=False):
                 except RuntimeError as error:
                     self.send_error(409, str(error))
                     return
+            elif self.path.startswith('/ask'):
+                # The operator's question for the robot's voice (chess_voice.py
+                # answers it through the events file); an empty one asks for
+                # something interesting about itself.
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_error(403, 'Questions are accepted from this computer only')
+                    return
+                length = int(self.headers.get('Content-Length') or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b'{}')
+                except ValueError:
+                    data = {}
+                question = str(data.get('question', '') if isinstance(data, dict) else '')[:200].strip()
+                chess_gestures.log_event(EVENTS_FILE, 'ask', question=question,
+                                         fen=read_state().get('fen'))
             elif self.path.startswith('/answer'):
                 # The operator's click. Only from this computer: the projected
                 # page is read-only for the audience, and arm motion is never
@@ -2029,8 +2044,10 @@ def cmd_move(args):
 
 
 GAME_OPTIONS = [option(NEW_GAME, 'New game', 'warn'), option(QUIT, 'Quit', 'stop')]
-CONFIRM_SECONDS = 5.0        # "I saw e4" stands unless the operator objects within this
+CONFIRM_SECONDS = 8.0        # with --auto-confirm: "I saw e4" stands unless the operator objects within this
+AUTO_CONFIRM = False         # set by play --auto-confirm; off by default since the Bxa6 game (2026-10-14)
 WATCH_EVERY_S = 2.5          # how often the board is read while the student thinks
+STABLE_READINGS = 3          # agreeing readings (about 7 s) before the camera proposes a move
 
 
 def confident_margin(how):
@@ -2048,26 +2065,28 @@ def read_student_move(vision, executor, board):
     is read from what CHANGED; without one, from the absolute picture.
     """
     squares, _, _ = vision.look(executor_tips(executor))
+    colours = vision.cv.piece_colours(squares, board)
     if vision.baseline is not None:
-        move, margin, _ = vision.cv.infer_move_diff(board, vision.baseline, squares)
+        move, margin, _ = vision.cv.infer_move_diff(board, vision.baseline, squares, colours)
         return move, margin, 'diff', squares
-    move, margin, _ = vision.cv.infer_move(board, squares, vision.cv.piece_colours(squares, board))
+    move, margin, _ = vision.cv.infer_move(board, squares, colours)
     return move, margin, 'absolute', squares
 
 
 class BoardWatcher:
     """Reads the board every few seconds while the student prompt waits.
 
-    Answers the prompt by itself once two readings in a row agree on a
-    confident move: the operator then only confirms (or lets the
-    confirmation stand). A board being touched reads differently from one
-    scan to the next, so a single reading never counts.
+    Answers the prompt by itself once STABLE_READINGS readings in a row agree
+    on a confident move: the operator then confirms. A board being touched
+    reads differently from one scan to the next, and a piece held in the
+    hand reads like a capture, so a single reading never counts and a
+    capture also needs the colour flip (infer_move_diff).
     """
     SEEN = '\x00seen'
 
     def __init__(self, vision, executor, board):
         self.vision, self.executor, self.board = vision, executor, board
-        self.last_at, self.previous, self.result = 0.0, None, None
+        self.last_at, self.previous, self.agreed, self.result = 0.0, None, 0, None
 
     def poll(self):
         if time.time() - self.last_at < WATCH_EVERY_S:
@@ -2079,10 +2098,13 @@ class BoardWatcher:
             say('WARNING', f'watching the board: {error}')
             return None
         if move is None or margin < confident_margin(how):
-            self.previous = None
+            self.previous, self.agreed = None, 0
             return None
         if self.previous != move:
-            self.previous = move
+            self.previous, self.agreed = move, 1
+            return None
+        self.agreed += 1
+        if self.agreed < STABLE_READINGS:
             return None
         self.result = (move, margin, how, squares)
         return self.SEEN
@@ -2123,12 +2145,14 @@ def student_move(vision, executor, board, side):
         say('UNSURE', 'two moves explain the board equally well: type the move')
         chess_gestures.log_event(EVENTS_FILE, 'unsure', **seen)
         return None
-    # Confirmed unless the operator says no within a few seconds: one fewer
-    # click per turn (2026-10-14).
+    # The operator confirms. With --auto-confirm the reading stands after a
+    # few seconds unless objected to; off by default since a bishop held in
+    # the hand was read as Bxa6 and stood (2026-10-14).
     check = ask_operator('confirm_move', f'I saw {board.san(move)}. Right?',
                          [option(GO, f'Yes, {board.san(move)}', 'go'),
                           option(STOP, 'No: read again')] + GAME_OPTIONS, allow_text=True,
-                         timeout_s=CONFIRM_SECONDS, default=GO)
+                         timeout_s=CONFIRM_SECONDS if AUTO_CONFIRM else None,
+                         default=GO if AUTO_CONFIRM else None)
     if check == GO:
         return move
     if check == STOP:
@@ -2160,6 +2184,38 @@ def check_position(vision, executor, board):
     else:
         say('CHECK', 'board matches the game')
     vision.baseline = squares
+
+
+def capture_agrees(vision, executor, board, move):
+    """Does the camera see the student's piece where the arm is about to capture?
+
+    Returns True to go ahead (also when the camera cannot tell), False when
+    the operator chose to take the student's last move back.
+    """
+    target = chess.square_name(move.to_square)
+    if board.is_en_passant(move):
+        target = chess.square_name(chess.square(chess.square_file(move.to_square),
+                                                chess.square_rank(move.from_square)))
+    try:
+        squares, _, _ = vision.look(executor_tips(executor))
+    except Exception as error:      # noqa: BLE001 - no picture, no objection
+        say('WARNING', f'capture check: {error}')
+        return True
+    seen_white = vision.cv.piece_colours(squares, board).get(target)
+    entry = squares.get(target, {})
+    if seen_white is None or not entry.get('seen'):
+        return True
+    student_is_white = not board.turn            # the arm is the side to move
+    if seen_white == student_is_white:           # the piece there is the student's: fine
+        return True
+    colour = 'white' if seen_white else 'black'
+    say('CHECK', {'square': target, 'camera_sees': colour, 'record_expects': 'the student\'s piece'})
+    answer = ask_operator('record_mismatch',
+                          f'I am about to take on {target}, but the camera sees a {colour} piece '
+                          'there, my own colour. Was the last student move entered wrong?',
+                          [option('u', 'Yes: take it back and re-enter it', 'go'),
+                           option(GO, 'No, the camera is wrong: go on', 'stop')] + GAME_OPTIONS)
+    return answer != 'u'
 
 
 def baseline_scan(vision, executor):
@@ -2232,6 +2288,15 @@ def play_game(board, arm, engine, session, args):
         publish_state(thinking=True)
         move = engine.choose(board)
         publish_state(planned=planned_move(board, move), thinking=False)
+        if session is not None and session[2].vision is not None and board.is_capture(move):
+            # Before taking a piece, the camera must agree it is the student's.
+            # 2026-10-14: a misread student move put a white bishop on a6 in
+            # the record; the arm then removed its own pawn from a6.
+            if not capture_agrees(session[2].vision, session[0], board, move):
+                board.pop()
+                publish_state(fen=board.fen(), planned=None, moves=move_list(board))
+                say('UNDO', 'the student\'s last move was taken back; enter it again')
+                continue
         arm_move(board, move, session, args)
         san, capture = board.san(move), board.is_capture(move)
         board.push(move)
@@ -2283,6 +2348,8 @@ def cmd_play(args):
         board = chess.Board(args.fen) if args.fen else chess.Board()
     engine = Engine(args.engine, args.skill, args.think, args.seed)
     say('ENGINE', engine.name)
+    global AUTO_CONFIRM
+    AUTO_CONFIRM = bool(getattr(args, 'auto_confirm', False))
     if args.resume and not args.fen:
         publish_state(planned=None, prompt=None, result=None, thinking=False)
     else:
@@ -2420,6 +2487,9 @@ def main():
                         '(first runs after a calibration change)')
     p.add_argument('--no-gestures', action='store_true',
                    help='no wrist gestures on captures, checks and the result')
+    p.add_argument('--auto-confirm', action='store_true',
+                   help='"I saw e4" stands after a few seconds unless the operator objects '
+                        '(default: the operator clicks Yes)')
     p.add_argument('--engine', default='stockfish', help='UCI engine binary, or none')
     p.add_argument('--skill', type=int, default=1, help='Stockfish Skill Level 0..20')
     p.add_argument('--think', type=float, default=0.5, help='seconds per engine move')

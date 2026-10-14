@@ -126,8 +126,9 @@ finishing a step; **Quit play** stops it.
 
 1. Invite one student to make a legal White move when the presenter permits it.
 2. Student steps back. The camera reads the board every few seconds and
-   shows `I saw ...` by itself; it stands after 5 s. Click **No** or type the
-   real move (`e2e4`, `Nf3`) only when it is wrong.
+   shows `I saw ...` by itself. Check the real board, then click **Yes**, or
+   **No**, or type the real move (`e2e4`, `Nf3`). Never confirm while a
+   piece is still in the student's hand.
 3. Click **Clear: let the arm move** when everyone is clear; that approves
    the whole move, a capture included.
 4. Let the arm finish (about 30 s a step); it reacts to captures, checks and

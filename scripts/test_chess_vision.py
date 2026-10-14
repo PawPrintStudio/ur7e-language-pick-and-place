@@ -134,16 +134,31 @@ def test_a_move_is_read_from_what_changed_even_with_the_back_rank_missing():
     assert move.uci() == 'e2e4' and margin >= 2
 
 
-def test_a_capture_is_read_from_the_vacated_square_alone():
+def test_a_capture_needs_the_colour_flip_on_its_square():
     position = chess.Board('4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1')
     after = position.copy()
-    after.push_uci('e4d5')                                  # exd5: only e4 changes
-    move, margin, ranking = cv_.infer_move_diff(position, scan_of(position), scan_of(after))
+    after.push_uci('e4d5')                                  # exd5: only e4 changes in occupancy
+    before_scan, after_scan = scan_of(position), scan_of(after)
+    # The camera sees a white piece on d5 now: the capture is read, ahead of e4-e5.
+    move, margin, _ = cv_.infer_move_diff(position, before_scan, after_scan, {'d5': True, 'e1': True, 'e8': False})
     assert move.uci() == 'e4d5' and margin >= 1
-    # Hide d5 and e5: e4-e5 and exd5 both only show e4 emptying: a tie, so the operator types it.
-    move, margin, _ = cv_.infer_move_diff(position, scan_of(position, hidden=('d5', 'e5')),
-                                          scan_of(after, hidden=('d5', 'e5')))
-    assert margin == 0
+    # No colour information: a lifted pawn looks the same, so the capture is not confident.
+    move, margin, _ = cv_.infer_move_diff(position, before_scan, after_scan)
+    assert not (move.uci() == 'e4d5' and margin >= 1)
+    # d5 still reads black: the pawn is in the hand, not on d5; e4-e5 (its own square hidden) wins.
+    move, margin, _ = cv_.infer_move_diff(position, before_scan, after_scan, {'d5': False})
+    assert move.uci() != 'e4d5'
+
+
+def test_a_bishop_in_the_hand_is_not_a_capture():
+    # 2026-10-14: after 1.e4 a6, the student lifted the f1 bishop; the diff read Bxa6.
+    position = chess.Board('rnbqkbnr/1ppppppp/p7/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2')
+    before_scan = scan_of(position)
+    lifted = {n: dict(e, occupied=False) if n == 'f1' else e for n, e in before_scan.items()}
+    colours = {'a6': False, 'e1': True, 'e8': False}       # a6 still shows the black pawn
+    move, margin, ranking = cv_.infer_move_diff(position, before_scan, lifted, colours)
+    assert not any(m.uci() == 'f1a6' and s >= ranking[0][0] for s, m in ranking[:1])
+    assert margin == 0 or move.uci() != 'f1a6'              # nothing confident: the operator waits
 
 
 def test_a_moved_board_is_followed_from_the_grid():

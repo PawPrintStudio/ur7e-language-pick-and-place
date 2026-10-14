@@ -251,7 +251,7 @@ def infer_move(position, squares, colours=None):
     return ranking[0][1], margin, ranking[:5]
 
 
-def infer_move_diff(position, before, after):
+def infer_move_diff(position, before, after, colours_after=None):
     """The legal move whose occupancy CHANGES best match two scans: (move, margin, ranking).
 
     ``before`` is the scan after the arm's last move (the student has not
@@ -260,8 +260,16 @@ def infer_move_diff(position, before, after):
     square the camera always misses, or always reads the same, says nothing
     either way. That is what the absolute comparison (``infer_move``) gets
     wrong on this board (spec S6).
+
+    A capture needs the colour on its destination (``colours_after``, square
+    -> is-white): a piece lifted off its square and still in the hand looks
+    exactly like "captured somewhere along its line" in occupancy alone
+    (2026-10-14: a bishop in the hand read as Bxa6, and the arm then took its
+    own pawn). The destination still showing the captured side's colour
+    counts strongly against; an unknown colour leaves the capture unproven.
     """
     import chess
+    colours_after = colours_after or {}
     both = [n for n, e in before.items() if e['seen'] and after.get(n, {}).get('seen')]
     observed = {n: before[n]['occupied'] != after[n]['occupied'] for n in both}
     # Tiebreak (2026-10-14): a knight leaving g1 was seen, but f3/h3/e2 were
@@ -282,6 +290,12 @@ def infer_move_diff(position, before, after):
         for name in new_only:
             if (result.piece_at(chess.parse_square(name)) is not None) != after[name]['occupied']:
                 score -= 0.25
+        if position.is_capture(move) and not position.is_en_passant(move):
+            seen_white = colours_after.get(chess.square_name(move.to_square))
+            if seen_white is None:
+                score -= 1                      # unproven: a lifted piece looks the same
+            elif seen_white != position.turn:
+                score -= 2                      # the captured side is still standing there
         ranking.append((score, move))
     ranking.sort(key=lambda s: -s[0])
     if not ranking:

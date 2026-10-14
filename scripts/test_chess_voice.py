@@ -48,6 +48,8 @@ def test_every_event_has_a_fact_and_a_kid_friendly_canned_line():
         for line in lines:
             assert len(line.split()) <= 24, line
             assert not any(word in line.lower() for word in ('stupid', 'loser', 'idiot', 'dumb'))
+    assert 'button' in v.prompt_for('ask', {'question': ''}) and 'honestly' in v.prompt_for('ask', {'question': 'Do you dream?'})
+    assert v.canned('ask', {'question': ''})
     prompt = v.prompt_for('check', {'san': 'Qh4+'})
     assert 'fact about how you work' in prompt and 'child' in prompt and 'The line:' in prompt
     assert 'fact about' not in v.prompt_for('check', {'san': 'Qh4+'}, teach=False)

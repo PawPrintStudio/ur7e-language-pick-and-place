@@ -179,6 +179,18 @@ test('standing New game: answers the prompt with a game, resets the record witho
   assert.match(p.element('op-note').textContent, /Record reset/);
 });
 
+test('the Ask button posts the question (or nothing) to the voice', async () => {
+  const posts = [];
+  const p = page(async (url, init) => { posts.push([url, JSON.parse(init.body)]); return {ok:true, json:async () => ({})}; },
+                 {operator:true});
+  p.element('op-question').value = 'Do you dream?';
+  await p.element('op-ask').onsubmit({preventDefault() {}});
+  p.element('op-question').value = '';
+  await p.element('op-ask').onsubmit({preventDefault() {}});
+  assert.deepEqual(posts, [['/ask', {question:'Do you dream?'}], ['/ask', {question:''}]]);
+  assert.match(p.element('op-ask-note').textContent, /Sent to the voice/);
+});
+
 test('a confirmation with a timeout shows the countdown; the operator view marks the body', () => {
   const p = page(undefined, {operator:true}), state = boardState();
   state.prompt = {id:'p9', kind:'confirm_move', text:'I saw e4. Right?', allow_text:true, timeout_s:5, default:'y',

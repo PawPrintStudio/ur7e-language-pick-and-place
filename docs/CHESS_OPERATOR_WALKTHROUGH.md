@@ -286,9 +286,10 @@ answer in either place.
 1. At the student prompt, invite one legal physical White move. The camera
    reads the board every few seconds; do not press anything until the
    student has let go of the piece.
-2. `I saw ...` appears by itself once two readings agree (or click **Read
-   the board**). It stands after 5 s: click **No** or type the actual move,
-   such as `e2e4`, only when it is wrong.
+2. `I saw ...` appears by itself once three readings agree (or click **Read
+   the board**). Look at the real board, then click **Yes**, or **No**, or
+   type the actual move, such as `e2e4`. Never confirm while a piece is
+   still in the student's hand.
 3. Read the robot's reply. Click **Clear: let the arm move** only when
    everyone is clear; that approves the whole move (a capture is two steps).
    With `play --careful` there is also a **Go** per step.

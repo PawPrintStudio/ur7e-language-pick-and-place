@@ -169,16 +169,28 @@ terminal still works: whichever answers first wins. How it is wired:
 - `play --resume` carries on from the recorded game after a restart of T3.
 
 Prompts, in order of a turn (2026-10-14, spec S2): *student move* (the
-camera reads the board every 2.5 s while this waits and answers by itself
-once two readings agree; or Read the board / type it), *I saw e4: right?*
-(stands after 5 s unless the operator clicks No or types the real move),
-*Robot plays b5, everyone clear?* (Go: approves the whole move), and after
-a failed step *Retry / I finished it by hand*. A normal turn is therefore
-one click: Clear. `play --careful` adds one *b7 → b5: go?* per step, for the
-first runs after a calibration change. New game and Quit clicked while the
-arm moves are queued and taken at the next prompt. The audience page shows
-the move list with the robot's moves in bold; the operator view
-(`#operator`) puts the console first and large.
+camera reads the board every 2.5 s while this waits and proposes a move
+once three readings in a row agree; or Read the board / type it), *I saw
+e4: right?* (the operator clicks Yes, No, or types the real move; with
+`play --auto-confirm` it stands after 8 s instead), *Robot plays b5,
+everyone clear?* (Go: approves the whole move), and after a failed step
+*Retry / I finished it by hand*. A normal turn is two clicks: Yes, Clear.
+`play --careful` adds one *b7 → b5: go?* per step, for the first runs after
+a calibration change. New game and Quit clicked while the arm moves are
+queued and taken at the next prompt. The audience page shows the move list
+with the robot's moves in bold; the operator view (`#operator`) puts the
+console first and large, and has **Ask Ro-Boko**: a question (or nothing)
+for the voice to answer in front of the children.
+
+Why the confirmation is a click again (game 3, 2026-10-14): a bishop lifted
+off f1 and held in the hand reads, in occupancy alone, exactly like "bishop
+captures somewhere along its line"; the camera proposed Bxa6, the
+auto-confirmation let it stand, and the arm then took its own pawn from a6.
+Two more guards came out of it: a capture is only read when the colour on
+its destination has flipped to the mover's (`infer_move_diff`), and before
+the arm takes a piece it checks the camera's colour there against the
+record and offers to take the student's last move back
+(`capture_agrees`).
 The audience page turns each of these into a headline ("Your move · White",
 "Robot is about to play b5: stand clear", "Arm stopped during b5").
 

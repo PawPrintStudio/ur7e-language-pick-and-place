@@ -134,6 +134,7 @@ body.operator .op-standing button { min-height:52px; font-size:17px; }
 .op-standing { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
 .op-standing button { min-height:40px; }
 .op-standing button.warn { color:var(--amber); border-color:var(--amber); }
+.op-ask { margin-top:10px; align-items:center; } .op-ask input { width:320px; } #op-ask-note { font-size:12px; color:var(--muted); }
 #moves { font-size:14px; color:var(--text); margin:6px 0 0; line-height:1.7; word-spacing:2px; }
 #moves b { color:var(--maroon); font-weight:600; }
 @media(max-width:850px) { .wrap { height:auto; overflow:visible; } .vision-view { grid-template-columns:1fr; gap:20px; } .robot-face { width:110px; } .bubble { font-size:14px; } .camera-frame { height:auto; aspect-ratio:16/10; } .board-pair { grid-template-columns:repeat(2,minmax(0,1fr)); border-left:0; padding-left:0; } .board-card svg { max-height:320px; } .legend { justify-content:center; } }
@@ -202,6 +203,7 @@ body.operator .op-standing button { min-height:52px; font-size:17px; }
     <form id="op-form" class="op-form" hidden><input id="op-input" placeholder="type the move: e4, Nf3, e7e5" autocomplete="off" aria-label="Typed answer"><button type="submit">Send</button></form>
     <p id="op-note"></p>
     <div class="op-standing"><button id="op-new" type="button" class="warn">New game</button><button id="op-quit" type="button">Quit play</button><span id="op-standing-note">New game restarts the record for the next group; the arm parks.</span></div>
+    <form id="op-ask" class="op-form op-ask"><input id="op-question" placeholder="Ask Ro-Boko something (or leave empty)" autocomplete="off" aria-label="Question for the robot"><button type="submit" id="op-ask-button">Ask Ro-Boko</button><span id="op-ask-note"></span></form>
   </section>
 </main>
 <script>
@@ -411,7 +413,7 @@ function show(state) {
     setStatus('busy', `Robot is about to play ${state.planned?.san || ''}`, 'Please stand clear of the board.');
   } else if (kind === 'game_over') {
     setStatus('ok', `Game over · ${state.result || ''}`, 'Thanks for playing. The presenter sets up the next game.');
-  } else if (kind === 'board_fixed') {
+  } else if (kind === 'board_fixed' || kind === 'record_mismatch') {
     setStatus('warn', 'Board check', 'The presenter is matching the real board to the game record.');
   } else if (kind === 'confirm_move') {
     setStatus('busy', 'Checking your move…', prompt.text);
@@ -448,7 +450,7 @@ function show(state) {
 }
 
 // The cartoon arm: a mood per event, a speech bubble while the voice speaks.
-const MOOD = {greeting:'happy', captured:'smug', lost:'annoyed', check:'smug', won:'joy', lost_game:'sad', draw:'happy'};
+const MOOD = {greeting:'happy', captured:'smug', lost:'annoyed', check:'smug', won:'joy', lost_game:'sad', draw:'happy', ask:'happy'};
 function paintRobot(state) {
   const voice = state.voice || null;
   const speaking = voice && voice.age_s != null && voice.age_s < (voice.seconds || 3);
@@ -554,6 +556,20 @@ async function resetRecord() {
     $('op-note').textContent = `Not reset (${e.message}).`;
   }
 }
+$('op-ask').onsubmit = async event => {
+  event.preventDefault();
+  const question = $('op-question').value.trim();
+  $('op-ask-note').textContent = 'Asking…';
+  try {
+    const r = await fetch('/ask', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                   body: JSON.stringify({question}), signal: AbortSignal.timeout(4000)});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    $('op-ask-note').textContent = 'Sent to the voice (it needs chess_voice.py running on the laptop).';
+    $('op-question').value = '';
+  } catch (e) {
+    $('op-ask-note').textContent = `Not sent (${e.message}).`;
+  }
+};
 const gameAlive = () => currentState?.prompt_age_s != null && currentState.prompt_age_s < 6;
 $('op-new').onclick = () => currentState?.prompt ? answer('new') : gameAlive() ? answer('new', '*') : resetRecord();
 $('op-quit').onclick = () => { if (currentState?.prompt) answer('quit'); else if (gameAlive()) answer('quit', '*'); };

@@ -2173,6 +2173,13 @@ def check_position(vision, executor, board):
     squares, _, _ = vision.look(executor_tips(executor))
     wrong = [name for name, e in squares.items() if e['seen']
              and e['occupied'] != (board.piece_at(chess.parse_square(name)) is not None)]
+    # Squares the camera gets wrong every time (e8/f8 behind the taller pieces
+    # read empty all game, 2026-10-14) are not news: skip the ones that already
+    # disagreed in the baseline scan the same way, so the operator is only
+    # asked about a real change.
+    if vision.baseline:
+        wrong = [n for n in wrong if not (vision.baseline.get(n, {}).get('seen')
+                                          and vision.baseline[n]['occupied'] == squares[n]['occupied'])]
     if wrong:
         print(board_text(squares))
         say('CHECK', {'squares_not_as_expected': wrong,
@@ -2282,8 +2289,12 @@ def play_game(board, arm, engine, session, args):
             say('STUDENT', san)
             board.push(move)
             publish_state(fen=board.fen(), planned=None, moves=move_list(board))
-            if capture:
+            if board.is_checkmate():
+                say('CHECKMATE', f'{san}: the student wins')
+            elif capture:
                 react(session, args, 'lost', san=san, fen=board.fen())
+            elif board.is_check():
+                react(session, args, 'checked', san=san, fen=board.fen())
             continue
         publish_state(thinking=True)
         move = engine.choose(board)
@@ -2304,17 +2315,21 @@ def play_game(board, arm, engine, session, args):
         if session is not None and session[2].vision is not None:
             check_position(session[2].vision, session[0], board)
         if board.is_game_over(claim_draw=True):
+            if board.is_checkmate():
+                say('CHECKMATE', f'{san}: the robot wins')
             break
         if capture:
             react(session, args, 'captured', san=san, fen=board.fen())
         elif board.is_check():
             react(session, args, 'check', san=san, fen=board.fen())
     result = board.result(claim_draw=True)
-    say('GAME', {'result': result, 'moves': len(board.move_stack)})
-    publish_state(result=result)
+    by = ('checkmate' if board.is_checkmate() else 'stalemate' if board.is_stalemate()
+          else 'a draw by the rules')
+    say('GAME', {'result': result, 'by': by, 'moves': len(board.move_stack)})
+    publish_state(result=result, game_over=by)
     arm_result = {'1-0': chess.WHITE, '0-1': chess.BLACK}.get(result)
     react(session, args, 'draw' if arm_result is None else 'won' if arm_result == arm else 'lost_game',
-          result=result, moves=len(board.move_stack))
+          result=result, by=by, moves=len(board.move_stack))
     return result
 
 

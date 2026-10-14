@@ -40,7 +40,7 @@ GESTURES = {
 EVENT_GESTURE = {
     'captured': ('celebrate', True), 'lost': ('shake', False), 'check': ('nod', False),
     'won': ('dance', True), 'lost_game': ('droop', False), 'draw': ('nod', False),
-    'greeting': ('wave', False),
+    'greeting': ('wave', False), 'checked': ('shake', False),
 }
 CLAP_OPEN_MM, CLAP_CLOSE_MM, CLAP_FORCE_N = 50.0, 12.0, 10.0
 

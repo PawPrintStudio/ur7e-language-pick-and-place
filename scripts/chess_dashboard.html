@@ -102,7 +102,7 @@ body.operator .robot { --robot-w:90px !important; --robot-h:70px !important; } b
 body.operator #op-text { font-size:28px; }
 body.operator .op-buttons button { min-height:72px; font-size:22px; padding:12px 28px; }
 body.operator .op-standing button { min-height:52px; font-size:17px; }
-#op-count { display:inline-block; margin-left:10px; font-size:14px; color:var(--muted); }
+#op-count { margin:-6px 0 8px; font-size:14px; color:var(--muted); min-height:18px; }
 .status h2 { font-size:17px; margin:0; font-weight:650; }
 .status p { color:var(--muted); font-size:12px; margin:4px 0 0; max-width:520px; }
 .status.bad h2 { color:var(--red); } .status.warn h2 { color:var(--amber); } .status.busy h2 { color:var(--blue); }
@@ -198,7 +198,8 @@ body.operator .op-standing button { min-height:52px; font-size:17px; }
   <div id="scan-note" role="status" hidden></div>
   <section id="operator" class="operator" hidden aria-label="Operator console">
     <div class="operator-head"><h2>Operator<span>Answers go to the game running in T3. This computer only; the projected page has no controls.</span></h2><span id="op-alive"></span></div>
-    <p id="op-text">No game running. Start <code>play</code> in T3.<span id="op-count"></span></p>
+    <p id="op-text">No game running. Start <code>play</code> in T3.</p>
+    <p id="op-count"></p>
     <div id="op-buttons" class="op-buttons"></div>
     <form id="op-form" class="op-form" hidden><input id="op-input" placeholder="type the move: e4, Nf3, e7e5" autocomplete="off" aria-label="Typed answer"><button type="submit">Send</button></form>
     <p id="op-note"></p>
@@ -450,7 +451,7 @@ function show(state) {
 }
 
 // The cartoon arm: a mood per event, a speech bubble while the voice speaks.
-const MOOD = {greeting:'happy', captured:'smug', lost:'annoyed', check:'smug', won:'joy', lost_game:'sad', draw:'happy', ask:'happy'};
+const MOOD = {greeting:'happy', captured:'smug', lost:'annoyed', check:'smug', checked:'annoyed', won:'joy', lost_game:'sad', draw:'happy', ask:'happy'};
 function paintRobot(state) {
   const voice = state.voice || null;
   const speaking = voice && voice.age_s != null && voice.age_s < (voice.seconds || 3);
@@ -525,7 +526,7 @@ async function answer(value, id) {
   if (!id || (prompt && answeredPrompt === prompt.id && id === prompt.id)) return;
   if (id === prompt?.id) answeredPrompt = prompt.id;
   $('op-note').textContent = `Sending ${value || 'Enter'}…`;
-  paintOperator(currentState);
+  try { paintOperator(currentState); } catch (e) { console.error('dashboard render', e); }
   try {
     const r = await fetch('/answer', {method: 'POST', headers: {'Content-Type': 'application/json'},
                                       body: JSON.stringify({id, answer: value}), signal: AbortSignal.timeout(4000)});

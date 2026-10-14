@@ -67,6 +67,7 @@ FACTS = {
              'My chess program already knew that could happen; it chose the move anyway.'],
     'check': ['I looked at thousands of moves in a second and picked the one that bothers your king.',
               'Before I move, I plan the whole path so my arm never bumps a piece.'],
+    'checked': ['My program looks at every way out of check before I pick one.'],
     'won': ['A computer can look at more moves than any person, but you made me work for it.'],
     'lost_game': ['Even a robot that checks thousands of moves can be beaten by a good plan.'],
     'draw': ['Neither of us could win: my program and your brain agreed on that.'],
@@ -92,12 +93,15 @@ EVENTS = {
     'check': ('You, the robot, just put the child\'s king in check with {san}.',
               ['Check! I looked at thousands of moves in one second to find that one.',
                'Check; mind your king, I planned that move before my arm even started moving.']),
-    'won': ('You, the robot, just WON the game against the child ({result}) after {moves} moves.',
-            ['Good game! A computer can check more moves than anyone, but you made me work for it.',
-             'I won this one; play again and see if you can trick my camera?']),
-    'lost_game': ('The child just beat you: you, the robot, LOST the game ({result}) after {moves} moves.',
-                  ['You beat a robot today! Even one that checks thousands of moves can lose to a good plan.',
-                   'Well played; I bow my gripper to you. Rematch?']),
+    'checked': ('The child just put YOUR king in check with {san}.',
+                ['Careful, that is check on me; my program is already looking for a way out.',
+                 'Check on my king! Give me a second, I am searching thousands of escapes.']),
+    'won': ('You, the robot, just WON the game against the child by {by} ({result}) after {moves} moves.',
+            ['Checkmate! Good game; a computer can check more moves than anyone, but you made me work for it.',
+             'Checkmate, I won this one; play again and see if you can trick my camera?']),
+    'lost_game': ('The child just beat you by {by}: you, the robot, LOST the game ({result}) after {moves} moves.',
+                  ['Checkmate on me! You beat a robot today; even one that checks thousands of moves can lose to a good plan.',
+                   'That is checkmate; well played, I bow my gripper to you. Rematch?']),
     'draw': ('Your game with the child ended in a draw ({result}).',
              ['A draw! Neither of us could win: my program and your brain agreed on that.']),
     # The presenter's button: a question, or nothing (then something about itself).
@@ -138,7 +142,7 @@ def prompt_for(event, detail, teach=True):
     robot's own captures and drifted to "Good job!". Paraphrasing a line that
     already carries the meaning and the fact keeps it on track.
     """
-    keys = {k: detail.get(k, '?') for k in ('arm', 'san', 'result', 'moves', 'question')}
+    keys = {k: detail.get(k, '?') for k in ('arm', 'san', 'result', 'moves', 'question', 'by')}
     if event == 'ask':
         question = (detail.get('question') or '').strip()
         fact = random.choice(FACTS['ask'])

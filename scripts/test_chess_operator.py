@@ -465,6 +465,35 @@ def test_a_capture_read_by_diff_with_margin_one_is_offered_not_refused(monkeypat
     assert asked == ['student_move']
 
 
+def test_check_position_ignores_squares_the_camera_always_gets_wrong(monkeypatch):
+    monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
+    board = chess.Board()
+    board.push_san('e4'); board.push_san('e5')
+    vision = FakeVision('e5')
+    full = {chess.square_name(s): {'occupied': board.piece_at(s) is not None, 'seen': True, 'top_m': 0.04, 'centre': None}
+            for s in chess.SQUARES}
+    blind = dict(full, e8=dict(full['e8'], occupied=False), f8=dict(full['f8'], occupied=False))  # back rank misses
+    asked = []
+    monkeypatch.setattr(lab_chess, 'ask_operator', lambda kind, text, *a, **k: asked.append(text) or 'y')
+    vision.look = lambda tips: (blind, None, None)
+    vision.baseline = blind                                   # the same misses in the baseline: no question
+    lab_chess.check_position(vision, None, board)
+    assert asked == []
+    vision.baseline = full                                     # a new disagreement: ask
+    lab_chess.check_position(vision, None, board)
+    assert asked and 'e8, f8' in asked[0]
+
+
+def test_the_result_says_how_the_game_ended(monkeypatch):
+    replies = iter(['e5', 'Qh4+'])                               # fool's mate: 1.f3 e5 2.g4 Qh4#
+    monkeypatch.setattr(lab_chess.Engine, 'choose', lambda self, board: board.parse_san(next(replies)))
+    code, left = play(monkeypatch, ['f3', 'g4', 'quit'])
+    assert code == 0 and left == []
+    kinds = [(e['event'], e.get('by')) for e in events()]
+    assert ('won', 'checkmate') in kinds                        # the robot won by checkmate
+    assert lab_chess.read_state()['game_over'] == 'checkmate'
+
+
 def test_a_wrong_piece_height_is_warned_about(monkeypatch, capsys):
     monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
     pieces = lab_chess.load_pieces()

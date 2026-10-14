@@ -265,29 +265,41 @@ class Piper:
         self.data_dir = data_dir or os.path.join(_HERE, '..', 'log', 'chess', 'voices')
         self.ready = os.path.exists(os.path.join(self.data_dir, f'{voice}.onnx'))
 
-    def say(self, text):
-        if not text:
-            return False
-        print(f'ROBOT    {text}', flush=True)
-        if not self.ready:
-            return False
+    def synthesize(self, text):
+        """Text to a wav file (about a second); None when speech is unavailable."""
+        if not text or not self.ready:
+            return None
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as wav:
             path = wav.name
         try:
             subprocess.run([sys.executable, '-m', 'piper', '--model', os.path.join(self.data_dir, f'{self.voice}.onnx'),
                             '--output_file', path], input=text.encode(), check=True, timeout=20,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return path
+        except (subprocess.SubprocessError, OSError) as error:
+            print(f'NOTE: could not synthesize ({error})', flush=True)
+            os.remove(path)
+            return None
+
+    def play(self, path):
+        if path is None:
+            return False
+        try:
             subprocess.run(self.player + [path], check=False, timeout=30,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
         except (subprocess.SubprocessError, OSError) as error:
-            print(f'NOTE: could not speak ({error})', flush=True)
+            print(f'NOTE: could not play ({error})', flush=True)
             return False
         finally:
             try:
                 os.remove(path)
             except OSError:
                 pass
+
+    def say(self, text):
+        print(f'ROBOT    {text}', flush=True)
+        return self.play(self.synthesize(text))
 
 
 def announce(event, line, path=SAID_FILE, seconds=None):
@@ -309,8 +321,16 @@ def respond(event, detail, brain, mouth, log=print, said_file=SAID_FILE):
         line, source = canned(event, detail), 'canned'
     if line:
         log(f'LINE     {json.dumps({"event": event, "source": source})}')
+        # Synthesize first (about a second), then show the bubble and start the
+        # sound together: announcing before synthesis put the text a second
+        # ahead of the voice (2026-10-14).
+        wav = mouth.synthesize(line) if hasattr(mouth, 'synthesize') else None
         announce(event, line, said_file)
-        mouth.say(line)
+        print(f'ROBOT    {line}', flush=True)
+        if wav is not None:
+            mouth.play(wav)
+        elif not hasattr(mouth, 'synthesize'):
+            mouth.say(line)
     return line
 
 

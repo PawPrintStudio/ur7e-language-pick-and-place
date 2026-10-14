@@ -196,6 +196,29 @@ nominal seconds), then `move e4 --fen start --vision --execute
 --max-speed-percent 25`, then 100 %. `--joint-rate 0.09 --contact-rate 0.09`
 restores the baseline speed if anything looks wrong.
 
+## Reactions: events, gestures, voice (specs S3, S4)
+
+`play` writes every game event to `log/chess/events.jsonl` (`greeting`,
+`captured`, `lost`, `check`, `won`, `lost_game`, `draw`, with the move and
+position) and, with the arm connected, acts it out from home
+(`scripts/chess_gestures.py`): wrist-only offsets from `chess_home`, so the
+fingertips stay a hand's breadth from where home put them; planned through
+the collision check and followed with forward kinematics, refused whole if
+they would come within 60 mm of the board plane or 30 mm of its footprint.
+A capture and a win get three jaw "claps". `play --no-gestures` turns them
+off. The events file is what the laptop-side voice reads.
+
+## Set measurement (spec S5)
+
+With `grip_m` and `width_mm` set for a piece type in `lab_chess.yaml`, a
+`--vision` pick grips that type at its measured height and checks the jaw
+width against the table; the camera supplies the centre and the presence
+and warns when its height does not match the type the record expects. Types
+without `grip_m` still grip at 3/4 of the seen height with no width check.
+Measure with calipers: height, the narrowest solid spot below the head and
+the width there (what the RG2 reads closed on it, not the ruler width:
+pawn 21-22 for a 15 mm head), the base.
+
 ## Calibration order when something moved
 
 The board corners are the only robot-side truth; the camera pose is fitted

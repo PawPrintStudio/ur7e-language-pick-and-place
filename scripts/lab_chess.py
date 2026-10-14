@@ -41,11 +41,13 @@ sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.join(_HERE, '..', 'src', 'ur7e_orchestrator'))
 from ur7e_orchestrator.adapters import (  # noqa: E402
     Adapters, Detection, GraspResult, Intent, Refused, StageError, Target)
+import chess_gestures  # noqa: E402
 
 GEOMETRY_FILE = os.path.join(_HERE, 'lab_chess.json')
 ZED_CONF = os.path.join(_HERE, '..', 'docs', 'calibration', 'zed2i_SN35717973.conf')
 OVERLAY_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'overlay.jpg')
 TARGET_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'target.json')
+EVENTS_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'events.jsonl')
 PIECES_FILE = os.path.join(_HERE, 'lab_chess.yaml')
 TOUCH_FILE = os.path.join(_HERE, '.lab_chess_touches.json')
 CORNERS = ('1', '2', '3', '4')          # a1, h1, h8, a8
@@ -1468,12 +1470,28 @@ class ChessAdapters(Adapters):
             raise StageError('off_square', f'the piece on {name} stands {off * 1000:.0f} mm from '
                                            'the centre: straighten it, then go again')
         top = float(entry['top_m'])
-        grip = max(0.008, self.vision.cv.GRIP_FRACTION * top - PAD_BELOW_GRIP_M)
         thickness = max(0.0, self.geometry.z_at(x, y) - table_z(x, y))
-        self.expected_width_mm = None          # unknown piece: the empty-close check stays
+        # The game record knows which piece stands here. With the set measured
+        # (lab_chess.yaml, spec S5) the grip height and the expected jaw width
+        # come from the table, and the camera supplies the centre and the
+        # presence; its height is only a sanity check on the record. An
+        # unmeasured set grips at 3/4 of the seen height, no width check.
+        size = self.pieces['pieces'].get(piece.symbol().lower(), {}) if piece else {}
+        if 'grip_m' in size and 'width_mm' in size:
+            grip = max(0.008, float(size['grip_m']) - PAD_BELOW_GRIP_M)
+            self.expected_width_mm = float(size['width_mm'])
+            source = chess.piece_name(piece.piece_type)
+            if abs(top - float(size['height_m'])) > 0.015:
+                say('WARNING', f'{name}: the camera reads {top * 1000:.0f} mm tall, a '
+                               f'{source} is {float(size["height_m"]) * 1000:.0f}: is the '
+                               'right piece standing there?')
+        else:
+            grip = max(0.008, self.vision.cv.GRIP_FRACTION * top - PAD_BELOW_GRIP_M)
+            self.expected_width_mm = None      # unknown width: the empty-close check stays
+            source = 'camera'
         say('SEEN', {'square': name, 'top_mm': round(top * 1000, 1),
                      'off_centre_mm': [round((x - sx) * 1000, 1), round((y - sy) * 1000, 1)],
-                     'fingertips_above_board_mm': round(grip * 1000, 1)})
+                     'fingertips_above_board_mm': round(grip * 1000, 1), 'grip_from': source})
         return Target((x, y, self.geometry.z_at(x, y) + top), yaw,
                       {'height_m': round(thickness + top, 4), 'axis_ratio': 100.0,
                        'tip_above_table_m': round(thickness + grip, 4),
@@ -2022,6 +2040,16 @@ def arm_move(board, move, session, args):
             ask_operator('swap', note, [option(GO, 'Swapped', 'go')], auto=GO if args.yes else None)
 
 
+def react(session, args, event, **detail):
+    """A game event: logged for the voice (events.jsonl), acted out by the arm (gestures)."""
+    chess_gestures.log_event(EVENTS_FILE, event, **detail)
+    say('EVENT', dict(event=event, **detail))
+    if session is None or getattr(args, 'no_gestures', False):
+        return
+    executor, lab, adapters, _ = session
+    chess_gestures.perform(event, executor, lab, adapters.geometry, executor.joint_rate, say)
+
+
 def play_game(board, arm, engine, session, args):
     """One game to the end. Raises NewGame / QuitGame when the operator says so."""
     while not board.is_game_over(claim_draw=True):
@@ -2033,21 +2061,34 @@ def play_game(board, arm, engine, session, args):
             move = student_move(vision, executor, board, side)
             if move is None:
                 continue
-            say('STUDENT', board.san(move))
+            san, capture = board.san(move), board.is_capture(move)
+            say('STUDENT', san)
             board.push(move)
             publish_state(fen=board.fen(), planned=None, moves=move_list(board))
+            if capture:
+                react(session, args, 'lost', san=san, fen=board.fen())
             continue
         publish_state(thinking=True)
         move = engine.choose(board)
         publish_state(planned=planned_move(board, move), thinking=False)
         arm_move(board, move, session, args)
+        san, capture = board.san(move), board.is_capture(move)
         board.push(move)
         publish_state(fen=board.fen(), planned=None, moves=move_list(board))
         if session is not None and session[2].vision is not None:
             check_position(session[2].vision, session[0], board)
+        if board.is_game_over(claim_draw=True):
+            break
+        if capture:
+            react(session, args, 'captured', san=san, fen=board.fen())
+        elif board.is_check():
+            react(session, args, 'check', san=san, fen=board.fen())
     result = board.result(claim_draw=True)
     say('GAME', {'result': result, 'moves': len(board.move_stack)})
     publish_state(result=result)
+    arm_result = {'1-0': chess.WHITE, '0-1': chess.BLACK}.get(result)
+    react(session, args, 'draw' if arm_result is None else 'won' if arm_result == arm else 'lost_game',
+          result=result, moves=len(board.move_stack))
     return result
 
 
@@ -2092,6 +2133,8 @@ def cmd_play(args):
             if session is not None:
                 session[2].board = board          # the adapter answers DETECT from this board
             try:
+                if not board.move_stack:
+                    react(session, args, 'greeting', arm='white' if arm_white else 'black')
                 result = play_game(board, arm, engine, session, args)
                 ask_operator('game_over', f'Game over: {result} after {len(board.move_stack)} moves',
                              GAME_OPTIONS)
@@ -2207,6 +2250,8 @@ def main():
     p.add_argument('--careful', action='store_true',
                    help='ask before every step as well as before the move '
                         '(first runs after a calibration change)')
+    p.add_argument('--no-gestures', action='store_true',
+                   help='no wrist gestures on captures, checks and the result')
     p.add_argument('--engine', default='stockfish', help='UCI engine binary, or none')
     p.add_argument('--skill', type=int, default=1, help='Stockfish Skill Level 0..20')
     p.add_argument('--think', type=float, default=0.5, help='seconds per engine move')

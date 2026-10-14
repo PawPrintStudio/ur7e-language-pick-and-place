@@ -28,6 +28,7 @@ def isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(lab_chess, 'TARGET_FILE', str(tmp_path / 'target.json'))
     monkeypatch.setattr(lab_chess, 'STATE_FILE', str(tmp_path / 'state.json'))
     monkeypatch.setattr(lab_chess, 'ANSWER_FILE', str(tmp_path / 'answer.json'))
+    monkeypatch.setattr(lab_chess, 'EVENTS_FILE', str(tmp_path / 'events.jsonl'))
     monkeypatch.setattr(lab_chess, '_line_from_terminal', lambda timeout_s: time.sleep(timeout_s))
 
 
@@ -262,6 +263,88 @@ def test_park_arm_sends_a_parked_off_home_arm_home_once():
     lab_chess.park_arm(session)
     lab_chess.park_arm(session)
     assert lab.calls == ['retreat', 'home'] and not adapters.parked_off_home
+
+
+def events():
+    try:
+        with open(lab_chess.EVENTS_FILE) as stream:
+            return [json.loads(line) for line in stream if line.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def test_a_game_logs_its_events_and_the_result_is_from_the_arms_side(monkeypatch):
+    # The random mover is not reproducible; drive the engine instead: after
+    # e4 e5 Nf3 Nc6 Bc4 Bc5 Nc3 it takes on f2 with check, and the king takes back.
+    replies = iter(['e5', 'Nc6', 'Bc5', 'Bxf2+', 'Qh4+'])
+    monkeypatch.setattr(lab_chess.Engine, 'choose', lambda self, board: board.parse_san(next(replies)))
+    code, left = play(monkeypatch, ['e4', 'Nf3', 'Bc4', 'Nc3', 'Kxf2', 'quit'])
+    assert code == 0 and left == []
+    kinds = [e['event'] for e in events()]
+    # Bxf2+ is a capture and a check: the capture wins (celebrate over nod);
+    # Kxf2 takes the bishop back (lost); Qh4+ is a plain check.
+    assert kinds == ['greeting', 'captured', 'lost', 'check']
+    assert all(e.get('fen') and e.get('san') for e in events()[1:])
+
+
+def test_react_gestures_only_with_a_session_and_unless_switched_off(monkeypatch):
+    performed = []
+    monkeypatch.setattr(lab_chess.chess_gestures, 'perform',
+                        lambda event, *a, **k: performed.append(event))
+    args = type('Args', (), {'no_gestures': False})()
+    lab_chess.react(None, args, 'captured', san='Nxd4')
+    assert [e['event'] for e in events()] == ['captured'] and performed == []
+    executor = type('Ex', (), {'joint_rate': 0.4})()
+    lab = RecordingLab()
+    adapters = lab_chess.ChessAdapters(lab, square_board(), lab_chess.load_pieces())
+    lab_chess.react((executor, lab, adapters, None), args, 'won', result='0-1')
+    assert performed == ['won']
+    args.no_gestures = True
+    lab_chess.react((executor, lab, adapters, None), args, 'check')
+    assert performed == ['won'] and len(events()) == 3
+
+
+class FakeVision:
+    """The camera sees one pawn-sized piece, 3 mm off its square's centre."""
+
+    def __init__(self, square, top_m=0.040):
+        self.cv = type('CV', (), {'GRIP_FRACTION': 0.75})()
+        self.square, self.top_m = square, top_m
+
+    def look(self, tips):
+        geometry = square_board()
+        x, y = geometry.square_xy(self.square)
+        return ({self.square: {'occupied': True, 'centre': [x + 0.003, y, 0.0], 'top_m': self.top_m}},
+                None, None)
+
+
+def test_a_measured_piece_grips_by_type_and_checks_its_width(monkeypatch):
+    monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
+    pieces = lab_chess.load_pieces()
+    pieces['pieces']['p'] = {'height_m': 0.040, 'grip_m': 0.030, 'width_mm': 21, 'base_mm': 18}
+    pieces['pieces']['n'] = {'height_m': 0.054, 'width_mm': 26}            # not measured
+    board = chess.Board()
+    adapters = lab_chess.ChessAdapters(RecordingLab(), square_board(), pieces, board,
+                                       vision=FakeVision('e2'))
+    target = adapters.seen_target('e2', board.piece_at(chess.E2), lambda x, y: 0.0, 0.0)
+    assert target.detail['tip_above_table_m'] == pytest.approx(0.030 - lab_chess.PAD_BELOW_GRIP_M)
+    assert adapters.expected_width_mm == 21
+    assert target.xyz[0] == pytest.approx(square_board().square_xy('e2')[0] + 0.003)  # camera centre
+    adapters.vision = FakeVision('b1', top_m=0.054)
+    target = adapters.seen_target('b1', board.piece_at(chess.B1), lambda x, y: 0.0, 0.0)
+    assert target.detail['tip_above_table_m'] == pytest.approx(0.75 * 0.054 - lab_chess.PAD_BELOW_GRIP_M)
+    assert adapters.expected_width_mm is None
+
+
+def test_a_wrong_piece_height_is_warned_about(monkeypatch, capsys):
+    monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
+    pieces = lab_chess.load_pieces()
+    pieces['pieces']['p'] = {'height_m': 0.040, 'grip_m': 0.030, 'width_mm': 21}
+    board = chess.Board()
+    adapters = lab_chess.ChessAdapters(RecordingLab(), square_board(), pieces, board,
+                                       vision=FakeVision('e2', top_m=0.080))
+    adapters.seen_target('e2', board.piece_at(chess.E2), lambda x, y: 0.0, 0.0)
+    assert 'right piece' in capsys.readouterr().out
 
 
 def test_shift_slides_every_square_and_the_box_and_refuses_a_big_one(tmp_path, monkeypatch, capsys):

@@ -113,6 +113,13 @@ piece), `lost` (its piece was taken), `check`, `won`, `lost_game`,
 arm, no gesture approaches within 150 mm of the board plane; events logged
 for a scripted game match the rules.
 
+**Status 2026-10-14: implemented, not yet run on the arm**
+(`scripts/chess_gestures.py`, 7 tests; events wired into `play`, 2 tests).
+Clearance checks: 60 mm above the plane, 30 mm outside the footprint, at
+every third planned point; a gesture is skipped whole, with the reason,
+otherwise. First run: `play --steps-only` shows the events; on the arm,
+watch the first `celebrate` with a hand by the stop.
+
 ## S4. Natural language, fully local: commentary and voice moves
 
 **Hardware.** RTX 3050 6 GB, Ollama installed with `gemma4:e2b` and
@@ -159,6 +166,11 @@ presence only. Carry height comes from the measured tallest piece.
 **Acceptance.** A deliberate miss (piece removed after the scan) is reported
 as `width_off` or `grasp_missed`; the knight's wider tolerance holds; the
 `--hover` warning disappears.
+
+**Status 2026-10-14: code done (2 tests), measurements pending.** A type
+with `grip_m` + `width_mm` grips by the table and checks the width; the
+camera's height is a sanity check against the record. Fill in
+`lab_chess.yaml` with calipers, set `measured: true`.
 
 ## S6. Vision: use the known position
 

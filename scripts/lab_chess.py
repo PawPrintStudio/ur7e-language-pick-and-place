@@ -1384,6 +1384,12 @@ class ChessAdapters(Adapters):
         self.intent = None
         self.expected_width_mm = None
         self.vision = vision        # Vision: piece centre and height from the camera
+        # Speed (2026-10-14): a capture is two steps; the arm parks at home
+        # only after the last one (park_after), and OBSERVE never moves when
+        # the arm already stands where the next step starts.
+        self.park_after = True
+        self._retreated = False
+        self.parked_off_home = False
 
     # The lookup.
 
@@ -1393,6 +1399,7 @@ class ChessAdapters(Adapters):
         except ValueError as error:
             raise Refused('not_a_step', str(error))
         self.intent = Intent('pick_and_place', frm, to, f'{frm} -> {to}')
+        self._retreated = False
         return self.intent
 
     def detect(self, query):
@@ -1470,9 +1477,28 @@ class ChessAdapters(Adapters):
                                dict(result.detail, expected_mm=expected, reason='width_off'))
         return result
 
-    # The proven stages, untouched.
+    # The proven stages, untouched apart from when OBSERVE and HOME move at all.
+
+    def at_home(self, tolerance_rad=0.05):
+        """Is the arm standing at chess_home (within tolerance on every joint)?"""
+        executor = self.lab.executor
+        try:
+            home = executor.poses[HOME]
+            now = executor.joints_of(executor.fresh(settle_s=0.3))
+        except (AttributeError, KeyError, TypeError):
+            return False
+        return all(abs(now[j] - home[j]) <= tolerance_rad for j in home)
 
     def observe(self):
+        """OBSERVE moves nothing when the arm already stands where the step starts.
+
+        The camera reads watch's frames, so the arm has no pose to take for a
+        picture; at home, or at the previous step's back-up hover (a capture),
+        APPROACH plans from where the arm is, with collision checking.
+        """
+        if self.parked_off_home or self.at_home():
+            say('OBSERVE', 'skipped: the arm is where this step starts')
+            return
         self.lab.observe()
 
     def plan(self, intent, target, place):
@@ -1486,12 +1512,21 @@ class ChessAdapters(Adapters):
 
     def retreat(self):
         self.lab.retreat()
+        self._retreated = True
 
     def release(self):
         self.lab.release()
 
     def home(self):
+        """Park at home after the move's last step; between a capture's two
+        steps stay at the back-up hover. Any failure path still goes home:
+        _retreated is only set by a successful RETREAT."""
+        if self._retreated and not self.park_after:
+            say('HOME', 'skipped: the next step starts from here')
+            self.parked_off_home = True
+            return
         self.lab.home()
+        self.parked_off_home = False
 
     def safety_ok(self):
         return self.lab.safety_ok()
@@ -1570,6 +1605,9 @@ def open_session(args, board, need_home=True):
                          'up), then run python3 scripts/lab_chess.py teach-home')
     rclpy.init()
     executor, lab, _ = lab_pick.build(args)
+    # Ten segments a step: a 1 s settle before each plan was a quarter of
+    # the step. The stationarity check in fresh() still guards every move.
+    executor.settle_s = 0.3
     if pieces.get('board_thickness_m') is not None:
         use_board_surface(executor, geometry, pieces['board_thickness_m'])
     if HOME in executor.poses:
@@ -1614,8 +1652,26 @@ def close_session(session):
         rclpy.shutdown()
 
 
-def run_steps(orchestrator, steps, auto_yes):
-    """Run each (from, to) through the orchestrator; return how many finished."""
+def park_arm(session):
+    """Send the arm home if a skipped HOME left it at a hover (declined or failed step)."""
+    _, lab, adapters, _ = session
+    if not adapters.parked_off_home:
+        return
+    say('HOME', 'parking the arm')
+    try:
+        adapters.park_after, adapters._retreated = True, False
+        adapters.home()
+    except (StageError, Exception) as error:   # noqa: BLE001 - report, the operator decides
+        say('WARNING', f'could not park the arm: {error}')
+
+
+def run_steps(session, steps, auto_yes):
+    """Run each (from, to) through the orchestrator; return how many finished.
+
+    The arm parks at home after the last step only: between the two steps of
+    a capture it waits at the box's hover, where the next pick starts.
+    """
+    _, _, adapters, orchestrator = session
     for done, (frm, to) in enumerate(steps):
         answer = ask_operator('step', f'{frm} -> {to}: go?',
                               [option(GO, f'Go: {frm} → {to}', 'go'), option(STOP, 'Stop', 'stop')],
@@ -1623,6 +1679,7 @@ def run_steps(orchestrator, steps, auto_yes):
         if answer != GO:
             say('RESULT', {'outcome': 'declined', 'step': f'{frm} {to}'})
             return done
+        adapters.park_after = done == len(steps) - 1
         record = orchestrator.run(f'{frm} {to}')
         say('RESULT', {'run_id': record.run_id, 'outcome': record.outcome,
                        'reason': record.reason, 'message': record.message,
@@ -1842,7 +1899,8 @@ def cmd_move(args):
     publish_state(fen=board.fen(), planned=planned_move(board, move), moves=move_list(board))
     session = open_session(args, board)
     try:
-        done = run_steps(session[3], steps, args.yes)
+        done = run_steps(session, steps, args.yes)
+        park_arm(session)
         if done == len(steps):
             if note:
                 say('NOTE', note)
@@ -1926,10 +1984,11 @@ def arm_move(board, move, session, args):
                      auto=GO if args.yes else None)
         remaining = list(steps)
         while remaining:
-            done = run_steps(session[3], remaining, args.yes)
+            done = run_steps(session, remaining, args.yes)
             remaining = remaining[done:]
             if not remaining:
                 break
+            park_arm(session)                # a stopped move never leaves the arm over the box
             answer = ask_operator('failed', f'The arm did not finish {remaining[0][0]} → {remaining[0][1]}',
                                   [option('r', 'Retry this step', 'go'),
                                    option('h', 'I finished the move by hand')] + GAME_OPTIONS)
@@ -2018,6 +2077,8 @@ def cmd_play(args):
                 continue
             except NewGame:
                 say('GAME', 'new game: set the pieces up; the record starts over')
+                if session is not None:
+                    park_arm(session)
                 board = chess.Board()
                 new_game_state(board, arm_white)
             except QuitGame:
@@ -2027,6 +2088,7 @@ def cmd_play(args):
         publish_state(prompt=None, thinking=False)
         engine.close()
         if session is not None:
+            park_arm(session)
             close_session(session)
 
 
@@ -2135,8 +2197,9 @@ def main():
             add_session_arguments(p)
             # Chess carries lower than the project-1 picks (0.12): fingertips 8 cm over
             # the carried piece's top. open_session warns when that is too low to clear
-            # the tallest piece in lab_chess.yaml.
-            p.set_defaults(hover=0.08)
+            # the tallest piece in lab_chess.yaml. Rates (2026-10-14): 0.4 rad/s
+            # travel, 0.12 beside the pieces; the pendant slider scales both.
+            p.set_defaults(hover=0.08, joint_rate=0.4, contact_rate=0.12)
         else:
             p.add_argument('--yes', action='store_true')
             p.description = f'{p.prog}: robot options {reason}'

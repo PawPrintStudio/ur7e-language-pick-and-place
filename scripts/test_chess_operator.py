@@ -153,6 +153,62 @@ def test_an_illegal_typed_move_is_refused_and_asked_again(monkeypatch, capsys):
     assert lab_chess.read_state()['moves'][0] == 'e4'
 
 
+class RecordingLab:
+    """What ChessAdapters touches of lab_pick.LabAdapters, recording the motions."""
+
+    def __init__(self):
+        self.calls = []
+        self.executor = type('Executor', (), {'plan_only': False, 'table_z': staticmethod(lambda x, y: 0.0)})()
+        self.config = {'finger_reach': 0.028, 'open_mm': 80.0}
+
+    def observe(self):
+        self.calls.append('observe')
+
+    def retreat(self):
+        self.calls.append('retreat')
+
+    def home(self):
+        self.calls.append('home')
+
+
+def square_board():
+    return lab_chess.BoardGeometry([[0, 0, 0], [0.4, 0, 0], [0.4, 0.4, 0], [0, 0.4, 0]])
+
+
+def test_a_capture_parks_only_after_its_last_step_and_a_failure_always_parks():
+    lab = RecordingLab()
+    adapters = lab_chess.ChessAdapters(lab, square_board(), lab_chess.load_pieces())
+    # Step 1 of a capture: the arm is not at home (fake executor: unknown), so
+    # OBSERVE moves; after a good RETREAT the HOME is skipped.
+    adapters.parse('d4 box')
+    adapters.park_after = False
+    adapters.observe(); adapters.retreat(); adapters.home()
+    assert lab.calls == ['observe', 'retreat'] and adapters.parked_off_home
+    # Step 2 starts where step 1 ended: no OBSERVE move; it is the last step: HOME runs.
+    adapters.parse('c6 d4')
+    adapters.park_after = True
+    adapters.observe(); adapters.retreat(); adapters.home()
+    assert lab.calls == ['observe', 'retreat', 'retreat', 'home'] and not adapters.parked_off_home
+    # A step that failed before RETREAT goes home even between a capture's steps.
+    adapters.parse('e7 e5')
+    adapters.park_after = False
+    adapters.home()
+    assert lab.calls[-1] == 'home'
+
+
+def test_park_arm_sends_a_parked_off_home_arm_home_once():
+    lab = RecordingLab()
+    adapters = lab_chess.ChessAdapters(lab, square_board(), lab_chess.load_pieces())
+    session = (None, lab, adapters, None)
+    lab_chess.park_arm(session)
+    assert lab.calls == []                                 # nothing to do
+    adapters.parse('d4 box'); adapters.park_after = False
+    adapters.retreat(); adapters.home()
+    lab_chess.park_arm(session)
+    lab_chess.park_arm(session)
+    assert lab.calls == ['retreat', 'home'] and not adapters.parked_off_home
+
+
 def test_shift_slides_every_square_and_the_box_and_refuses_a_big_one(tmp_path, monkeypatch, capsys):
     path = tmp_path / 'geometry.json'
     geometry = lab_chess.BoardGeometry([[0, 0, 0], [0.4, 0, 0], [0.4, 0.4, 0], [0, 0.4, 0]],

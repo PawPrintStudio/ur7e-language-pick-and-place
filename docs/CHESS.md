@@ -174,6 +174,25 @@ New game / Quit), *I saw e4: right?* (Yes / No, read again / type it),
 The audience page turns each of these into a headline ("Your move · White",
 "Robot is about to play b5: stand clear", "Arm stopped during b5").
 
+## Speed (2026-10-14, spec S1 in CHESS_IMPROVEMENTS.md)
+
+A step took 72 s at the baseline. What changed, and where each knob lives:
+
+- **Two rates.** `play`, `move`, `goto` default to `--joint-rate 0.4`
+  (travel: hover, carry, home) and `--contact-rate 0.12` (descend, lift,
+  lower, back up). The envelope in `scripts/motion/ur_motion.py` is 0.6 rad/s
+  nominal; the pendant slider scales everything below it.
+- **Waypoints thinned** before timing (`scripts/motion/retime.py`): MoveIt's
+  0.003 rad steps under a 0.05 s floor meant the rate was never the limit.
+- **No OBSERVE move** when the arm already stands where the step starts, **no
+  HOME between a capture's two steps** (it waits at the box hover), and a
+  0.3 s settle before each plan instead of 1 s.
+
+First run after this change, in order: `goto e4` plan-only (read the new
+nominal seconds), then `move e4 --fen start --vision --execute
+--max-speed-percent 25`, then 100 %. `--joint-rate 0.09 --contact-rate 0.09`
+restores the baseline speed if anything looks wrong.
+
 ## Calibration order when something moved
 
 The board corners are the only robot-side truth; the camera pose is fitted

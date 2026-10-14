@@ -59,6 +59,25 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
 .legend i { width:12px; height:12px; border:2px solid var(--red); border-radius:2px; }
 .legend .unknown { border:0; background:repeating-linear-gradient(45deg,#617583 0 2px,transparent 2px 4px); }
 .status { border-top:1px solid var(--line); padding:18px 0; display:flex; justify-content:space-between; align-items:center; gap:20px; }
+.robot { position:relative; flex:none; display:flex; align-items:center; gap:10px; min-width:120px; }
+.robot-face { width:110px; height:110px; flex:none; }
+.robot #robot-head { transform-origin:60px 84px; transition:transform .4s; }
+.robot #eye-l, .robot #eye-r { transition:r .2s; }
+.robot #mouth, .robot #brow-l, .robot #brow-r { transition:d .3s; }
+.robot[data-mood="happy"] #mouth { d:path("M46 68 Q60 82 74 68"); }
+.robot[data-mood="happy"] #brow-l { d:path("M36 42 Q44 38 52 42"); } .robot[data-mood="happy"] #brow-r { d:path("M68 42 Q76 38 84 42"); }
+.robot[data-mood="smug"] #mouth { d:path("M48 70 Q62 78 74 66"); } .robot[data-mood="smug"] #brow-l { d:path("M36 46 L52 42"); } .robot[data-mood="smug"] #brow-r { d:path("M68 40 L84 46"); }
+.robot[data-mood="annoyed"] #mouth { d:path("M48 72 L72 72"); } .robot[data-mood="annoyed"] #brow-l { d:path("M36 40 L52 46"); } .robot[data-mood="annoyed"] #brow-r { d:path("M68 46 L84 40"); }
+.robot[data-mood="sad"] #mouth { d:path("M48 74 Q60 66 72 74"); } .robot[data-mood="sad"] #brow-l { d:path("M36 46 L52 42"); } .robot[data-mood="sad"] #brow-r { d:path("M68 42 L84 46"); } .robot[data-mood="sad"] #robot-head { transform:rotate(-6deg) translateY(4px); }
+.robot[data-mood="joy"] #mouth { d:path("M44 66 Q60 86 76 66"); } .robot[data-mood="joy"] #robot-head { transform:translateY(-6px); } .robot[data-mood="joy"] #eye-l, .robot[data-mood="joy"] #eye-r { r:6; }
+.robot[data-mood="thinking"] #eye-l, .robot[data-mood="thinking"] #eye-r { r:3.5; } .robot[data-mood="thinking"] #mouth { d:path("M52 71 L68 71"); } .robot[data-mood="thinking"] #robot-head { transform:rotate(5deg); }
+.robot.speaking #mouth { animation:talk .28s ease-in-out infinite alternate; }
+@keyframes talk { from { transform:scaleY(1); } to { transform:scaleY(2.2); } }
+.robot #mouth { transform-origin:60px 71px; }
+.bubble { position:relative; background:white; border:2px solid var(--maroon); border-radius:14px; padding:8px 12px; font-size:15px; max-width:360px; line-height:1.3; }
+.bubble::before { content:""; position:absolute; left:-12px; top:40%; border:6px solid transparent; border-right-color:var(--maroon); }
+.bubble[hidden] { display:none; }
+.bubble.fading { opacity:.45; }
 .status h2 { font-size:17px; margin:0; font-weight:650; }
 .status p { color:var(--muted); font-size:12px; margin:4px 0 0; max-width:520px; }
 .status.bad h2 { color:var(--red); } .status.warn h2 { color:var(--amber); } .status.busy h2 { color:var(--blue); }
@@ -125,6 +144,21 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
   </div>
   <div class="legend"><span><i></i>Difference</span><span><i class="unknown"></i>Unknown depth</span></div>
   <section class="status" id="status">
+    <div class="robot" id="robot" data-mood="neutral" aria-hidden="true">
+      <svg viewBox="0 0 120 120" class="robot-face">
+        <rect x="18" y="104" width="84" height="10" rx="4" fill="#6b7380"/>
+        <path id="robot-arm" d="M60 104 L60 78" stroke="#9aa3ad" stroke-width="14" stroke-linecap="round"/>
+        <g id="robot-head">
+          <rect x="24" y="30" width="72" height="54" rx="16" fill="#e9eef3" stroke="#6b7380" stroke-width="3"/>
+          <rect x="44" y="84" width="10" height="14" rx="3" fill="#9aa3ad"/><rect x="66" y="84" width="10" height="14" rx="3" fill="#9aa3ad"/>
+          <path id="brow-l" d="M36 44 L52 44" stroke="#363534" stroke-width="3" stroke-linecap="round"/>
+          <path id="brow-r" d="M68 44 L84 44" stroke="#363534" stroke-width="3" stroke-linecap="round"/>
+          <circle id="eye-l" cx="44" cy="55" r="5" fill="#363534"/><circle id="eye-r" cx="76" cy="55" r="5" fill="#363534"/>
+          <path id="mouth" d="M48 70 Q60 76 72 70" stroke="#363534" stroke-width="3" fill="none" stroke-linecap="round"/>
+        </g>
+      </svg>
+      <div class="bubble" id="bubble" hidden><span id="bubble-text"></span></div>
+    </div>
     <div role="status" aria-live="polite" aria-atomic="true"><h2 id="headline">Connecting…</h2><p id="subline"></p><p id="moves"></p></div>
     <div class="camera-check"><div id="agree" class="big">Waiting for camera</div><div id="age"></div><button id="scan" type="button" disabled>Check again</button></div>
   </section>
@@ -352,7 +386,23 @@ function show(state) {
   }
   $('age').textContent = live.scan_age_s != null ? `scanned ${live.scan_age_s.toFixed(0)} s ago` : '';
   paintMoves(state);
+  paintRobot(state);
   paintOperator(state);
+}
+
+// The cartoon arm: a mood per event, a speech bubble while the voice speaks.
+const MOOD = {greeting:'happy', captured:'smug', lost:'annoyed', check:'smug', won:'joy', lost_game:'sad', draw:'happy'};
+function paintRobot(state) {
+  const voice = state.voice || null;
+  const speaking = voice && voice.age_s != null && voice.age_s < (voice.seconds || 3);
+  let mood = 'neutral';
+  if (voice) mood = MOOD[voice.event] || 'neutral';
+  else if (state.thinking) mood = 'thinking';
+  $('robot').setAttribute('data-mood', mood);
+  $('robot').className = 'robot' + (speaking ? ' speaking' : '');
+  $('bubble').hidden = !voice || !voice.line;
+  $('bubble').className = 'bubble' + (voice && !speaking ? ' fading' : '');
+  $('bubble-text').textContent = voice?.line || '';
 }
 
 // The game so far: "1. e4 h6 2. d4 b5", the robot's moves in bold.

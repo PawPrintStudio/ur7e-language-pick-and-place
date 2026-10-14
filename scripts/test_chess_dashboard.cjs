@@ -162,6 +162,27 @@ test('standing New game: answers the prompt with a game, resets the record witho
   assert.match(p.element('op-note').textContent, /Record reset/);
 });
 
+test('the cartoon arm shows a mood and a bubble while the voice speaks, fades after, thinks between', () => {
+  const p = page(), state = boardState();
+  state.voice = {event:'captured', line:'That piece is mine now.', age_s:0.5, seconds:3};
+  p.show(state);
+  assert.equal(p.element('robot')['data-mood'], 'smug');
+  assert.match(p.element('robot').className, /speaking/);
+  assert.equal(p.element('bubble').hidden, false);
+  assert.equal(p.element('bubble-text').textContent, 'That piece is mine now.');
+  state.voice.age_s = 8;                                   // said: bubble lingers, mouth still
+  p.show(state);
+  assert.doesNotMatch(p.element('robot').className, /speaking/);
+  assert.match(p.element('bubble').className, /fading/);
+  state.voice = null; state.thinking = true;
+  p.show(state);
+  assert.equal(p.element('robot')['data-mood'], 'thinking');
+  assert.equal(p.element('bubble').hidden, true);
+  state.thinking = false; state.voice = {event:'lost_game', line:'Well played.', age_s:1, seconds:2};
+  p.show(state);
+  assert.equal(p.element('robot')['data-mood'], 'sad');
+});
+
 test('operator page: a dead game greys the buttons out; typed moves only where allowed', () => {
   const p = page(undefined, {operator:true}), state = boardState();
   state.prompt = {...PROMPT, kind:'student_move', allow_text:true}; state.prompt_age_s = 30;

@@ -109,6 +109,21 @@ def test_the_whole_move_is_approved_once_unless_careful(monkeypatch):
     assert asked == [('step', None)]                          # --careful: the prompt is shown
 
 
+def test_the_voices_line_is_served_while_fresh(tmp_path):
+    path = str(tmp_path / 'said.json')
+    assert lab_chess.said_now(path) is None
+    with open(path, 'w') as stream:
+        json.dump({'event': 'captured', 'line': 'Mine now.', 't': time.time() - 1, 'seconds': 3}, stream)
+    shown = lab_chess.said_now(path)
+    assert shown['event'] == 'captured' and shown['line'] == 'Mine now.' and 0.5 < shown['age_s'] < 3
+    with open(path, 'w') as stream:
+        json.dump({'event': 'captured', 'line': 'Old.', 't': time.time() - 60, 'seconds': 3}, stream)
+    assert lab_chess.said_now(path) is None
+    with open(path, 'w') as stream:
+        stream.write('garbage')
+    assert lab_chess.said_now(path) is None
+
+
 def test_the_dashboard_server_answers_and_resets(monkeypatch):
     import urllib.request
     server = lab_chess.serve_dashboard(0, {'live': {}})

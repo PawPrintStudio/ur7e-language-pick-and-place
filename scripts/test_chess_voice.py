@@ -40,13 +40,16 @@ def test_canned_lines_fill_the_detail_and_survive_missing_keys():
     assert v.canned('nothing', {}) == ''
 
 
-def test_respond_prefers_the_model_and_falls_back_to_canned():
-    mouth = Mouth()
-    assert v.respond('check', {'san': 'Qh4+'}, Brain('Your king is sweating.'), mouth, log=lambda *a: None) \
-        == 'Your king is sweating.'
-    line = v.respond('check', {'san': 'Qh4+'}, Brain(None), mouth, log=lambda *a: None)
+def test_respond_prefers_the_model_falls_back_to_canned_and_tells_the_page(tmp_path):
+    mouth, said = Mouth(), str(tmp_path / 'said.json')
+    assert v.respond('check', {'san': 'Qh4+'}, Brain('Your king is sweating.'), mouth,
+                     log=lambda *a: None, said_file=said) == 'Your king is sweating.'
+    shown = json.load(open(said))
+    assert shown['event'] == 'check' and shown['line'] == 'Your king is sweating.'
+    assert 2.0 <= shown['seconds'] <= 4.0 and time.time() - shown['t'] < 2
+    line = v.respond('check', {'san': 'Qh4+'}, Brain(None), mouth, log=lambda *a: None, said_file=said)
     assert line in [l for l in v.EVENTS['check'][1]]
-    assert v.respond('unknown', {}, None, mouth, log=lambda *a: None) == ''
+    assert v.respond('unknown', {}, None, mouth, log=lambda *a: None, said_file=said) == ''
     assert mouth.said == ['Your king is sweating.', line]
 
 

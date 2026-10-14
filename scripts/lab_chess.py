@@ -48,6 +48,7 @@ ZED_CONF = os.path.join(_HERE, '..', 'docs', 'calibration', 'zed2i_SN35717973.co
 OVERLAY_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'overlay.jpg')
 TARGET_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'target.json')
 EVENTS_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'events.jsonl')
+SAID_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'said.json')     # chess_voice.py's current line
 PIECES_FILE = os.path.join(_HERE, 'lab_chess.yaml')
 TOUCH_FILE = os.path.join(_HERE, '.lab_chess_touches.json')
 CORNERS = ('1', '2', '3', '4')          # a1, h1, h8, a8
@@ -812,6 +813,20 @@ def move_list(board):
     return out
 
 
+def said_now(path=None, linger_s=20.0):
+    """The voice's current line for the page: {event, line, age_s, seconds}, or None when old."""
+    try:
+        with open(path or SAID_FILE) as stream:
+            row = json.load(stream)
+        age = time.time() - float(row['t'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if age > float(row.get('seconds', 3.0)) + linger_s:
+        return None
+    return {'event': row.get('event'), 'line': row.get('line'), 'age_s': round(age, 1),
+            'seconds': row.get('seconds')}
+
+
 def serve_dashboard(port, latest, lan=False):
     """The browser dashboard: the page, the annotated video, and the state as JSON.
 
@@ -861,6 +876,7 @@ def serve_dashboard(port, latest, lan=False):
                 # greys its buttons out when the game process is gone.
                 beat = state.get('beat')
                 state['prompt_age_s'] = None if beat is None else round(time.time() - beat, 1)
+                state['voice'] = said_now()
                 self.send(json.dumps(dict(state, live=latest.get('live', {}))).encode(),
                           'application/json')
             else:

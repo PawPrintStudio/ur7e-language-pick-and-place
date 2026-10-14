@@ -34,6 +34,7 @@ import urllib.request
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 EVENTS_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'events.jsonl')
+SAID_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'said.json')   # what is being said, for the page
 DEFAULT_MODEL = 'qwen2.5:3b'          # answers in about a second on a 6 GB GPU
 DEFAULT_VOICE = 'en_US-lessac-medium'
 OLLAMA = 'http://127.0.0.1:11434'
@@ -184,14 +185,26 @@ class Piper:
                 pass
 
 
-def respond(event, detail, brain, mouth, log=print):
-    """Choose the line (model, else canned) and speak it. Returns the line."""
+def announce(event, line, path=SAID_FILE, seconds=None):
+    """Tell the dashboard what is being said: watch serves it, the page shows the face and bubble."""
+    seconds = seconds if seconds is not None else round(1.0 + 0.45 * len(line.split()), 1)
+    row = {'event': event, 'line': line, 't': time.time(), 'seconds': seconds}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + '.tmp', 'w') as stream:
+        json.dump(row, stream)
+    os.replace(path + '.tmp', path)
+    return row
+
+
+def respond(event, detail, brain, mouth, log=print, said_file=SAID_FILE):
+    """Choose the line (model, else canned), show it, speak it. Returns the line."""
     line = brain.line(event, detail) if brain is not None else None
     source = 'model'
     if not line:
         line, source = canned(event, detail), 'canned'
     if line:
         log(f'LINE     {json.dumps({"event": event, "source": source})}')
+        announce(event, line, said_file)
         mouth.say(line)
     return line
 

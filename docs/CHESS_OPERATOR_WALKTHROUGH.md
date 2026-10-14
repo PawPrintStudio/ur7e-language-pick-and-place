@@ -211,15 +211,19 @@ of invisible squares.
 
 ## 5b. T4 on the HOST — the robot's voice (optional)
 
-In a host terminal (not the container), with the laptop speakers on:
+In a **host** terminal, not the container (the prompt must not say
+`/workspaces`; the script refuses inside the container), with the TV on:
 
 ```bash
 .venv-voice/bin/python scripts/chess_voice.py
 ```
 
 It speaks one line per game event (greeting, captures, checks, the result)
-from a local model, or a canned line when the model is slow. Ctrl+C stops it;
-the game does not depend on it. Setup commands are in CHESS.md, "Reactions".
+from a local model, or a canned line when the model is slow, through the
+HDMI output (the TV). The first line must say `AUDIO` with `pw-play --target`;
+if it says `aplay`, the TV sink was not found: `wpctl status`. Ctrl+C stops
+it; the game does not depend on it. Setup commands are in CHESS.md,
+"Reactions".
 
 ## 6. T3 — read-only checks before a game
 
@@ -276,11 +280,13 @@ laptop (not the projected one: the projected page shows the same game with no
 controls). Every prompt below appears there as buttons and in T3 as text;
 answer in either place.
 
-1. At the student prompt, invite one legal physical White move.
-2. Student withdraws; operator clicks **Read the board** (or Enter in T3).
-3. Check `I saw ...`. Click **Yes** only if correct, or type the actual move,
-   such as `e2e4`. A typed move must describe what physically happened.
-4. Read the robot's reply. Click **Clear: let the arm move** only when
+1. At the student prompt, invite one legal physical White move. The camera
+   reads the board every few seconds; do not press anything until the
+   student has let go of the piece.
+2. `I saw ...` appears by itself once two readings agree (or click **Read
+   the board**). It stands after 5 s: click **No** or type the actual move,
+   such as `e2e4`, only when it is wrong.
+3. Read the robot's reply. Click **Clear: let the arm move** only when
    everyone is clear; that approves the whole move (a capture is two steps).
    With `play --careful` there is also a **Go** per step.
 5. Wait for completion and check the real board before inviting another move.

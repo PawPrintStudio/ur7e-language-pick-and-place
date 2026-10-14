@@ -25,6 +25,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -152,11 +153,41 @@ class Replay:
         return one_sentence(text.format(**detail)) if text else None
 
 
-class Piper:
-    """Speak with Piper TTS through aplay; falls back to printing."""
+def find_sink(match='HDMI'):
+    """PipeWire sink id whose name contains ``match`` (wpctl status), or None."""
+    try:
+        status = subprocess.run(['wpctl', 'status'], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    sinks = False
+    for line in status.splitlines():
+        if 'Sinks:' in line:
+            sinks = True
+            continue
+        if sinks and ('Sources:' in line or 'Sink endpoints:' in line):
+            break
+        found = re.search(r'(\d+)\.\s+(.*?)\s+\[vol', line)
+        if sinks and found and match.lower() in found.group(2).lower():
+            return found.group(1)
+    return None
 
-    def __init__(self, voice=DEFAULT_VOICE, data_dir=None, player=('aplay', '-q')):
-        self.voice, self.player = voice, list(player)
+
+def player_for(sink=None):
+    """The command that plays a wav: pw-play on the chosen sink (the TV over HDMI), else aplay."""
+    if shutil.which('pw-play'):
+        target = find_sink(sink) if sink else None
+        if sink and target is None:
+            print(f'NOTE: no audio sink matching "{sink}" (wpctl status); using the default output', flush=True)
+        return ['pw-play'] + (['--target', target] if target else [])
+    return ['aplay', '-q']
+
+
+class Piper:
+    """Speak with Piper TTS through the laptop's audio; falls back to printing."""
+
+    def __init__(self, voice=DEFAULT_VOICE, data_dir=None, player=None, sink=None):
+        self.voice = voice
+        self.player = list(player) if player else player_for(sink)
         self.data_dir = data_dir or os.path.join(_HERE, '..', 'log', 'chess', 'voices')
         self.ready = os.path.exists(os.path.join(self.data_dir, f'{voice}.onnx'))
 
@@ -247,9 +278,17 @@ def main():
     cli.add_argument('--replay', help='JSON file of event -> line, instead of the model')
     cli.add_argument('--say', metavar='EVENT', help='speak one event and exit (a test of the pipeline)')
     cli.add_argument('--from-start', action='store_true', help='speak the events already in the file')
+    cli.add_argument('--sink', default='HDMI',
+                     help='audio output: a substring of the PipeWire sink name (default HDMI: the TV); '
+                          '"default" for the laptop speakers')
     args = cli.parse_args()
+    if os.path.exists('/.dockerenv') or not os.path.exists('/dev/snd'):
+        print('BLOCKED  this is the container (no sound card): run chess_voice.py in a HOST terminal, '
+              'from the repo folder on the laptop', flush=True)
+        return 2
     brain = None if args.no_llm else Replay(args.replay) if args.replay else Ollama(args.model)
-    mouth = Piper(args.voice)
+    mouth = Piper(args.voice, sink=None if args.sink == 'default' else args.sink)
+    print(f'AUDIO    {json.dumps({"player": " ".join(mouth.player), "voice": args.voice})}', flush=True)
     if not mouth.ready:
         print(f'NOTE: no Piper voice at log/chess/voices/{args.voice}.onnx: lines are printed, not spoken '
               f'(python -m piper.download_voices {args.voice} --data-dir log/chess/voices)', flush=True)

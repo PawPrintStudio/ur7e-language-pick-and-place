@@ -50,12 +50,12 @@ A capture is two steps: about 2.5 minutes of arm time per robot move.
 **Expected.** Motion 60 s → about 12 s, PLAN 8 → 3, OBSERVE 2.5 → 0:
 roughly 18–20 s per step, 40 s for a capture.
 
-**Status 2026-10-14: implemented, not yet run on the arm.** Rates, thinning
-(`scripts/motion/retime.py`, 6 tests), OBSERVE/HOME skipping (2 tests), the
-0.3 s settle. PLAN still dry-runs every segment (kept on purpose: it is the
-reachability proof before the jaws close); it should shrink with the shorter
-settle. Measure with `scratchpad stages.py`-style per-stage medians after ten
-moves at 100 %.
+**Status 2026-10-14: run on the arm.** A step in about 30 s at 0.4 rad/s
+(PLAN 4, APPROACH 9, LIFT 4, RETREAT 10, HOME 3); the arm shook at segment
+boundaries, so the rate is 0.32 / 0.10 and every segment ramps in and out
+over six steps. PLAN still dry-runs every segment (the reachability proof
+before the jaws close). Also found: a knight released at the box stayed in
+the jaws (held 30.7 mm, opened 32): releases now open to 70 mm over the box.
 
 **Acceptance.** `goto e4` plan-only reports the new nominal seconds; ten
 moves at 25 % slider then 100 % without a protective stop; grasp success
@@ -89,7 +89,11 @@ same record.
 
 **Status 2026-10-14: implemented** (`--careful`, standing New game / Quit,
 `POST /reset`, move list; 4 new tests). Mid-move means between steps: the
-arm finishes the step it is on, then parks.
+arm finishes the step it is on, then parks. After the first full game: the
+camera watches the board while the student prompt waits and answers itself
+(two agreeing readings), the confirmation stands after 5 s unless objected,
+New game / Quit clicked during a step are queued, the operator view puts the
+console first and large, the page fits the screen without scrolling.
 
 ## S3. Emotion: gestures and sounds on game events
 
@@ -198,8 +202,11 @@ the `UNSURE` rate over a game drops (measure it: it is not logged today).
 tests). The baseline scan is taken at game start and after every arm move
 (after any fix by hand); without one the absolute reading is used.
 `seen` and `unsure` events now go to `events.jsonl` with the margin and
-method, so the rate can be read off a game's log. The start-of-game
-visibility report on the operator page is not done.
+method, so the rate can be read off a game's log. First game: a knight
+leaving g1 tied three ways because f3/h3/e2 were hidden by the parked
+gripper in both scans; squares seen only in the new scan now break ties at
+a quarter weight, and home should stand a hand further from the board. The
+start-of-game visibility report on the operator page is not done.
 
 ## S7. Also noticed
 

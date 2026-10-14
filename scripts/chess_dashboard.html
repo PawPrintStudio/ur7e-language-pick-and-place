@@ -8,13 +8,14 @@
 :root { --bg:#F5F1EE; --panel:#ffffff; --line:#D7BD8A; --text:#363534; --muted:#665B52; --green:#266725; --red:#B01F3B; --amber:#64480C; --blue:#007096; --light-sq:#F5F1EE; --dark-sq:#AC9155; --maroon:#501214; --gold:#D7BD8A; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 Arial,Helvetica,sans-serif; border-top:6px solid var(--gold); }
-.wrap { max-width:1800px; padding:18px 28px; margin:auto; }
-.masthead { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-bottom:20px; background:var(--maroon); color:white; padding:14px 22px; border-bottom:2px solid var(--gold); }
+/* The whole page fits the screen: a column that gives the camera row whatever height is left. */
+.wrap { max-width:1800px; padding:10px 28px; margin:auto; height:calc(100svh - 6px); display:flex; flex-direction:column; gap:6px; overflow:hidden; }
+.masthead { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-bottom:4px; background:var(--maroon); color:white; padding:8px 22px; border-bottom:2px solid var(--gold); flex:none; }
 .identity { display:flex; align-items:center; gap:28px; }
-.university-mark { display:block; width:185px; height:auto; padding:0; background:transparent; }
-.intro { margin:0 0 22px; }
-.intro h1 { margin:2px 0 6px; font-size:34px; line-height:1.08; font-weight:700; letter-spacing:-.025em; color:var(--maroon); }
-.intro p { margin:0; color:var(--muted); font-size:15px; line-height:1.5; max-width:760px; }
+.university-mark { display:block; width:150px; height:auto; padding:0; background:transparent; }
+.intro { margin:0; flex:none; display:flex; align-items:baseline; gap:18px; }
+.intro h1 { margin:0; font-size:26px; line-height:1.1; font-weight:700; letter-spacing:-.025em; color:var(--maroon); }
+.intro p { margin:0; color:var(--muted); font-size:14px; line-height:1.4; max-width:760px; }
 .intro .eyebrow { color:var(--maroon); font-size:12px; letter-spacing:.08em; font-weight:700; }
 .school-caption { color:var(--gold); font-size:13px; }
 .eyebrow { color:white; font-size:10px; letter-spacing:.16em; text-transform:uppercase; margin-bottom:3px; }
@@ -23,9 +24,9 @@ button { font:inherit; color:var(--muted); background:transparent; border:1px so
 button:hover { color:var(--text); border-color:var(--blue); }
 button:focus-visible { outline:3px solid var(--amber); outline-offset:3px; }
 button:disabled { opacity:.4; cursor:default; }
-.vision-view { display:grid; grid-template-columns:minmax(0,1fr) clamp(260px,23vw,340px); gap:26px; align-items:start; }
-.camera-view { min-width:0; }
-.camera-frame { position:relative; background:#191919; border:1px solid var(--line); border-radius:8px; overflow:hidden; height:clamp(280px,calc(100svh - 450px),760px); }
+.vision-view { display:grid; grid-template-columns:minmax(0,1fr) clamp(240px,21vw,320px); gap:22px; align-items:stretch; flex:1; min-height:0; }
+.camera-view { min-width:0; display:flex; flex-direction:column; min-height:0; }
+.camera-frame { position:relative; background:#191919; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex:1; min-height:200px; }
 .camera-frame img { display:block; width:100%; height:100%; object-fit:contain; }
 .camera-frame #camera-overlay { position:absolute; inset:0; width:100%; height:100%; }
 #camera-overlay [data-square] { cursor:pointer; }
@@ -41,10 +42,10 @@ button:disabled { opacity:.4; cursor:default; }
 .offline .piece-inspector { opacity:.4; }
 .camera-error { position:absolute; inset:0; padding:24px; background:var(--maroon); color:var(--gold); place-content:center; text-align:center; }
 .camera-error:not([hidden]) { display:grid; }
-.board-pair { display:grid; grid-template-columns:1fr; gap:18px; min-width:0; border-left:1px solid #ded5cd; padding-left:20px; }
-.board-card { min-width:0; }
-.board-card svg { max-height:clamp(190px,calc((100svh - 450px)/2 - 10px),320px); }
-.board-card h2, .camera-view h2 { margin:0; min-height:48px; font-size:16px; font-weight:700; color:var(--maroon); }
+.board-pair { display:grid; grid-template-rows:1fr 1fr; gap:10px; min-width:0; min-height:0; border-left:1px solid #ded5cd; padding-left:20px; }
+.board-card { min-width:0; min-height:0; display:flex; flex-direction:column; }
+.board-card svg { flex:1; min-height:0; max-height:calc((100svh - 330px)/2); }
+.board-card h2, .camera-view h2 { margin:0; min-height:0; font-size:15px; font-weight:700; color:var(--maroon); }
 .camera-toolbar { display:flex; justify-content:space-between; align-items:start; gap:12px; }
 .view-switch { display:flex; gap:4px; padding:3px; background:#e9e1da; border-radius:7px; }
 .view-switch button { min-height:30px; padding:3px 10px; font-size:12px; border:0; border-radius:4px; }
@@ -54,13 +55,14 @@ button:disabled { opacity:.4; cursor:default; }
 .board-card h2 span, .camera-view h2 span { display:block; color:var(--muted); font-size:12px; font-weight:400; margin-top:3px; }
 svg { display:block; width:100%; height:auto; }
 svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans-serif; }
-.legend { display:flex; justify-content:flex-end; align-items:center; gap:18px; color:var(--muted); font-size:11px; margin:8px 0 14px; }
+.legend { display:flex; justify-content:flex-end; align-items:center; gap:18px; color:var(--muted); font-size:11px; margin:2px 0; flex:none; }
 .legend span { display:flex; align-items:center; gap:6px; }
 .legend i { width:12px; height:12px; border:2px solid var(--red); border-radius:2px; }
 .legend .unknown { border:0; background:repeating-linear-gradient(45deg,#617583 0 2px,transparent 2px 4px); }
-.status { border-top:1px solid var(--line); padding:18px 0; display:flex; justify-content:space-between; align-items:center; gap:20px; }
-.robot { position:relative; flex:none; display:flex; align-items:center; gap:10px; min-width:120px; }
-.robot-face { width:110px; height:110px; flex:none; }
+.status { border-top:1px solid var(--line); padding:8px 0; display:flex; justify-content:space-between; align-items:center; gap:20px; flex:none; }
+/* The character lives over the camera's bottom-left corner, big enough for the projector. */
+.robot { position:absolute; left:12px; bottom:8px; display:flex; align-items:flex-end; gap:12px; pointer-events:none; z-index:2; }
+.robot-face { width:clamp(150px,18vw,260px); height:auto; flex:none; filter:drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
 .robot #robot-head { transform-origin:58px 36px; transition:transform .4s; }
 .robot #eye-l, .robot #eye-r { transition:r .2s; }
 .robot #mouth, .robot #brow-l, .robot #brow-r { transition:d .3s; }
@@ -74,10 +76,22 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
 .robot.speaking #mouth { animation:talk .28s ease-in-out infinite alternate; }
 @keyframes talk { from { transform:scaleY(1); } to { transform:scaleY(2.2); } }
 .robot #mouth { transform-origin:83px 81px; }
-.bubble { position:relative; background:white; border:2px solid var(--maroon); border-radius:14px; padding:8px 12px; font-size:15px; max-width:360px; line-height:1.3; }
-.bubble::before { content:""; position:absolute; left:-12px; top:40%; border:6px solid transparent; border-right-color:var(--maroon); }
+.bubble { position:relative; background:white; border:2px solid var(--maroon); border-radius:16px; padding:10px 16px; font-size:clamp(16px,1.6vw,24px); max-width:min(520px,40vw); line-height:1.3; margin-bottom:28px; }
+.bubble::before { content:""; position:absolute; left:-14px; top:50%; border:7px solid transparent; border-right-color:var(--maroon); }
 .bubble[hidden] { display:none; }
-.bubble.fading { opacity:.45; }
+.bubble.fading { opacity:.55; }
+/* Operator view: the console first and large, the pictures small. */
+body.operator .wrap { gap:8px; }
+body.operator #operator { order:-1; }
+body.operator .intro, body.operator .legend, body.operator .camera-caption, body.operator .inspect-tools { display:none; }
+body.operator .vision-view { flex:1; min-height:0; grid-template-columns:minmax(0,1fr) 220px; }
+body.operator .camera-frame { min-height:160px; }
+body.operator .board-card svg { max-height:160px; }
+body.operator .robot-face { width:90px; } body.operator .bubble { font-size:14px; max-width:300px; margin-bottom:10px; }
+body.operator #op-text { font-size:28px; }
+body.operator .op-buttons button { min-height:72px; font-size:22px; padding:12px 28px; }
+body.operator .op-standing button { min-height:52px; font-size:17px; }
+#op-count { display:inline-block; margin-left:10px; font-size:14px; color:var(--muted); }
 .status h2 { font-size:17px; margin:0; font-weight:650; }
 .status p { color:var(--muted); font-size:12px; margin:4px 0 0; max-width:520px; }
 .status.bad h2 { color:var(--red); } .status.warn h2 { color:var(--amber); } .status.busy h2 { color:var(--blue); }
@@ -111,7 +125,7 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
 .op-standing button.warn { color:var(--amber); border-color:var(--amber); }
 #moves { font-size:14px; color:var(--text); margin:6px 0 0; line-height:1.7; word-spacing:2px; }
 #moves b { color:var(--maroon); font-weight:600; }
-@media(max-width:850px) { .vision-view { grid-template-columns:1fr; gap:20px; } .camera-frame { height:auto; aspect-ratio:16/10; } .board-pair { grid-template-columns:repeat(2,minmax(0,1fr)); border-left:0; padding-left:0; } .board-card svg { max-height:320px; } .legend { justify-content:center; } }
+@media(max-width:850px) { .wrap { height:auto; overflow:visible; } .vision-view { grid-template-columns:1fr; gap:20px; } .robot-face { width:110px; } .bubble { font-size:14px; } .camera-frame { height:auto; aspect-ratio:16/10; } .board-pair { grid-template-columns:repeat(2,minmax(0,1fr)); border-left:0; padding-left:0; } .board-card svg { max-height:320px; } .legend { justify-content:center; } }
 @media(max-width:600px) {
  .masthead { padding:14px; gap:16px; } .university-mark { width:155px; } .intro h1 { font-size:30px; } .intro p { font-size:14px; } .school-caption { display:none; }
  .wrap { padding:12px; } .board-pair { gap:14px; width:100%; } .board-card h2 { font-size:15px; min-height:60px; }
@@ -132,18 +146,7 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
   <div class="vision-view">
   <section class="camera-view" aria-label="Live camera with computer vision overlay">
     <div class="camera-toolbar"><h2>At the board<span>Live camera</span></h2><div class="view-switch" aria-label="Camera framing"><button id="board-view" type="button" aria-pressed="true">Board close-up</button><button id="room-view" type="button" aria-pressed="false">Whole robot</button></div></div>
-    <div class="camera-frame"><img id="camera" src="/stream?view=board" alt="Live chess board with unobtrusive detection markers"><svg id="camera-overlay" aria-label="Select a square in the camera view"></svg><div id="camera-error" class="camera-error" role="status" hidden>Camera feed unavailable.<br>Ask the presenter to check the camera.</div></div>
-    <div class="inspect-tools"><label for="square-select">Explore a square</label><select id="square-select"><option value="">Choose a square…</option></select><button id="cv-details" type="button" aria-pressed="false">CV details</button><span id="detail-key" hidden>Hatching: unknown depth</span><span id="robot-cue"></span></div>
-    <aside id="piece-inspector" class="piece-inspector" hidden aria-live="polite"><img id="piece-cutout" alt="Camera crop of selected piece" hidden><div><h3 id="piece-title"></h3><p id="piece-measure"></p><p id="piece-note"></p></div><button id="clear-square" type="button" aria-label="Clear selected square">Close</button></aside>
-    <div class="camera-caption"><span><b>⌜ ⌟</b> Piece detected</span><span>Red corners: check this square</span><span>Compare with “Camera sees” for piece estimates</span></div>
-  </section>
-  <section class="board-pair" aria-label="Game record and camera comparison">
-    <div class="board-card"><h2>Game record<span>The position the game remembers</span></h2><svg id="record" viewBox="0 0 360 372" role="img" aria-label="Board as recorded by the program"></svg></div>
-    <div class="board-card"><h2>Camera sees<span>Piece types estimated from height</span></h2><svg id="seen" viewBox="0 0 360 372" role="img" aria-label="Board as seen by the camera"></svg></div>
-  </section>
-  </div>
-  <div class="legend"><span><i></i>Difference</span><span><i class="unknown"></i>Unknown depth</span></div>
-  <section class="status" id="status">
+    <div class="camera-frame"><img id="camera" src="/stream?view=board" alt="Live chess board with unobtrusive detection markers"><svg id="camera-overlay" aria-label="Select a square in the camera view"></svg><div id="camera-error" class="camera-error" role="status" hidden>Camera feed unavailable.<br>Ask the presenter to check the camera.</div>
     <div class="robot" id="robot" data-mood="neutral" aria-hidden="true">
       <svg viewBox="0 0 120 120" class="robot-face">
         <rect x="6" y="106" width="46" height="9" rx="3" fill="#5f6770"/>
@@ -165,13 +168,25 @@ svg text { font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols2",sans
       </svg>
       <div class="bubble" id="bubble" hidden><span id="bubble-text"></span></div>
     </div>
+    </div>
+    <div class="inspect-tools"><label for="square-select">Explore a square</label><select id="square-select"><option value="">Choose a square…</option></select><button id="cv-details" type="button" aria-pressed="false">CV details</button><span id="detail-key" hidden>Hatching: unknown depth</span><span id="robot-cue"></span></div>
+    <aside id="piece-inspector" class="piece-inspector" hidden aria-live="polite"><img id="piece-cutout" alt="Camera crop of selected piece" hidden><div><h3 id="piece-title"></h3><p id="piece-measure"></p><p id="piece-note"></p></div><button id="clear-square" type="button" aria-label="Clear selected square">Close</button></aside>
+    <div class="camera-caption"><span><b>⌜ ⌟</b> Piece detected</span><span>Red corners: check this square</span><span>Compare with “Camera sees” for piece estimates</span></div>
+  </section>
+  <section class="board-pair" aria-label="Game record and camera comparison">
+    <div class="board-card"><h2>Game record<span>The position the game remembers</span></h2><svg id="record" viewBox="0 0 360 372" role="img" aria-label="Board as recorded by the program"></svg></div>
+    <div class="board-card"><h2>Camera sees<span>Piece types estimated from height</span></h2><svg id="seen" viewBox="0 0 360 372" role="img" aria-label="Board as seen by the camera"></svg></div>
+  </section>
+  </div>
+  <div class="legend"><span><i></i>Difference</span><span><i class="unknown"></i>Unknown depth</span></div>
+  <section class="status" id="status">
     <div role="status" aria-live="polite" aria-atomic="true"><h2 id="headline">Connecting…</h2><p id="subline"></p><p id="moves"></p></div>
     <div class="camera-check"><div id="agree" class="big">Waiting for camera</div><div id="age"></div><button id="scan" type="button" disabled>Check again</button></div>
   </section>
   <div id="scan-note" role="status" hidden></div>
   <section id="operator" class="operator" hidden aria-label="Operator console">
     <div class="operator-head"><h2>Operator<span>Answers go to the game running in T3. This computer only; the projected page has no controls.</span></h2><span id="op-alive"></span></div>
-    <p id="op-text">No game running. Start <code>play</code> in T3.</p>
+    <p id="op-text">No game running. Start <code>play</code> in T3.<span id="op-count"></span></p>
     <div id="op-buttons" class="op-buttons"></div>
     <form id="op-form" class="op-form" hidden><input id="op-input" placeholder="type the move: e4, Nf3, e7e5" autocomplete="off" aria-label="Typed answer"><button type="submit">Send</button></form>
     <p id="op-note"></p>
@@ -426,6 +441,7 @@ function paintMoves(state) {
 // --- the operator console: #operator on the laptop; the projected page never shows it ---
 const operator = typeof location !== 'undefined' && /operator/.test(location.hash + location.search);
 $('operator').hidden = !operator;
+if (operator) document.body.classList.add('operator');
 if (typeof addEventListener === 'function') addEventListener('hashchange', () => location.reload());
 let answeredPrompt = null;      // the prompt id already sent, so one click is one answer
 function paintOperator(state) {
@@ -437,12 +453,15 @@ function paintOperator(state) {
   // Standing buttons: with a game, they answer the open prompt (any prompt
   // takes new/quit); between prompts the arm is moving and nothing can be
   // answered; with no game, New game resets the record through /reset.
-  const pending = prompt && answeredPrompt === prompt.id;
-  $('op-new').disabled = alive ? (!prompt || pending) : false;
-  $('op-quit').disabled = !alive || !prompt || pending;
+  const pending = !!(prompt && answeredPrompt === prompt.id);
+  // New game and Quit always work while a game runs: between prompts the
+  // click is queued (id "*") and taken by the next prompt, after the arm's step.
+  $('op-new').disabled = pending;
+  $('op-quit').disabled = !alive || pending;
   $('op-standing-note').textContent = alive ? (prompt ? 'New game restarts the record for the next group; the arm parks.'
-                                                      : 'Wait for the arm to finish this step.')
+                                                      : 'The arm is moving: New game / Quit take effect after this step.')
                                             : 'No game running: New game clears the old record on the screens.';
+  $('op-count').textContent = '';
   if (!prompt) {
     $('op-text').textContent = alive ? (state.thinking ? 'Robot is thinking…' : 'Arm is moving: watch the board.')
                                      : 'No game running. Start play in T3.';
@@ -451,21 +470,27 @@ function paintOperator(state) {
     return;
   }
   $('op-text').textContent = prompt.text;
+  if (prompt.timeout_s && state.prompt_age_s != null) {
+    const left = Math.max(0, Math.ceil(prompt.timeout_s - state.prompt_age_s));
+    const label = (prompt.options.find(o => o.key === prompt.default) || {}).label || prompt.default;
+    $('op-count').textContent = pending ? '' : `${label} in ${left} s unless you click`;
+  }
   $('op-buttons').innerHTML = prompt.options.filter(o => o.key !== 'new' && o.key !== 'quit').map(o =>
     `<button type="button" class="${o.style || ''}" data-key="${o.key}" ${(!alive || pending) ? 'disabled' : ''}>${o.label}</button>`).join('');
   $('op-form').hidden = !prompt.allow_text;
   $('op-input').disabled = !alive || pending;
   if (pending) $('op-note').textContent = 'Sent. Waiting for the game…';
 }
-async function answer(value) {
+async function answer(value, id) {
   const prompt = currentState?.prompt;
-  if (!prompt || answeredPrompt === prompt.id) return;
-  answeredPrompt = prompt.id;
+  id = id || prompt?.id;
+  if (!id || (prompt && answeredPrompt === prompt.id && id === prompt.id)) return;
+  if (id === prompt?.id) answeredPrompt = prompt.id;
   $('op-note').textContent = `Sending ${value || 'Enter'}…`;
   paintOperator(currentState);
   try {
     const r = await fetch('/answer', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                                      body: JSON.stringify({id: prompt.id, answer: value}), signal: AbortSignal.timeout(4000)});
+                                      body: JSON.stringify({id, answer: value}), signal: AbortSignal.timeout(4000)});
     if (!r.ok) throw new Error(r.status === 403 ? 'answers are only accepted on the robot laptop' : `HTTP ${r.status}`);
     $('op-note').textContent = 'Sent. Waiting for the game…';
   } catch (e) {
@@ -493,8 +518,9 @@ async function resetRecord() {
     $('op-note').textContent = `Not reset (${e.message}).`;
   }
 }
-$('op-new').onclick = () => currentState?.prompt ? answer('new') : resetRecord();
-$('op-quit').onclick = () => { if (currentState?.prompt) answer('quit'); };
+const gameAlive = () => currentState?.prompt_age_s != null && currentState.prompt_age_s < 6;
+$('op-new').onclick = () => currentState?.prompt ? answer('new') : gameAlive() ? answer('new', '*') : resetRecord();
+$('op-quit').onclick = () => { if (currentState?.prompt) answer('quit'); else if (gameAlive()) answer('quit', '*'); };
 
 async function poll() {
   try {

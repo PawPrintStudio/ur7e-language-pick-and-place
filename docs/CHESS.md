@@ -168,12 +168,17 @@ terminal still works: whichever answers first wins. How it is wired:
   as `lab_chess.py reset`, refused while a chess command holds the lock).
 - `play --resume` carries on from the recorded game after a restart of T3.
 
-Prompts, in order of a turn (2026-10-14, spec S2): *student move* (Read the
-board / type it), *I saw e4: right?* (Yes / No, read again / type it),
+Prompts, in order of a turn (2026-10-14, spec S2): *student move* (the
+camera reads the board every 2.5 s while this waits and answers by itself
+once two readings agree; or Read the board / type it), *I saw e4: right?*
+(stands after 5 s unless the operator clicks No or types the real move),
 *Robot plays b5, everyone clear?* (Go: approves the whole move), and after
-a failed step *Retry / I finished it by hand*. `play --careful` adds one
-*b7 → b5: go?* per step, for the first runs after a calibration change. The
-audience page shows the move list with the robot's moves in bold.
+a failed step *Retry / I finished it by hand*. A normal turn is therefore
+one click: Clear. `play --careful` adds one *b7 → b5: go?* per step, for the
+first runs after a calibration change. New game and Quit clicked while the
+arm moves are queued and taken at the next prompt. The audience page shows
+the move list with the robot's moves in bold; the operator view
+(`#operator`) puts the console first and large.
 The audience page turns each of these into a headline ("Your move · White",
 "Robot is about to play b5: stand clear", "Arm stopped during b5").
 
@@ -181,12 +186,20 @@ The audience page turns each of these into a headline ("Your move · White",
 
 A step took 72 s at the baseline. What changed, and where each knob lives:
 
-- **Two rates.** `play`, `move`, `goto` default to `--joint-rate 0.4`
-  (travel: hover, carry, home) and `--contact-rate 0.12` (descend, lift,
-  lower, back up). The envelope in `scripts/motion/ur_motion.py` is 0.6 rad/s
-  nominal; the pendant slider scales everything below it.
+- **Two rates.** `play`, `move`, `goto` default to `--joint-rate 0.32`
+  (travel: hover, carry, home) and `--contact-rate 0.10` (descend, lift,
+  lower, back up); 0.4 shook the arm at segment boundaries on 2026-10-14.
+  The envelope in `scripts/motion/ur_motion.py` is 0.6 rad/s nominal; the
+  pendant slider scales everything below it.
 - **Waypoints thinned** before timing (`scripts/motion/retime.py`): MoveIt's
   0.003 rad steps under a 0.05 s floor meant the rate was never the limit.
+  Every segment now starts and stops over six stretched steps (a soft ramp).
+- **Release width.** Over the box the jaws open to 70 mm; on a square to the
+  held width plus 10 mm (at most 42). A knight held at 30.7 mm was "released"
+  at 32 mm and stayed wedged (2026-10-14).
+
+Measured with the first version (0.4 rad/s): a step in about 30 s, down
+from 72 (PLAN 4, APPROACH 9, LIFT 4, RETREAT 10, HOME 3).
 - **No OBSERVE move** when the arm already stands where the step starts, **no
   HOME between a capture's two steps** (it waits at the box hover), and a
   0.3 s settle before each plan instead of 1 s.
@@ -220,15 +233,22 @@ never waits for it. One-time setup on the laptop:
 ollama pull qwen2.5:3b
 ```
 
-Demo day, a fourth terminal on the host (T4):
+Demo day, a fourth terminal **on the host, not in the container** (the
+container has no sound card; the script refuses to run there):
 
 ```bash
 .venv-voice/bin/python scripts/chess_voice.py
 ```
 
-`--say captured` tries the pipeline once; `--no-llm` speaks canned lines
-only; `--replay lines.json` scripts the answers. The voice files live
-under `log/` (not committed): download them again on a new laptop.
+It plays through the PipeWire sink whose name contains `HDMI` (the TV);
+`--sink default` is the laptop speakers, `--sink Analog` by name. Check the
+TV's volume once: `wpctl status` lists the sinks, `wpctl set-volume 74 1.0`
+with the HDMI sink's number. `--say captured` tries the pipeline once;
+`--no-llm` speaks canned lines only; `--replay lines.json` scripts the
+answers. The voice files live under `log/` (not committed): download them
+again on a new laptop. What is being said is written to `log/chess/said.json`
+and shown by the audience page as the arm's speech bubble (restart `watch`
+after pulling for the page to serve it).
 
 ## Reading the student's move from what changed (spec S6)
 

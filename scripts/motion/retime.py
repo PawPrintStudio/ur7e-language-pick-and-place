@@ -13,7 +13,11 @@ envelope checks the kept ones.
 """
 
 
-def retime(start, points, rate, min_dt=0.05, max_vel=0.6, thin=True):
+RAMP_POINTS = 6       # waypoints over which a segment starts and stops gently
+RAMP_FACTOR = 1.5     # the first/last step takes (1 + this) times its nominal time
+
+
+def retime(start, points, rate, min_dt=0.05, max_vel=0.6, thin=True, ramp=RAMP_POINTS):
     """Turn joint dicts into (pose, seconds-from-start) pairs at ``rate`` rad/s.
 
     ``start`` is the arm's present joints; the planner's own copy of it (a
@@ -22,19 +26,28 @@ def retime(start, points, rate, min_dt=0.05, max_vel=0.6, thin=True):
     step needs at ``rate``, never less than ``min_dt``. With ``thin``, a
     waypoint closer than 0.9 x ``rate * min_dt`` to the last kept one is
     skipped; the last point is always kept, so the path ends where it was
-    planned to.
+    planned to. The first and last ``ramp`` steps are stretched so each
+    segment starts and stops gently instead of at full rate (2026-10-14: at
+    0.4 rad/s the arm shook at every segment boundary).
     """
     rate = min(float(rate), max_vel * 0.95)
     stride = rate * min_dt
-    pts, previous, t = [], start, 0.0
+    steps, previous = [], start
     for index, pose in enumerate(points):
         step = max(abs(pose[j] - previous[j]) for j in previous)
         last = index == len(points) - 1
-        if step < 1e-6 and not pts:
+        if step < 1e-6 and not steps:
             continue                    # the planner's copy of the start state
         if thin and not last and step < 0.9 * stride:
             continue                    # keep going: the next point is still close
-        t += max(min_dt, step / rate)
-        pts.append((pose, t))
+        steps.append((pose, max(min_dt, step / rate)))
         previous = pose
+    ramp = min(int(ramp), len(steps) // 2)
+    pts, t = [], 0.0
+    for index, (pose, dt) in enumerate(steps):
+        edge = min(index, len(steps) - 1 - index)
+        if edge < ramp:
+            dt *= 1.0 + RAMP_FACTOR * (1.0 - edge / ramp)
+        t += dt
+        pts.append((pose, t))
     return pts

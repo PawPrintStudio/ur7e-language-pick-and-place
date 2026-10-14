@@ -93,7 +93,7 @@ def test_new_game_and_quit_are_taken_on_every_prompt():
 def test_the_whole_move_is_approved_once_unless_careful(monkeypatch):
     asked = []
     monkeypatch.setattr(lab_chess, 'ask_operator',
-                        lambda kind, text, options, allow_text=False, auto=None: asked.append((kind, auto)) or (auto or 'y'))
+                        lambda kind, text, options, allow_text=False, auto=None, **_: asked.append((kind, auto)) or (auto or 'y'))
 
     class Orchestrator:
         def run(self, text):
@@ -160,6 +160,45 @@ def test_the_dashboard_server_answers_and_resets(monkeypatch):
         server.shutdown()
 
 
+def test_a_queued_new_game_click_is_taken_by_the_next_prompt_and_stale_ids_are_not():
+    with open(lab_chess.ANSWER_FILE, 'w') as stream:
+        json.dump({'id': '*', 'answer': 'new'}, stream)           # clicked while the arm was moving
+    with pytest.raises(lab_chess.NewGame):
+        lab_chess.ask_operator('step', 'go?', [lab_chess.option('y', 'Go')])
+    with open(lab_chess.ANSWER_FILE, 'w') as stream:
+        json.dump({'id': '*', 'answer': 'y'}, stream)             # only new/quit may be queued
+    answer_when_asked('n', delay_s=0.4)
+    assert lab_chess.ask_operator('step', 'go?', [lab_chess.option('y', 'Go'), lab_chess.option('n', 'Stop')]) == 'n'
+
+
+def test_a_timed_confirmation_stands_unless_answered_and_a_poll_can_answer():
+    started = time.time()
+    assert lab_chess.ask_operator('confirm_move', 'I saw e4?', [lab_chess.option('y', 'Yes'), lab_chess.option('n', 'No')],
+                                  timeout_s=0.5, default='y') == 'y'
+    assert 0.4 < time.time() - started < 2
+    answer_when_asked('n')
+    assert lab_chess.ask_operator('confirm_move', 'I saw e4?', [lab_chess.option('y', 'Yes'), lab_chess.option('n', 'No')],
+                                  timeout_s=5, default='y') == 'n'
+    calls = []
+    def poll():
+        calls.append(1)
+        return lab_chess.BoardWatcher.SEEN if len(calls) > 2 else None
+    assert lab_chess.ask_operator('student_move', 'move?', [lab_chess.option('', 'Read')], allow_text=True,
+                                  poll=poll) == lab_chess.BoardWatcher.SEEN
+
+
+def test_the_board_watcher_needs_two_agreeing_confident_readings(monkeypatch):
+    readings = iter([(None, 0, 'diff', {}), ('e4', 2, 'diff', {}), ('e4', 2, 'diff', {}),
+                     ('d4', 1, 'diff', {}), ('d4', 0, 'diff', {}), ('d4', 1, 'diff', {}), ('d4', 1, 'diff', {})])
+    monkeypatch.setattr(lab_chess, 'read_student_move', lambda vision, executor, board: next(readings))
+    monkeypatch.setattr(lab_chess, 'WATCH_EVERY_S', 0.0)
+    watcher = lab_chess.BoardWatcher(object(), None, chess.Board())
+    assert [watcher.poll() for _ in range(3)] == [None, None, lab_chess.BoardWatcher.SEEN]
+    assert watcher.result[0] == 'e4'
+    watcher = lab_chess.BoardWatcher(object(), None, chess.Board())
+    assert [watcher.poll() for _ in range(4)] == [None, None, None, lab_chess.BoardWatcher.SEEN]  # a dip to 0 resets
+
+
 def test_auto_yes_skips_the_prompt():
     assert lab_chess.ask_operator('step', 'go?', [lab_chess.option('y', 'Go')], auto='y') == 'y'
     assert lab_chess.read_state() == {}
@@ -169,7 +208,7 @@ def scripted(answers):
     """ask_operator stand-in: hands out the scripted answers, raising like the real one."""
     queue = list(answers)
 
-    def fake(kind, text, options, allow_text=False, auto=None):
+    def fake(kind, text, options, allow_text=False, auto=None, **_):
         if auto is not None:
             return auto
         value = queue.pop(0)
@@ -354,6 +393,20 @@ def test_a_measured_piece_grips_by_type_and_checks_its_width(monkeypatch):
     assert adapters.expected_width_mm is None
 
 
+def test_a_release_over_the_box_opens_wide_and_on_a_square_a_little_wider_than_the_grip():
+    lab = RecordingLab()
+    lab.config['open_mm'], lab.held_width = 32.0, 30.7
+    adapters = lab_chess.ChessAdapters(lab, square_board(), lab_chess.load_pieces())
+    seen = []
+    lab.retreat = lambda: seen.append(lab.config['open_mm'])
+    adapters.parse('c7 box'); adapters.retreat()
+    adapters.parse('d8 c7'); adapters.retreat()
+    lab.held_width = 21.0
+    adapters.parse('e2 e4'); adapters.retreat()
+    assert seen == [lab_chess.BOX_RELEASE_MM, 40.7, 32.0]        # box: wide; knight: 30.7+10; pawn: the usual 32
+    assert lab.config['open_mm'] == 32.0                          # restored every time
+
+
 def test_a_capture_read_by_diff_with_margin_one_is_offered_not_refused(monkeypatch):
     monkeypatch.setattr(lab_chess, 'executor_tips', lambda executor: None)
     board = chess.Board('rnbqkbnr/1ppp1ppp/p3p3/3N4/8/8/PPPPPPPP/R1BQKBNR w KQkq - 0 3')
@@ -365,7 +418,7 @@ def test_a_capture_read_by_diff_with_margin_one_is_offered_not_refused(monkeypat
     vision.cv.piece_colours = lambda squares, position: {}
     asked = []
     monkeypatch.setattr(lab_chess, 'ask_operator',
-                        lambda kind, text, options, allow_text=False, auto=None: asked.append(kind) or ('' if kind == 'student_move' else 'y'))
+                        lambda kind, text, options, allow_text=False, auto=None, **_: asked.append(kind) or ('' if kind == 'student_move' else 'y'))
     assert lab_chess.student_move(vision, None, board, 'White') == capture
     assert asked == ['student_move', 'confirm_move']          # diff + margin 1: offered for confirmation
     vision.baseline = None                                     # absolute reading: margin 1 is a coin toss

@@ -89,13 +89,19 @@ def _answer_from_file(prompt_id):
             data = json.load(stream)
     except (OSError, ValueError):
         return None
+    answer = str(data.get('answer', '')).strip()
+    wildcard = data.get('id') == '*' and answer.lower() in ('new', 'new game', 'quit', 'q')
+    if data.get('id') != prompt_id and not wildcard:
+        try:
+            os.remove(ANSWER_FILE)          # stale: a click for an earlier question
+        except FileNotFoundError:
+            pass
+        return None
     try:
         os.remove(ANSWER_FILE)
     except FileNotFoundError:
         pass
-    if data.get('id') != prompt_id:
-        return None
-    return str(data.get('answer', '')).strip()
+    return answer
 
 
 def _line_from_terminal(timeout_s):
@@ -119,13 +125,17 @@ def _line_from_terminal(timeout_s):
     return line.strip()
 
 
-def ask_operator(kind, text, options, allow_text=False, auto=None):
+def ask_operator(kind, text, options, allow_text=False, auto=None, poll=None,
+                 timeout_s=None, default=None):
     """Show a prompt on the operator page and in the terminal; return the answer.
 
     The answer is an option key (``GO``, ``STOP``, ...) or, with ``allow_text``,
     whatever was typed. Every prompt carries an id, so a click left over from an
-    earlier question never answers this one. ``NEW_GAME`` and ``QUIT`` raise when
-    they are among the options: the game loop restarts or stops.
+    earlier question never answers this one; the page's standing New game and
+    Quit buttons answer with id ``*`` and are taken by any prompt. ``poll`` is
+    called while waiting and may answer itself (the camera reading the
+    student's move); ``timeout_s`` answers ``default`` when nobody did (a
+    confirmation that stands unless the operator says no).
 
     Why a file and not a socket: ``watch`` already serves the page and owns the
     only HTTP port; ``play`` is a separate process (often another terminal).
@@ -135,11 +145,15 @@ def ask_operator(kind, text, options, allow_text=False, auto=None):
         return auto
     prompt_id = f'{time.time():.3f}-{random.randrange(1 << 20):x}'
     keys = {o['key']: o['label'] for o in options}
+    started = time.time()
     publish_state(prompt={'id': prompt_id, 'kind': kind, 'text': text, 'options': options,
-                          'allow_text': allow_text}, beat=time.time())
+                          'allow_text': allow_text, 'timeout_s': timeout_s, 'default': default},
+                  beat=started)
     hint = ', '.join(f'{k or "Enter"} = {v}' for k, v in keys.items())
     if allow_text:
         hint += ', or type it'
+    if timeout_s:
+        hint += f', {keys.get(default, default)} in {timeout_s:.0f} s'
     print(f'{text} [{hint}] ', end='', flush=True)
     try:
         last_beat = time.time()
@@ -147,6 +161,10 @@ def ask_operator(kind, text, options, allow_text=False, auto=None):
             answer = _answer_from_file(prompt_id)
             if answer is None:
                 answer = _line_from_terminal(0.2)
+            if answer is None and poll is not None:
+                answer = poll()
+            if answer is None and timeout_s and time.time() - started > timeout_s:
+                answer = default
             if answer is None:
                 if time.time() - last_beat > 1.0:
                     publish_state(beat=time.time())
@@ -471,6 +489,8 @@ def draw_overlay(bgr, geometry, base_from_camera, matrix, dist, detected=None, l
 
 PAIR_SHM = '/dev/shm/lab_chess_pair.npy'   # `watch` shares its newest raw stereo pair here
 EMPTY_CLOSE_MM = 9.3     # the RG2 reads this closed on nothing (2026-10-10)
+BOX_RELEASE_MM = 70.0    # jaw opening when letting go over the box (nothing beside it)
+SQUARE_RELEASE_MAX_MM = 42.0   # ... and the most on a square: neighbours sit 1.4 squares away
 
 
 def zed_device(device=None):
@@ -1564,7 +1584,24 @@ class ChessAdapters(Adapters):
         self.lab.lift()
 
     def retreat(self):
-        self.lab.retreat()
+        """Carry, lower, let go, back up; at the box the jaws open wide.
+
+        2026-10-14: a knight held at 30.7 mm was "released" by opening to the
+        32 mm the jaws use between neighbours on the board: one millimetre of
+        play, and the knight stayed wedged. Over the box nothing is in the
+        way, so open to 70 mm; on a square, as wide as the held width plus a
+        finger's worth, still inside the diagonal gap to the neighbours.
+        """
+        config, usual = self.lab.config, self.lab.config['open_mm']
+        held = getattr(self.lab, 'held_width', None)
+        if self.intent is not None and self.intent.place_query == BOX:
+            config['open_mm'] = BOX_RELEASE_MM
+        elif held:
+            config['open_mm'] = max(usual, min(float(held) + 10.0, SQUARE_RELEASE_MAX_MM))
+        try:
+            self.lab.retreat()
+        finally:
+            config['open_mm'] = usual
         self._retreated = True
 
     def release(self):
@@ -1992,6 +2029,63 @@ def cmd_move(args):
 
 
 GAME_OPTIONS = [option(NEW_GAME, 'New game', 'warn'), option(QUIT, 'Quit', 'stop')]
+CONFIRM_SECONDS = 5.0        # "I saw e4" stands unless the operator objects within this
+WATCH_EVERY_S = 2.5          # how often the board is read while the student thinks
+
+
+def confident_margin(how):
+    """Absolute reading: a plain move shows two changed squares, so a margin
+    of 1 is a coin toss. Diff reading: a capture only vacates its square, so
+    it can beat a quiet move from the same square by exactly 1 (2026-10-14,
+    Nxc7+ read right and refused); only a tie (0) is unsure there."""
+    return 1 if how == 'diff' else 2
+
+
+def read_student_move(vision, executor, board):
+    """One reading of the board: (move, margin, how, squares).
+
+    With a baseline scan (after the arm's move, or the game's start) the move
+    is read from what CHANGED; without one, from the absolute picture.
+    """
+    squares, _, _ = vision.look(executor_tips(executor))
+    if vision.baseline is not None:
+        move, margin, _ = vision.cv.infer_move_diff(board, vision.baseline, squares)
+        return move, margin, 'diff', squares
+    move, margin, _ = vision.cv.infer_move(board, squares, vision.cv.piece_colours(squares, board))
+    return move, margin, 'absolute', squares
+
+
+class BoardWatcher:
+    """Reads the board every few seconds while the student prompt waits.
+
+    Answers the prompt by itself once two readings in a row agree on a
+    confident move: the operator then only confirms (or lets the
+    confirmation stand). A board being touched reads differently from one
+    scan to the next, so a single reading never counts.
+    """
+    SEEN = '\x00seen'
+
+    def __init__(self, vision, executor, board):
+        self.vision, self.executor, self.board = vision, executor, board
+        self.last_at, self.previous, self.result = 0.0, None, None
+
+    def poll(self):
+        if time.time() - self.last_at < WATCH_EVERY_S:
+            return None
+        self.last_at = time.time()
+        try:
+            move, margin, how, squares = read_student_move(self.vision, self.executor, self.board)
+        except Exception as error:    # noqa: BLE001 - a bad frame is not an answer
+            say('WARNING', f'watching the board: {error}')
+            return None
+        if move is None or margin < confident_margin(how):
+            self.previous = None
+            return None
+        if self.previous != move:
+            self.previous = move
+            return None
+        self.result = (move, margin, how, squares)
+        return self.SEEN
 
 
 def student_move(vision, executor, board, side):
@@ -2001,12 +2095,14 @@ def student_move(vision, executor, board, side):
     """
     if vision is not None:
         options = [option('', 'Read the board', 'go')] + GAME_OPTIONS
-        text = f'Student ({side}): make your move, then read the board (or type the move)'
+        text = f'Student ({side}): make your move. I watch the board; or read it now, or type the move'
     else:
         options = list(GAME_OPTIONS)
         text = f'Student ({side}): type the move, e.g. e5 or e7e5'
-    answer = ask_operator('student_move', text, options, allow_text=True)
-    if answer:
+    watcher = BoardWatcher(vision, executor, board) if vision is not None else None
+    answer = ask_operator('student_move', text, options, allow_text=True,
+                          poll=watcher.poll if watcher else None)
+    if answer and answer != BoardWatcher.SEEN:
         try:
             return parse_move(board, answer)
         except ValueError as error:
@@ -2014,32 +2110,25 @@ def student_move(vision, executor, board, side):
             return None
     if vision is None:
         return None
-    squares, _, _ = vision.look(executor_tips(executor))
-    # With a baseline scan (after the arm's move, or the game's start) the
-    # move is read from what CHANGED; without one, from the absolute picture.
-    if vision.baseline is not None:
-        move, margin, ranking = vision.cv.infer_move_diff(board, vision.baseline, squares)
-        how = 'diff'
+    if answer == BoardWatcher.SEEN:
+        move, margin, how, squares = watcher.result
     else:
-        move, margin, ranking = vision.cv.infer_move(
-            board, squares, vision.cv.piece_colours(squares, board))
-        how = 'absolute'
+        move, margin, how, squares = read_student_move(vision, executor, board)
     seen = {'move': board.san(move) if move else None, 'margin': margin, 'how': how,
-            'runners_up': [board.san(m) for _, m in ranking[1:3]]}
+            'runners_up': []}
     say('SEEN', seen)
     chess_gestures.log_event(EVENTS_FILE, 'seen', **seen)
-    # Absolute reading: a plain move shows two changed squares, so a margin of
-    # 1 is a coin toss. Diff reading: a capture only vacates its square, so it
-    # can beat a quiet move from the same square by exactly 1 (2026-10-14,
-    # Nxc7+ read right and refused); only a tie (0) is unsure there.
-    if move is None or margin < (1 if how == 'diff' else 2):
+    if move is None or margin < confident_margin(how):
         print(board_text(squares))
         say('UNSURE', 'two moves explain the board equally well: type the move')
         chess_gestures.log_event(EVENTS_FILE, 'unsure', **seen)
         return None
+    # Confirmed unless the operator says no within a few seconds: one fewer
+    # click per turn (2026-10-14).
     check = ask_operator('confirm_move', f'I saw {board.san(move)}. Right?',
                          [option(GO, f'Yes, {board.san(move)}', 'go'),
-                          option(STOP, 'No: read again')] + GAME_OPTIONS, allow_text=True)
+                          option(STOP, 'No: read again')] + GAME_OPTIONS, allow_text=True,
+                         timeout_s=CONFIRM_SECONDS, default=GO)
     if check == GO:
         return move
     if check == STOP:
@@ -2348,7 +2437,9 @@ def main():
             # the carried piece's top. open_session warns when that is too low to clear
             # the tallest piece in lab_chess.yaml. Rates (2026-10-14): 0.4 rad/s
             # travel, 0.12 beside the pieces; the pendant slider scales both.
-            p.set_defaults(hover=0.08, joint_rate=0.4, contact_rate=0.12)
+            # 0.4 shook the arm at segment boundaries (2026-10-14); 0.32 with
+            # the ramped starts in retime.py is the operator's "80 %".
+            p.set_defaults(hover=0.08, joint_rate=0.32, contact_rate=0.10)
         else:
             p.add_argument('--yes', action='store_true')
             p.description = f'{p.prog}: robot options {reason}'

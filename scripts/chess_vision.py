@@ -264,6 +264,11 @@ def infer_move_diff(position, before, after):
     import chess
     both = [n for n, e in before.items() if e['seen'] and after.get(n, {}).get('seen')]
     observed = {n: before[n]['occupied'] != after[n]['occupied'] for n in both}
+    # Tiebreak (2026-10-14): a knight leaving g1 was seen, but f3/h3/e2 were
+    # hidden in BOTH scans by the parked gripper, so three moves tied at 0.
+    # Squares seen only in the new scan still say whether a destination is
+    # occupied now; they count a quarter, never enough to beat a changed square.
+    new_only = [n for n, e in after.items() if e['seen'] and n not in both]
     ranking = []
     for move in position.legal_moves:
         result = position.copy()
@@ -274,6 +279,9 @@ def infer_move_diff(position, before, after):
             expected = (position.piece_at(square) is not None) != (result.piece_at(square) is not None)
             if expected != observed[name]:
                 score -= 1
+        for name in new_only:
+            if (result.piece_at(chess.parse_square(name)) is not None) != after[name]['occupied']:
+                score -= 0.25
         ranking.append((score, move))
     ranking.sort(key=lambda s: -s[0])
     if not ranking:

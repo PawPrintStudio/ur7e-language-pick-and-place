@@ -150,16 +150,32 @@ test('standing New game: answers the prompt with a game, resets the record witho
   await p.element('op-new').onclick();
   assert.deepEqual(posts, [['/answer', {id:'p1', answer:'new'}]]);
   posts.length = 0;
-  state.prompt = null; state.prompt_age_s = 1;                          // arm moving: nothing to answer
+  state.prompt = null; state.prompt_age_s = 1;                          // arm moving: the click is queued
   p.show(state);
-  assert.equal(p.element('op-new').disabled, true);
-  assert.match(p.element('op-standing-note').textContent, /Wait for the arm/);
+  assert.equal(p.element('op-new').disabled, false);
+  assert.match(p.element('op-standing-note').textContent, /after this step/);
+  await p.element('op-new').onclick();
+  assert.deepEqual(posts, [['/answer', {id:'*', answer:'new'}]]);
+  posts.length = 0;
   state.prompt_age_s = null;                                             // no game at all: /reset
   p.show(state);
   assert.equal(p.element('op-new').disabled, false);
   await p.element('op-new').onclick();
   assert.deepEqual(posts, [['/reset', null]]);
   assert.match(p.element('op-note').textContent, /Record reset/);
+});
+
+test('a confirmation with a timeout shows the countdown; the operator view marks the body', () => {
+  const p = page(undefined, {operator:true}), state = boardState();
+  state.prompt = {id:'p9', kind:'confirm_move', text:'I saw e4. Right?', allow_text:true, timeout_s:5, default:'y',
+                  options:[{key:'y',label:'Yes, e4',style:'go'},{key:'n',label:'No: read again'}]};
+  state.prompt_age_s = 1.2;
+  p.show(state);
+  assert.match(p.element('op-count').textContent, /Yes, e4 in 4 s/);
+  assert.ok(p.classes.has('operator'));
+  state.prompt = {...state.prompt, timeout_s:null};
+  p.show(state);
+  assert.equal(p.element('op-count').textContent, '');
 });
 
 test('the cartoon arm shows a mood and a bubble while the voice speaks, fades after, thinks between', () => {

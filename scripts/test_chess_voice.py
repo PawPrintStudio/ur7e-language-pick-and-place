@@ -35,7 +35,8 @@ def test_one_sentence_trims_quotes_length_and_extra_sentences():
 
 
 def test_canned_lines_fill_the_detail_and_survive_missing_keys():
-    assert 'black' in v.canned('greeting', {'arm': 'black'}) or 'Ro-Boko' in v.canned('greeting', {'arm': 'black'})
+    line = v.canned('greeting', {'arm': 'black'})
+    assert 'black' in line or 'Ro-Boko' in line
     assert v.canned('captured', {}) != ''                 # a missing {san} falls back cleanly
     assert v.canned('nothing', {}) == ''
 
@@ -73,6 +74,21 @@ def test_follow_keeps_the_model_warm(tmp_path):
     thread.start()
     time.sleep(0.2)
     assert brain.warmed == 1                                        # once at startup, then every few minutes
+
+
+def test_the_tv_sink_is_found_from_wpctl_status(monkeypatch):
+    status = ('PipeWire ...\nAudio\n ├─ Devices:\n ├─ Sinks:\n │  *   48. Built-in Audio Analog Stereo        [vol: 0.99]\n'
+              ' │      74. HDA NVidia Digital Stereo (HDMI)    [vol: 0.40]\n │  \n ├─ Sink endpoints:\n ├─ Sources:\n'
+              ' │      99. HDMI capture thing [vol: 1.00]\n')
+    monkeypatch.setattr(v.subprocess, 'run', lambda *a, **k: type('R', (), {'stdout': status})())
+    assert v.find_sink('HDMI') == '74'
+    assert v.find_sink('Analog') == '48'
+    assert v.find_sink('Bluetooth') is None
+    monkeypatch.setattr(v.shutil, 'which', lambda name: '/usr/bin/pw-play' if name == 'pw-play' else None)
+    assert v.player_for('HDMI') == ['pw-play', '--target', '74']
+    assert v.player_for(None) == ['pw-play']
+    monkeypatch.setattr(v.shutil, 'which', lambda name: None)
+    assert v.player_for('HDMI') == ['aplay', '-q']
 
 
 def test_follow_speaks_new_events_only_and_skips_stale_ones(tmp_path):

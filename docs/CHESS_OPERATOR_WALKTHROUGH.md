@@ -209,6 +209,18 @@ types from height; the legal game record has a separate role. Before `play`,
 the record may still be from October 11: its difference count is not a count
 of invisible squares.
 
+## 5b. T4 on the HOST — the robot's voice (optional)
+
+In a host terminal (not the container), with the laptop speakers on:
+
+```bash
+.venv-voice/bin/python scripts/chess_voice.py
+```
+
+It speaks one line per game event (greeting, captures, checks, the result)
+from a local model, or a canned line when the model is slow. Ctrl+C stops it;
+the game does not depend on it. Setup commands are in CHESS.md, "Reactions".
+
 ## 6. T3 — read-only checks before a game
 
 With the physical pieces at the standard start and the arm clear of the

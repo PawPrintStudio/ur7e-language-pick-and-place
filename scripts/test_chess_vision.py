@@ -118,6 +118,34 @@ def test_a_capture_needs_the_colour():
     assert move.uci() == 'e4d5' and margin >= 1
 
 
+def test_a_move_is_read_from_what_changed_even_with_the_back_rank_missing():
+    start = chess.Board()
+    after = start.copy()
+    after.push_uci('e2e4')
+    hidden = ('e8', 'f8', 'g8', 'h8', 'g1')                 # what this camera misses every scan
+    before_scan, after_scan = scan_of(start, hidden=hidden), scan_of(after, hidden=hidden)
+    move, margin, _ = cv_.infer_move_diff(start, before_scan, after_scan)
+    assert move.uci() == 'e2e4' and margin >= 2
+    # The absolute reading of the same scans is hurt by the misses; the diff is not.
+    # A square that reads wrong in BOTH scans (g1 "empty") does not count either.
+    wrong_both = {n: dict(e, occupied=False) if n == 'g1' else e for n, e in scan_of(start).items()}
+    wrong_after = {n: dict(e, occupied=False) if n == 'g1' else e for n, e in scan_of(after).items()}
+    move, margin, _ = cv_.infer_move_diff(start, wrong_both, wrong_after)
+    assert move.uci() == 'e2e4' and margin >= 2
+
+
+def test_a_capture_is_read_from_the_vacated_square_alone():
+    position = chess.Board('4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1')
+    after = position.copy()
+    after.push_uci('e4d5')                                  # exd5: only e4 changes
+    move, margin, ranking = cv_.infer_move_diff(position, scan_of(position), scan_of(after))
+    assert move.uci() == 'e4d5' and margin >= 1
+    # Hide d5 and e5: e4-e5 and exd5 both only show e4 emptying: a tie, so the operator types it.
+    move, margin, _ = cv_.infer_move_diff(position, scan_of(position, hidden=('d5', 'e5')),
+                                          scan_of(after, hidden=('d5', 'e5')))
+    assert margin == 0
+
+
 def test_a_moved_board_is_followed_from_the_grid():
     pytest.importorskip('cv2')
     import test_lab_chess as t

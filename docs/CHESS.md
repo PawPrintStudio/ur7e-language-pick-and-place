@@ -208,6 +208,40 @@ they would come within 60 mm of the board plane or 30 mm of its footprint.
 A capture and a win get three jaw "claps". `play --no-gestures` turns them
 off. The events file is what the laptop-side voice reads.
 
+**Voice** (`scripts/chess_voice.py`, on the laptop, not in the container:
+the sound card and the GPU are there). It tails the events file, asks a
+local model through Ollama for one sentence in Ro-Boko's voice (20 words,
+3 s timeout, otherwise a canned line) and speaks it with Piper. The game
+never waits for it. One-time setup on the laptop:
+
+```bash
+.venv-voice/bin/pip install piper-tts
+.venv-voice/bin/python -m piper.download_voices en_US-lessac-medium --download-dir log/chess/voices
+ollama pull qwen2.5:3b
+```
+
+Demo day, a fourth terminal on the host (T4):
+
+```bash
+.venv-voice/bin/python scripts/chess_voice.py
+```
+
+`--say captured` tries the pipeline once; `--no-llm` speaks canned lines
+only; `--replay lines.json` scripts the answers. The voice files live
+under `log/` (not committed): download them again on a new laptop.
+
+## Reading the student's move from what changed (spec S6)
+
+`play --vision` keeps a baseline scan (taken at the start of the game and
+after each arm move) and reads the student's move by comparing the new scan
+with it: a legal move is scored on whether each square seen in both scans
+changed occupancy as the move says. Squares the camera always misses (the
+back rank behind taller pieces) or always reads the same say nothing, which
+is what the absolute comparison got wrong. A capture shows only as its
+vacated square, so a capture whose destination is hidden ties with a plain
+move there and the operator types it, as before. Every reading is logged as
+a `seen` event (`margin`, `how`), every tie as `unsure`.
+
 ## Set measurement (spec S5)
 
 With `grip_m` and `width_mm` set for a piece type in `lab_chess.yaml`, a

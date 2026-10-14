@@ -150,6 +150,11 @@ guardrails and replay tests apply.
 `watch` and `play` running; nothing in the game loop waits on it; a replay
 file makes the tests deterministic.
 
+**Status 2026-10-14: step 1 (commentary) implemented**
+(`scripts/chess_voice.py`, 5 tests; Piper voice downloaded; `qwen2.5:3b`
+pulled). Voice move entry and questions not started. Latency on this laptop
+to be measured with `--say captured` once the model is loaded.
+
 ## S5. Measure the set; grip by type
 
 **Now.** `lab_chess.yaml` has placeholder heights and widths (`measured:
@@ -188,6 +193,13 @@ operator page before the first move.
 
 **Acceptance.** Replayed scan pairs from tonight's game read every move;
 the `UNSURE` rate over a game drops (measure it: it is not logged today).
+
+**Status 2026-10-14: implemented** (`chess_vision.infer_move_diff`, 2
+tests). The baseline scan is taken at game start and after every arm move
+(after any fix by hand); without one the absolute reading is used.
+`seen` and `unsure` events now go to `events.jsonl` with the margin and
+method, so the rate can be read off a game's log. The start-of-game
+visibility report on the operator page is not done.
 
 ## S7. Also noticed
 

@@ -251,6 +251,37 @@ def infer_move(position, squares, colours=None):
     return ranking[0][1], margin, ranking[:5]
 
 
+def infer_move_diff(position, before, after):
+    """The legal move whose occupancy CHANGES best match two scans: (move, margin, ranking).
+
+    ``before`` is the scan after the arm's last move (the student has not
+    touched the board), ``after`` the scan after the student's move. Only
+    squares seen in both count, and only whether they changed: a back-rank
+    square the camera always misses, or always reads the same, says nothing
+    either way. That is what the absolute comparison (``infer_move``) gets
+    wrong on this board (spec S6).
+    """
+    import chess
+    both = [n for n, e in before.items() if e['seen'] and after.get(n, {}).get('seen')]
+    observed = {n: before[n]['occupied'] != after[n]['occupied'] for n in both}
+    ranking = []
+    for move in position.legal_moves:
+        result = position.copy()
+        result.push(move)
+        score = 0
+        for name in both:
+            square = chess.parse_square(name)
+            expected = (position.piece_at(square) is not None) != (result.piece_at(square) is not None)
+            if expected != observed[name]:
+                score -= 1
+        ranking.append((score, move))
+    ranking.sort(key=lambda s: -s[0])
+    if not ranking:
+        return None, 0, []
+    margin = ranking[0][0] - (ranking[1][0] if len(ranking) > 1 else -99)
+    return ranking[0][1], margin, ranking[:5]
+
+
 def board_shift(base_from_camera, apparent_base_from_camera):
     """How the board moved (4x4, base frame), from the camera pose the grid now implies.
 

@@ -525,6 +525,9 @@ class Vision:
         self.camera = chess_vision.BoardCamera(geometry, saved['base_from_camera'], conf,
                                                saved['mode'])
         self.device = device
+        # The scan the student's move is compared against (spec S6): taken
+        # after the arm's move, or at the start of the game.
+        self.baseline = None
 
     def look(self, tips=None):
         """Scan the board; ``tips`` (fingertips xyz) removes the gripper from the points."""
@@ -1974,13 +1977,23 @@ def student_move(vision, executor, board, side):
     if vision is None:
         return None
     squares, _, _ = vision.look(executor_tips(executor))
-    move, margin, ranking = vision.cv.infer_move(
-        board, squares, vision.cv.piece_colours(squares, board))
-    say('SEEN', {'move': board.san(move) if move else None, 'margin': margin,
-                 'runners_up': [board.san(m) for _, m in ranking[1:3]]})
+    # With a baseline scan (after the arm's move, or the game's start) the
+    # move is read from what CHANGED; without one, from the absolute picture.
+    if vision.baseline is not None:
+        move, margin, ranking = vision.cv.infer_move_diff(board, vision.baseline, squares)
+        how = 'diff'
+    else:
+        move, margin, ranking = vision.cv.infer_move(
+            board, squares, vision.cv.piece_colours(squares, board))
+        how = 'absolute'
+    seen = {'move': board.san(move) if move else None, 'margin': margin, 'how': how,
+            'runners_up': [board.san(m) for _, m in ranking[1:3]]}
+    say('SEEN', seen)
+    chess_gestures.log_event(EVENTS_FILE, 'seen', **seen)
     if move is None or margin < 2:
         print(board_text(squares))
         say('UNSURE', 'two moves explain the board equally well: type the move')
+        chess_gestures.log_event(EVENTS_FILE, 'unsure', **seen)
         return None
     check = ask_operator('confirm_move', f'I saw {board.san(move)}. Right?',
                          [option(GO, f'Yes, {board.san(move)}', 'go'),
@@ -1997,7 +2010,11 @@ def student_move(vision, executor, board, side):
 
 
 def check_position(vision, executor, board):
-    """After the arm's move: does the board look like the game says? Warn if not."""
+    """After the arm's move: does the board look like the game says? Warn if not.
+
+    The scan (after any fix by hand) becomes the baseline the student's next
+    move is read against.
+    """
     squares, _, _ = vision.look(executor_tips(executor))
     wrong = [name for name, e in squares.items() if e['seen']
              and e['occupied'] != (board.piece_at(chess.parse_square(name)) is not None)]
@@ -2008,8 +2025,21 @@ def check_position(vision, executor, board):
         ask_operator('board_fixed', f'The camera disagrees on {", ".join(wrong)}: '
                                     'fix the board to match the game record',
                      [option(GO, 'Board fixed', 'go')])
+        squares, _, _ = vision.look(executor_tips(executor))
     else:
         say('CHECK', 'board matches the game')
+    vision.baseline = squares
+
+
+def baseline_scan(vision, executor):
+    """The scan the first student move is read against (a new game, a resumed one)."""
+    if vision is None:
+        return
+    try:
+        vision.baseline, _, _ = vision.look(executor_tips(executor))
+    except Exception as error:      # noqa: BLE001 - no baseline: absolute reading until the arm moves
+        say('WARNING', f'no baseline scan: {error}')
+        vision.baseline = None
 
 
 def arm_move(board, move, session, args):
@@ -2135,6 +2165,8 @@ def cmd_play(args):
             try:
                 if not board.move_stack:
                     react(session, args, 'greeting', arm='white' if arm_white else 'black')
+                if session is not None:
+                    baseline_scan(session[2].vision, session[0])
                 result = play_game(board, arm, engine, session, args)
                 ask_operator('game_over', f'Game over: {result} after {len(board.move_stack)} moves',
                              GAME_OPTIONS)

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ro-Boko moods</title>
+<style>
+body { font:15px Arial,sans-serif; background:#F5F1EE; color:#363534; margin:24px; }
+.row { display:flex; flex-wrap:wrap; gap:18px; }
+.card { background:white; border:1px solid #D7BD8A; border-radius:10px; padding:12px; width:170px; text-align:center; }
+.robot { display:flex; flex-direction:column; align-items:center; }
+.robot-face { width:140px; height:140px; }
+.robot .head { transform-origin:58px 36px; }
+.robot[data-mood="happy"] .mouth { d:path("M71 78 Q83 90 95 78"); }
+.robot[data-mood="happy"] .brow-l { d:path("M62 54 Q69 50 76 54"); } .robot[data-mood="happy"] .brow-r { d:path("M90 54 Q97 50 104 54"); }
+.robot[data-mood="smug"] .mouth { d:path("M73 80 Q85 88 95 76"); } .robot[data-mood="smug"] .brow-l { d:path("M62 58 L76 54"); } .robot[data-mood="smug"] .brow-r { d:path("M90 52 L104 58"); }
+.robot[data-mood="annoyed"] .mouth { d:path("M73 82 L93 82"); } .robot[data-mood="annoyed"] .brow-l { d:path("M62 52 L76 58"); } .robot[data-mood="annoyed"] .brow-r { d:path("M90 58 L104 52"); }
+.robot[data-mood="sad"] .mouth { d:path("M73 84 Q83 76 93 84"); } .robot[data-mood="sad"] .brow-l { d:path("M62 58 L76 54"); } .robot[data-mood="sad"] .brow-r { d:path("M90 54 L104 58"); } .robot[data-mood="sad"] .head { transform:rotate(10deg); }
+.robot[data-mood="joy"] .mouth { d:path("M69 76 Q83 94 97 76"); } .robot[data-mood="joy"] .head { transform:rotate(-8deg); } .robot[data-mood="joy"] .eye { r:5.5; }
+.robot[data-mood="thinking"] .eye { r:3; } .robot[data-mood="thinking"] .mouth { d:path("M76 81 L90 81"); } .robot[data-mood="thinking"] .head { transform:rotate(-4deg); }
+</style></head><body>
+<h2>Ro-Boko moods (the dashboard's inline SVG; same CSS as chess_dashboard.html)</h2>
+<div class="row" id="row"></div>
+<script>
+const face = `<svg viewBox="0 0 120 120" class="robot-face">
+ <rect x="6" y="106" width="46" height="9" rx="3" fill="#5f6770"/>
+ <path d="M29 106 L29 92" stroke="#b9c1c9" stroke-width="16" stroke-linecap="round"/>
+ <circle cx="29" cy="90" r="9" fill="#8fb8de"/>
+ <path d="M29 90 L22 52" stroke="#b9c1c9" stroke-width="11" stroke-linecap="round"/>
+ <circle cx="22" cy="52" r="8" fill="#8fb8de"/>
+ <path d="M22 52 L58 36" stroke="#b9c1c9" stroke-width="10" stroke-linecap="round"/>
+ <circle cx="58" cy="36" r="7" fill="#8fb8de"/>
+ <g class="head">
+  <path d="M58 36 L66 44" stroke="#b9c1c9" stroke-width="8" stroke-linecap="round"/>
+  <rect x="52" y="44" width="62" height="48" rx="14" fill="#e9eef3" stroke="#6b7380" stroke-width="3"/>
+  <rect x="66" y="92" width="9" height="14" rx="3" fill="#9aa3ad"/><rect x="91" y="92" width="9" height="14" rx="3" fill="#9aa3ad"/>
+  <path class="brow-l" d="M62 56 L76 56" stroke="#363534" stroke-width="3" stroke-linecap="round"/>
+  <path class="brow-r" d="M90 56 L104 56" stroke="#363534" stroke-width="3" stroke-linecap="round"/>
+  <circle class="eye" cx="69" cy="66" r="4.5" fill="#363534"/><circle class="eye" cx="97" cy="66" r="4.5" fill="#363534"/>
+  <path class="mouth" d="M73 80 Q83 85 93 80" stroke="#363534" stroke-width="3" fill="none" stroke-linecap="round"/>
+ </g></svg>`;
+for (const [mood, when] of [['neutral','idle'],['thinking','Stockfish thinking'],['happy','greeting / draw'],['smug','captured / check'],['annoyed','lost a piece'],['sad','lost the game'],['joy','won']])
+  document.getElementById('row').insertAdjacentHTML('beforeend', `<div class="card"><div class="robot" data-mood="${mood}">${face}</div><b>${mood}</b><br><small>${when}</small></div>`);
+</script></body></html>

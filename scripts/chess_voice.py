@@ -260,11 +260,17 @@ def player_for(sink=None):
 # (notes as (frequency Hz, seconds); a chord is a tuple of frequencies)
 SFX = {
     'greeting': [(523, .12), (659, .12), (784, .22)],                     # ding-ding-dong, up
-    'captured': [(392, .09), (523, .09), (659, .09), (784, .09), ((784, 988, 1175), .35)],   # rising arpeggio, chord
+    # rising arpeggio then a bouncing chord riff for as long as the twist lasts (about 8 s)
+    'captured': [(392, .09), (523, .09), (659, .09), (784, .09), ((784, 988, 1175), .35)]
+                + [((523, 659), .15), (0, .05), ((587, 740), .15), (0, .05), ((659, 784), .15), (0, .05), ((784, 988), .3), (0, .1)] * 7,
     'check': [(880, .1), (0, .06), (880, .1), (0, .06), (1175, .25)],     # two sharp beeps, a high note
     'lost': [(330, .18), (311, .18), (294, .3)],                          # sliding down, grumpy
     'checked': [(440, .08), (0, .05), (415, .08), (0, .05), (392, .22)],  # worried, stepping down
-    'won': [(523, .11), (523, .11), (523, .11), (659, .3), (0, .05), (784, .11), (659, .11), (784, .5)],   # fanfare
+    # fanfare, then a victory tune that keeps going while the arm dances (about 13 s)
+    'won': [(523, .11), (523, .11), (523, .11), (659, .3), (0, .05), (784, .11), (659, .11), (784, .5), (0, .15)]
+           + [(784, .18), (880, .18), (988, .18), (1047, .36), (0, .05), (988, .18), (880, .18), (784, .36), (0, .05),
+              (659, .18), (784, .18), (880, .36), (0, .05), (784, .18), (659, .18), (523, .36), (0, .1)] * 3
+           + [((523, 659, 784), .25), (0, .05), ((523, 659, 784), .25), (0, .05), ((659, 784, 1047), .9)],
     'lost_game': [(392, .3), (370, .3), (349, .3), (330, .6)],            # sad trombone
     'draw': [(523, .15), (523, .15), (0, .1), (523, .3)],
     'ask': [(659, .08), (784, .12)],
@@ -294,7 +300,7 @@ def sfx_file(event, rate=22050):
     notes = SFX.get(event)
     if not notes:
         return None
-    path = os.path.join(SFX_DIR, f'{event}.wav')
+    path = os.path.join(SFX_DIR, f'{event}-{len(notes)}.wav')     # a changed tune gets a new file
     if not os.path.exists(path):
         import wave
         os.makedirs(SFX_DIR, exist_ok=True)

@@ -86,7 +86,10 @@ def test_every_emotion_has_a_short_jingle_written_once(tmp_path, monkeypatch):
         path = v.sfx_file(event)
         with wave.open(path) as w:
             seconds = w.getnframes() / w.getframerate()
-        assert 0.15 <= seconds <= 2.5, (event, seconds)
+        limit = {'won': 15.0, 'captured': 10.0}.get(event, 2.5)   # the long ones last as long as the dance
+        assert 0.15 <= seconds <= limit, (event, seconds)
+        if event in ('won', 'captured'):
+            assert seconds >= 7.0, (event, seconds)
     assert v.sfx_file('nothing') is None
     stamp = os.path.getmtime(v.sfx_file('won'))
     assert os.path.getmtime(v.sfx_file('won')) == stamp               # made once, reused

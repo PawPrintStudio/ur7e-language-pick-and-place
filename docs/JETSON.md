@@ -8,7 +8,7 @@ system changes are simulated first and listed at the end with their undo.
 
 | Machine | Runs |
 |---|---|
-| Jetson | driver + MoveIt (T1), camera + dashboard `watch` (T2), `play` (T3), voice (T4), the TV on its DisplayPort |
+| Jetson | driver + MoveIt (T1), camera + dashboard `watch` (T2), `play` (T3), voice (T4), the audience monitor on its DisplayPort |
 | Laptop (optional) | the operator page over WiFi |
 
 **Network.** The laptop joins the Jetson's WiFi hotspot `JetsonArm` and
@@ -171,17 +171,19 @@ ssh -N -L 8091:127.0.0.1:8091 jetson@10.42.0.1
 Then http://localhost:8091/#operator and the TV view http://localhost:8091/,
 exactly as before.
 
-### TV and voice (Jetson)
+### Monitor and voice (Jetson)
 
-The TV on the Jetson's DisplayPort (a DP-to-HDMI adapter carries the sound
-too). On the Jetson's desktop, Chromium full screen (F11) at
+A regular monitor on the Jetson's DisplayPort. Sound goes to the monitor's
+speakers over DP if it has them (`--sink hdmi`, the default), else to a USB
+speaker (`--sink usb`; `pactl list short sinks` names it). A monitor has no
+TV audio delay: `--lead 0`. On the Jetson's desktop, Chromium full screen (F11) at
 http://localhost:8091/. The voice in a fourth tmux window:
 
 ```bash
-python3 scripts/chess_voice.py --model llama3.2:3b
+python3 scripts/chess_voice.py --model llama3.2:3b --lead 0
 ```
 
-The first line must say `AUDIO ... paplay --device=...hdmi-stereo`. The
+The first line must say `AUDIO ... paplay --device=...` with the sink you meant. The
 model is the one the Jetson's `ollama` service already has (another
 project's; nothing downloaded); a slow answer falls back to a canned line as
 on the laptop. Piper is the copy in `~/.local`. The voice and jingle files

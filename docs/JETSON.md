@@ -46,7 +46,7 @@ September clone: leave it as it is.
 ## 3. Our checkout (Jetson)
 
 ```bash
-git clone -b claude/chess-arm-single-rg2 https://github.com/PawPrintStudio/ur7e-language-pick-and-place.git ~/chess_arm
+git clone https://github.com/PawPrintStudio/ur7e-language-pick-and-place.git ~/chess_arm
 cd ~/chess_arm
 ```
 

@@ -203,3 +203,23 @@ Fill in as it happens; each line with its undo.
 | apt (2026-10-17, simulated: 0 upgraded, 0 removed): `ros-humble-rmw-cyclonedds-cpp libnet1-dev stockfish tmux` (+7 dependencies) | `sudo apt-get remove` the same four, then `sudo apt-get autoremove` |
 | laptop key in `~/.ssh/authorized_keys` (line ending `nikola@nikola-LOQ`) | delete that line |
 | NM profile `ur-link-chess` | `sudo nmcli con delete ur-link-chess` |
+
+## Open (2026-10-17, end of the first lab day on the Jetson)
+
+- **No browser on the Jetson.** Chromium and Firefox are snaps and do not
+  start: "snap-confine is packaged without necessary permissions", the
+  known snapd update that breaks snaps on the Jetson kernel. It breaks
+  every snap on the box, so tell the other devs before fixing. Check
+  `snap list --all snapd`: with a `disabled` older revision,
+  `sudo snap revert snapd` then `sudo snap refresh --hold snapd` (offline);
+  with one line only, the older snapd has to be downloaded (internet).
+  Undo: `sudo snap refresh --unhold snapd`. Until fixed: the monitor on the
+  laptop, the audience page through the tunnel (workbook F), and the voice on
+  a USB speaker on the Jetson or off.
+- **ZED not yet checked on the Jetson** (plugged in, never read):
+  `lsusb | grep -i stereolabs` and `/sys/class/video4linux/video*/name`,
+  then `watch` (workbook E).
+- **Arm not yet driven from the Jetson**: workbook D at 25 % and `--careful`.
+- **Sound on the monitor untested**: workbook A, last box.
+- `lab_up.sh` warns about a missing `ANTHROPIC_API_KEY` in chess mode too;
+  harmless (chess uses no cloud model), to silence when `CHESS=true`.

@@ -92,7 +92,7 @@ python3 scripts/lab_chess.py watch
 ```
 
 - [ ] Prints `WATCH` and `http://localhost:8091`
-- [ ] On the Jetson's monitor: Chromium at `http://localhost:8091/`, F11
+- [ ] On the Jetson's monitor: Chromium at `http://localhost:8091/`, F11 (broken snaps: JETSON.md "Open")
       for full screen. Live video, grid on the board, a1 in the right corner
 
 `no ZED`: replug into a blue USB-3 port, `ls /dev/video*`.

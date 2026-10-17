@@ -65,6 +65,11 @@ Dependencies: `pip install chess` and `apt install stockfish`; the dev
 container has both. Without Stockfish the arm plays random legal moves,
 captures first, which is enough to test the mechanics.
 
+### On the Jetson
+
+Native Humble on the shared makerspace Jetson, laptop for screens and voice:
+[JETSON.md](JETSON.md).
+
 ### On a Raspberry Pi 5
 
 The dev container's usual base image is amd64 only. On the Pi (64-bit

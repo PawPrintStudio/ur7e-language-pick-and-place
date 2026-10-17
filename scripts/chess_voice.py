@@ -445,14 +445,18 @@ def follow(path, brain, mouth, poll_s=0.3, from_start=False, log=print, effects=
             if age > STALE_EVENT_S:
                 log(f'SKIPPED  {json.dumps({"event": event, "age_s": round(age)})}')   # not worth a late remark
                 continue
-            respond(event, row, brain, mouth, log, effects=effects)
+            # said.json beside the events file: with the game on the Jetson, both
+            # are its log/chess mounted on the laptop (docs/JETSON.md).
+            respond(event, row, brain, mouth, log, os.path.join(os.path.dirname(path), 'said.json'),
+                    effects=effects)
         time.sleep(poll_s)
 
 
 def main():
     global LEAD_S
     cli = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    cli.add_argument('--events', default=EVENTS_FILE)
+    cli.add_argument('--events', default=EVENTS_FILE,
+                     help='the game\'s events file; said.json is written beside it')
     cli.add_argument('--model', default=DEFAULT_MODEL, help='Ollama model name')
     cli.add_argument('--voice', default=DEFAULT_VOICE, help='Piper voice (log/chess/voices/<voice>.onnx)')
     cli.add_argument('--no-llm', action='store_true', help='canned lines only')

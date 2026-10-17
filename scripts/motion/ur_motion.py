@@ -41,7 +41,11 @@ JOINTS = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
           'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
 
 # --- safety envelope -------------------------------------------------------
-MAX_JOINT_VEL = 0.10     # rad/s NOMINAL (before the pendant slider). Hard cap.
+# 0.10 until 2026-10-14 (a 72 s chess step). Every script still passes its own
+# nominal rate (lab_jog 0.05, lab_pick 0.09, chess 0.4 travel / 0.12 contact);
+# this is the ceiling none of them may exceed. 0.6 rad/s is about 360 mm/s at
+# the tool at full reach: check the pendant's tool-speed safety limit matches.
+MAX_JOINT_VEL = 0.60     # rad/s NOMINAL (before the pendant slider). Hard cap.
 MAX_JOINT_STEP = 0.50    # rad, max change per waypoint per joint (sanity net).
 ACTION = '/scaled_joint_trajectory_controller/follow_joint_trajectory'
 

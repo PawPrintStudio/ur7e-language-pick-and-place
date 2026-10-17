@@ -41,11 +41,14 @@ sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.join(_HERE, '..', 'src', 'ur7e_orchestrator'))
 from ur7e_orchestrator.adapters import (  # noqa: E402
     Adapters, Detection, GraspResult, Intent, Refused, StageError, Target)
+import chess_gestures  # noqa: E402
 
 GEOMETRY_FILE = os.path.join(_HERE, 'lab_chess.json')
 ZED_CONF = os.path.join(_HERE, '..', 'docs', 'calibration', 'zed2i_SN35717973.conf')
 OVERLAY_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'overlay.jpg')
 TARGET_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'target.json')
+EVENTS_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'events.jsonl')
+SAID_FILE = os.path.join(_HERE, '..', 'log', 'chess', 'said.json')     # chess_voice.py's current line
 PIECES_FILE = os.path.join(_HERE, 'lab_chess.yaml')
 TOUCH_FILE = os.path.join(_HERE, '.lab_chess_touches.json')
 CORNERS = ('1', '2', '3', '4')          # a1, h1, h8, a8
@@ -86,13 +89,19 @@ def _answer_from_file(prompt_id):
             data = json.load(stream)
     except (OSError, ValueError):
         return None
+    answer = str(data.get('answer', '')).strip()
+    wildcard = data.get('id') == '*' and answer.lower() in ('new', 'new game', 'quit', 'q')
+    if data.get('id') != prompt_id and not wildcard:
+        try:
+            os.remove(ANSWER_FILE)          # stale: a click for an earlier question
+        except FileNotFoundError:
+            pass
+        return None
     try:
         os.remove(ANSWER_FILE)
     except FileNotFoundError:
         pass
-    if data.get('id') != prompt_id:
-        return None
-    return str(data.get('answer', '')).strip()
+    return answer
 
 
 def _line_from_terminal(timeout_s):
@@ -116,13 +125,17 @@ def _line_from_terminal(timeout_s):
     return line.strip()
 
 
-def ask_operator(kind, text, options, allow_text=False, auto=None):
+def ask_operator(kind, text, options, allow_text=False, auto=None, poll=None,
+                 timeout_s=None, default=None):
     """Show a prompt on the operator page and in the terminal; return the answer.
 
     The answer is an option key (``GO``, ``STOP``, ...) or, with ``allow_text``,
     whatever was typed. Every prompt carries an id, so a click left over from an
-    earlier question never answers this one. ``NEW_GAME`` and ``QUIT`` raise when
-    they are among the options: the game loop restarts or stops.
+    earlier question never answers this one; the page's standing New game and
+    Quit buttons answer with id ``*`` and are taken by any prompt. ``poll`` is
+    called while waiting and may answer itself (the camera reading the
+    student's move); ``timeout_s`` answers ``default`` when nobody did (a
+    confirmation that stands unless the operator says no).
 
     Why a file and not a socket: ``watch`` already serves the page and owns the
     only HTTP port; ``play`` is a separate process (often another terminal).
@@ -132,11 +145,15 @@ def ask_operator(kind, text, options, allow_text=False, auto=None):
         return auto
     prompt_id = f'{time.time():.3f}-{random.randrange(1 << 20):x}'
     keys = {o['key']: o['label'] for o in options}
+    started = time.time()
     publish_state(prompt={'id': prompt_id, 'kind': kind, 'text': text, 'options': options,
-                          'allow_text': allow_text}, beat=time.time())
+                          'allow_text': allow_text, 'timeout_s': timeout_s, 'default': default},
+                  beat=started)
     hint = ', '.join(f'{k or "Enter"} = {v}' for k, v in keys.items())
     if allow_text:
         hint += ', or type it'
+    if timeout_s:
+        hint += f', {keys.get(default, default)} in {timeout_s:.0f} s'
     print(f'{text} [{hint}] ', end='', flush=True)
     try:
         last_beat = time.time()
@@ -144,6 +161,10 @@ def ask_operator(kind, text, options, allow_text=False, auto=None):
             answer = _answer_from_file(prompt_id)
             if answer is None:
                 answer = _line_from_terminal(0.2)
+            if answer is None and poll is not None:
+                answer = poll()
+            if answer is None and timeout_s and time.time() - started > timeout_s:
+                answer = default
             if answer is None:
                 if time.time() - last_beat > 1.0:
                     publish_state(beat=time.time())
@@ -151,9 +172,12 @@ def ask_operator(kind, text, options, allow_text=False, auto=None):
                 continue
             print()
             low = answer.lower()
-            if low in ('new', 'new game') and NEW_GAME in keys:
+            # New game and Quit are standing buttons on the operator page:
+            # accepted on every prompt, so a group can leave mid-move. The
+            # arm finishes the step it is on; nothing is interrupted.
+            if low in ('new', 'new game'):
                 raise NewGame
-            if low in ('quit', 'q', 'resign') and QUIT in keys:
+            if low in ('quit', 'q', 'resign'):
                 raise QuitGame
             if low in ('y', 'yes', 'go'):
                 low = GO
@@ -465,6 +489,8 @@ def draw_overlay(bgr, geometry, base_from_camera, matrix, dist, detected=None, l
 
 PAIR_SHM = '/dev/shm/lab_chess_pair.npy'   # `watch` shares its newest raw stereo pair here
 EMPTY_CLOSE_MM = 9.3     # the RG2 reads this closed on nothing (2026-10-10)
+BOX_RELEASE_MM = 70.0    # jaw opening when letting go over the box (nothing beside it)
+SQUARE_RELEASE_MAX_MM = 42.0   # ... and the most on a square: neighbours sit 1.4 squares away
 
 
 def zed_device(device=None):
@@ -520,6 +546,9 @@ class Vision:
         self.camera = chess_vision.BoardCamera(geometry, saved['base_from_camera'], conf,
                                                saved['mode'])
         self.device = device
+        # The scan the student's move is compared against (spec S6): taken
+        # after the arm's move, or at the start of the game.
+        self.baseline = None
 
     def look(self, tips=None):
         """Scan the board; ``tips`` (fingertips xyz) removes the gripper from the points."""
@@ -804,6 +833,20 @@ def move_list(board):
     return out
 
 
+def said_now(path=None, linger_s=20.0):
+    """The voice's current line for the page: {event, line, age_s, seconds}, or None when old."""
+    try:
+        with open(path or SAID_FILE) as stream:
+            row = json.load(stream)
+        age = time.time() - float(row['t'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if age > float(row.get('seconds', 3.0)) + linger_s:
+        return None
+    return {'event': row.get('event'), 'line': row.get('line'), 'age_s': round(age, 1),
+            'seconds': row.get('seconds')}
+
+
 def serve_dashboard(port, latest, lan=False):
     """The browser dashboard: the page, the annotated video, and the state as JSON.
 
@@ -853,6 +896,7 @@ def serve_dashboard(port, latest, lan=False):
                 # greys its buttons out when the game process is gone.
                 beat = state.get('beat')
                 state['prompt_age_s'] = None if beat is None else round(time.time() - beat, 1)
+                state['voice'] = said_now()
                 self.send(json.dumps(dict(state, live=latest.get('live', {}))).encode(),
                           'application/json')
             else:
@@ -862,6 +906,34 @@ def serve_dashboard(port, latest, lan=False):
         def do_POST(self):  # noqa: N802
             if self.path.startswith('/scan'):
                 latest['scan_now'] = True
+            elif self.path.startswith('/reset'):
+                # The standing New game button when no game is running: the
+                # same record reset as `lab_chess.py reset`, refused while a
+                # chess command owns the record (answer that prompt instead).
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_error(403, 'Reset is accepted from this computer only')
+                    return
+                try:
+                    with game_state_lock():
+                        new_game_state(chess.Board(), read_state().get('arm') == 'white')
+                except RuntimeError as error:
+                    self.send_error(409, str(error))
+                    return
+            elif self.path.startswith('/ask'):
+                # The operator's question for the robot's voice (chess_voice.py
+                # answers it through the events file); an empty one asks for
+                # something interesting about itself.
+                if self.client_address[0] not in ('127.0.0.1', '::1'):
+                    self.send_error(403, 'Questions are accepted from this computer only')
+                    return
+                length = int(self.headers.get('Content-Length') or 0)
+                try:
+                    data = json.loads(self.rfile.read(length) or b'{}')
+                except ValueError:
+                    data = {}
+                question = str(data.get('question', '') if isinstance(data, dict) else '')[:200].strip()
+                chess_gestures.log_event(EVENTS_FILE, 'ask', question=question,
+                                         fen=read_state().get('fen'))
             elif self.path.startswith('/answer'):
                 # The operator's click. Only from this computer: the projected
                 # page is read-only for the audience, and arm motion is never
@@ -881,6 +953,11 @@ def serve_dashboard(port, latest, lan=False):
                 with open(ANSWER_FILE + '.tmp', 'w') as stream:
                     json.dump(answer, stream)
                 os.replace(ANSWER_FILE + '.tmp', ANSWER_FILE)
+            else:
+                # A page newer than this server (2026-10-14: Ask clicked against a
+                # watch started before /ask existed, answered 200, did nothing).
+                self.send_error(404, f'{self.path} is not served by this watch: restart watch')
+                return
             self.send(b'{}', 'application/json')
 
         def log_message(self, *args):
@@ -1384,6 +1461,12 @@ class ChessAdapters(Adapters):
         self.intent = None
         self.expected_width_mm = None
         self.vision = vision        # Vision: piece centre and height from the camera
+        # Speed (2026-10-14): a capture is two steps; the arm parks at home
+        # only after the last one (park_after), and OBSERVE never moves when
+        # the arm already stands where the next step starts.
+        self.park_after = True
+        self._retreated = False
+        self.parked_off_home = False
 
     # The lookup.
 
@@ -1393,6 +1476,7 @@ class ChessAdapters(Adapters):
         except ValueError as error:
             raise Refused('not_a_step', str(error))
         self.intent = Intent('pick_and_place', frm, to, f'{frm} -> {to}')
+        self._retreated = False
         return self.intent
 
     def detect(self, query):
@@ -1445,12 +1529,28 @@ class ChessAdapters(Adapters):
             raise StageError('off_square', f'the piece on {name} stands {off * 1000:.0f} mm from '
                                            'the centre: straighten it, then go again')
         top = float(entry['top_m'])
-        grip = max(0.008, self.vision.cv.GRIP_FRACTION * top - PAD_BELOW_GRIP_M)
         thickness = max(0.0, self.geometry.z_at(x, y) - table_z(x, y))
-        self.expected_width_mm = None          # unknown piece: the empty-close check stays
+        # The game record knows which piece stands here. With the set measured
+        # (lab_chess.yaml, spec S5) the grip height and the expected jaw width
+        # come from the table, and the camera supplies the centre and the
+        # presence; its height is only a sanity check on the record. An
+        # unmeasured set grips at 3/4 of the seen height, no width check.
+        size = self.pieces['pieces'].get(piece.symbol().lower(), {}) if piece else {}
+        if 'grip_m' in size and 'width_mm' in size:
+            grip = max(0.008, float(size['grip_m']) - PAD_BELOW_GRIP_M)
+            self.expected_width_mm = float(size['width_mm'])
+            source = chess.piece_name(piece.piece_type)
+            if abs(top - float(size['height_m'])) > 0.015:
+                say('WARNING', f'{name}: the camera reads {top * 1000:.0f} mm tall, a '
+                               f'{source} is {float(size["height_m"]) * 1000:.0f}: is the '
+                               'right piece standing there?')
+        else:
+            grip = max(0.008, self.vision.cv.GRIP_FRACTION * top - PAD_BELOW_GRIP_M)
+            self.expected_width_mm = None      # unknown width: the empty-close check stays
+            source = 'camera'
         say('SEEN', {'square': name, 'top_mm': round(top * 1000, 1),
                      'off_centre_mm': [round((x - sx) * 1000, 1), round((y - sy) * 1000, 1)],
-                     'fingertips_above_board_mm': round(grip * 1000, 1)})
+                     'fingertips_above_board_mm': round(grip * 1000, 1), 'grip_from': source})
         return Target((x, y, self.geometry.z_at(x, y) + top), yaw,
                       {'height_m': round(thickness + top, 4), 'axis_ratio': 100.0,
                        'tip_above_table_m': round(thickness + grip, 4),
@@ -1470,9 +1570,28 @@ class ChessAdapters(Adapters):
                                dict(result.detail, expected_mm=expected, reason='width_off'))
         return result
 
-    # The proven stages, untouched.
+    # The proven stages, untouched apart from when OBSERVE and HOME move at all.
+
+    def at_home(self, tolerance_rad=0.05):
+        """Is the arm standing at chess_home (within tolerance on every joint)?"""
+        executor = self.lab.executor
+        try:
+            home = executor.poses[HOME]
+            now = executor.joints_of(executor.fresh(settle_s=0.3))
+        except (AttributeError, KeyError, TypeError):
+            return False
+        return all(abs(now[j] - home[j]) <= tolerance_rad for j in home)
 
     def observe(self):
+        """OBSERVE moves nothing when the arm already stands where the step starts.
+
+        The camera reads watch's frames, so the arm has no pose to take for a
+        picture; at home, or at the previous step's back-up hover (a capture),
+        APPROACH plans from where the arm is, with collision checking.
+        """
+        if self.parked_off_home or self.at_home():
+            say('OBSERVE', 'skipped: the arm is where this step starts')
+            return
         self.lab.observe()
 
     def plan(self, intent, target, place):
@@ -1485,13 +1604,39 @@ class ChessAdapters(Adapters):
         self.lab.lift()
 
     def retreat(self):
-        self.lab.retreat()
+        """Carry, lower, let go, back up; at the box the jaws open wide.
+
+        2026-10-14: a knight held at 30.7 mm was "released" by opening to the
+        32 mm the jaws use between neighbours on the board: one millimetre of
+        play, and the knight stayed wedged. Over the box nothing is in the
+        way, so open to 70 mm; on a square, as wide as the held width plus a
+        finger's worth, still inside the diagonal gap to the neighbours.
+        """
+        config, usual = self.lab.config, self.lab.config['open_mm']
+        held = getattr(self.lab, 'held_width', None)
+        if self.intent is not None and self.intent.place_query == BOX:
+            config['open_mm'] = BOX_RELEASE_MM
+        elif held:
+            config['open_mm'] = max(usual, min(float(held) + 10.0, SQUARE_RELEASE_MAX_MM))
+        try:
+            self.lab.retreat()
+        finally:
+            config['open_mm'] = usual
+        self._retreated = True
 
     def release(self):
         self.lab.release()
 
     def home(self):
+        """Park at home after the move's last step; between a capture's two
+        steps stay at the back-up hover. Any failure path still goes home:
+        _retreated is only set by a successful RETREAT."""
+        if self._retreated and not self.park_after:
+            say('HOME', 'skipped: the next step starts from here')
+            self.parked_off_home = True
+            return
         self.lab.home()
+        self.parked_off_home = False
 
     def safety_ok(self):
         return self.lab.safety_ok()
@@ -1570,6 +1715,9 @@ def open_session(args, board, need_home=True):
                          'up), then run python3 scripts/lab_chess.py teach-home')
     rclpy.init()
     executor, lab, _ = lab_pick.build(args)
+    # Ten segments a step: a 1 s settle before each plan was a quarter of
+    # the step. The stationarity check in fresh() still guards every move.
+    executor.settle_s = 0.3
     if pieces.get('board_thickness_m') is not None:
         use_board_surface(executor, geometry, pieces['board_thickness_m'])
     if HOME in executor.poses:
@@ -1614,15 +1762,36 @@ def close_session(session):
         rclpy.shutdown()
 
 
-def run_steps(orchestrator, steps, auto_yes):
-    """Run each (from, to) through the orchestrator; return how many finished."""
+def park_arm(session):
+    """Send the arm home if a skipped HOME left it at a hover (declined or failed step)."""
+    _, lab, adapters, _ = session
+    if not adapters.parked_off_home:
+        return
+    say('HOME', 'parking the arm')
+    try:
+        adapters.park_after, adapters._retreated = True, False
+        adapters.home()
+    except (StageError, Exception) as error:   # noqa: BLE001 - report, the operator decides
+        say('WARNING', f'could not park the arm: {error}')
+
+
+def run_steps(session, steps, auto_yes, confirm_steps=True):
+    """Run each (from, to) through the orchestrator; return how many finished.
+
+    The arm parks at home after the last step only: between the two steps of
+    a capture it waits at the box's hover, where the next pick starts.
+    ``confirm_steps=False``: the move was approved as a whole ("everyone
+    clear"); no prompt per step.
+    """
+    _, _, adapters, orchestrator = session
     for done, (frm, to) in enumerate(steps):
         answer = ask_operator('step', f'{frm} -> {to}: go?',
                               [option(GO, f'Go: {frm} → {to}', 'go'), option(STOP, 'Stop', 'stop')],
-                              auto=GO if auto_yes else None)
+                              auto=GO if auto_yes or not confirm_steps else None)
         if answer != GO:
             say('RESULT', {'outcome': 'declined', 'step': f'{frm} {to}'})
             return done
+        adapters.park_after = done == len(steps) - 1
         record = orchestrator.run(f'{frm} {to}')
         say('RESULT', {'run_id': record.run_id, 'outcome': record.outcome,
                        'reason': record.reason, 'message': record.message,
@@ -1776,6 +1945,30 @@ def cmd_teach_home(args):
         close_session(session)
 
 
+def cmd_gesture(args):
+    """One gesture (or all) from home: plan-only by default, the arm with --execute."""
+    names = list(chess_gestures.GESTURES) if args.name == 'all' else [args.name]
+    session = open_session(args, chess.Board())
+    executor, lab, adapters, _ = session
+    try:
+        for name in names:
+            if not args.execute:
+                points, report = chess_gestures.plan(executor, adapters.geometry, name)
+                say('GESTURE', report if points else f'{name}: skipped: {report}')
+                continue
+            if not args.yes:
+                ask_operator('clear', f'Gesture {name} from home. Everyone clear of the arm?',
+                             [option(GO, 'Go', 'go'), option(STOP, 'Skip', 'stop')])
+            event = next(e for e, (g, _) in chess_gestures.EVENT_GESTURE.items() if g == name)
+            chess_gestures.log_event(EVENTS_FILE, event, san='Nxd4', result='0-1', moves=20,
+                                     by='checkmate', rehearsal=True)     # the voice and jingle too
+            chess_gestures.perform(event, executor, lab, adapters.geometry, executor.joint_rate,
+                                   say, claps=not args.no_claps)
+        return 0
+    finally:
+        close_session(session)
+
+
 def cmd_goto(args):
     from lab_pick import tool_yaw
     session = open_session(args, chess.Board())
@@ -1842,7 +2035,11 @@ def cmd_move(args):
     publish_state(fen=board.fen(), planned=planned_move(board, move), moves=move_list(board))
     session = open_session(args, board)
     try:
-        done = run_steps(session[3], steps, args.yes)
+        try:
+            done = run_steps(session, steps, args.yes)
+        except (NewGame, QuitGame):            # the page's standing buttons: a single move just stops
+            done = 0
+        park_arm(session)
         if done == len(steps):
             if note:
                 say('NOTE', note)
@@ -1854,6 +2051,70 @@ def cmd_move(args):
 
 
 GAME_OPTIONS = [option(NEW_GAME, 'New game', 'warn'), option(QUIT, 'Quit', 'stop')]
+CONFIRM_SECONDS = 8.0        # with --auto-confirm: "I saw e4" stands unless the operator objects within this
+AUTO_CONFIRM = False         # set by play --auto-confirm; off by default since the Bxa6 game (2026-10-14)
+WATCH_EVERY_S = 2.5          # how often the board is read while the student thinks
+STABLE_READINGS = 3          # agreeing readings (about 7 s) before the camera proposes a move
+
+
+def confident_margin(how):
+    """Absolute reading: a plain move shows two changed squares, so a margin
+    of 1 is a coin toss. Diff reading: a capture only vacates its square, so
+    it can beat a quiet move from the same square by exactly 1 (2026-10-14,
+    Nxc7+ read right and refused); only a tie (0) is unsure there."""
+    return 1 if how == 'diff' else 2
+
+
+def read_student_move(vision, executor, board):
+    """One reading of the board: (move, margin, how, squares).
+
+    With a baseline scan (after the arm's move, or the game's start) the move
+    is read from what CHANGED; without one, from the absolute picture.
+    """
+    squares, _, _ = vision.look(executor_tips(executor))
+    colours = vision.cv.piece_colours(squares, board)
+    if vision.baseline is not None:
+        move, margin, _ = vision.cv.infer_move_diff(board, vision.baseline, squares, colours)
+        return move, margin, 'diff', squares
+    move, margin, _ = vision.cv.infer_move(board, squares, colours)
+    return move, margin, 'absolute', squares
+
+
+class BoardWatcher:
+    """Reads the board every few seconds while the student prompt waits.
+
+    Answers the prompt by itself once STABLE_READINGS readings in a row agree
+    on a confident move: the operator then confirms. A board being touched
+    reads differently from one scan to the next, and a piece held in the
+    hand reads like a capture, so a single reading never counts and a
+    capture also needs the colour flip (infer_move_diff).
+    """
+    SEEN = '\x00seen'
+
+    def __init__(self, vision, executor, board):
+        self.vision, self.executor, self.board = vision, executor, board
+        self.last_at, self.previous, self.agreed, self.result = 0.0, None, 0, None
+
+    def poll(self):
+        if time.time() - self.last_at < WATCH_EVERY_S:
+            return None
+        self.last_at = time.time()
+        try:
+            move, margin, how, squares = read_student_move(self.vision, self.executor, self.board)
+        except Exception as error:    # noqa: BLE001 - a bad frame is not an answer
+            say('WARNING', f'watching the board: {error}')
+            return None
+        if move is None or margin < confident_margin(how):
+            self.previous, self.agreed = None, 0
+            return None
+        if self.previous != move:
+            self.previous, self.agreed = move, 1
+            return None
+        self.agreed += 1
+        if self.agreed < STABLE_READINGS:
+            return None
+        self.result = (move, margin, how, squares)
+        return self.SEEN
 
 
 def student_move(vision, executor, board, side):
@@ -1863,12 +2124,14 @@ def student_move(vision, executor, board, side):
     """
     if vision is not None:
         options = [option('', 'Read the board', 'go')] + GAME_OPTIONS
-        text = f'Student ({side}): make your move, then read the board (or type the move)'
+        text = f'Student ({side}): make your move. I watch the board; or read it now, or type the move'
     else:
         options = list(GAME_OPTIONS)
         text = f'Student ({side}): type the move, e.g. e5 or e7e5'
-    answer = ask_operator('student_move', text, options, allow_text=True)
-    if answer:
+    watcher = BoardWatcher(vision, executor, board) if vision is not None else None
+    answer = ask_operator('student_move', text, options, allow_text=True,
+                          poll=watcher.poll if watcher else None)
+    if answer and answer != BoardWatcher.SEEN:
         try:
             return parse_move(board, answer)
         except ValueError as error:
@@ -1876,18 +2139,27 @@ def student_move(vision, executor, board, side):
             return None
     if vision is None:
         return None
-    squares, _, _ = vision.look(executor_tips(executor))
-    move, margin, ranking = vision.cv.infer_move(
-        board, squares, vision.cv.piece_colours(squares, board))
-    say('SEEN', {'move': board.san(move) if move else None, 'margin': margin,
-                 'runners_up': [board.san(m) for _, m in ranking[1:3]]})
-    if move is None or margin < 2:
+    if answer == BoardWatcher.SEEN:
+        move, margin, how, squares = watcher.result
+    else:
+        move, margin, how, squares = read_student_move(vision, executor, board)
+    seen = {'move': board.san(move) if move else None, 'margin': margin, 'how': how,
+            'runners_up': []}
+    say('SEEN', seen)
+    chess_gestures.log_event(EVENTS_FILE, 'seen', **seen)
+    if move is None or margin < confident_margin(how):
         print(board_text(squares))
         say('UNSURE', 'two moves explain the board equally well: type the move')
+        chess_gestures.log_event(EVENTS_FILE, 'unsure', **seen)
         return None
+    # The operator confirms. With --auto-confirm the reading stands after a
+    # few seconds unless objected to; off by default since a bishop held in
+    # the hand was read as Bxa6 and stood (2026-10-14).
     check = ask_operator('confirm_move', f'I saw {board.san(move)}. Right?',
                          [option(GO, f'Yes, {board.san(move)}', 'go'),
-                          option(STOP, 'No: read again')] + GAME_OPTIONS, allow_text=True)
+                          option(STOP, 'No: read again')] + GAME_OPTIONS, allow_text=True,
+                         timeout_s=CONFIRM_SECONDS if AUTO_CONFIRM else None,
+                         default=GO if AUTO_CONFIRM else None)
     if check == GO:
         return move
     if check == STOP:
@@ -1900,10 +2172,21 @@ def student_move(vision, executor, board, side):
 
 
 def check_position(vision, executor, board):
-    """After the arm's move: does the board look like the game says? Warn if not."""
+    """After the arm's move: does the board look like the game says? Warn if not.
+
+    The scan (after any fix by hand) becomes the baseline the student's next
+    move is read against.
+    """
     squares, _, _ = vision.look(executor_tips(executor))
     wrong = [name for name, e in squares.items() if e['seen']
              and e['occupied'] != (board.piece_at(chess.parse_square(name)) is not None)]
+    # Squares the camera gets wrong every time (e8/f8 behind the taller pieces
+    # read empty all game, 2026-10-14) are not news: skip the ones that already
+    # disagreed in the baseline scan the same way, so the operator is only
+    # asked about a real change.
+    if vision.baseline:
+        wrong = [n for n in wrong if not (vision.baseline.get(n, {}).get('seen')
+                                          and vision.baseline[n]['occupied'] == squares[n]['occupied'])]
     if wrong:
         print(board_text(squares))
         say('CHECK', {'squares_not_as_expected': wrong,
@@ -1911,8 +2194,53 @@ def check_position(vision, executor, board):
         ask_operator('board_fixed', f'The camera disagrees on {", ".join(wrong)}: '
                                     'fix the board to match the game record',
                      [option(GO, 'Board fixed', 'go')])
+        squares, _, _ = vision.look(executor_tips(executor))
     else:
         say('CHECK', 'board matches the game')
+    vision.baseline = squares
+
+
+def capture_agrees(vision, executor, board, move):
+    """Does the camera see the student's piece where the arm is about to capture?
+
+    Returns True to go ahead (also when the camera cannot tell), False when
+    the operator chose to take the student's last move back.
+    """
+    target = chess.square_name(move.to_square)
+    if board.is_en_passant(move):
+        target = chess.square_name(chess.square(chess.square_file(move.to_square),
+                                                chess.square_rank(move.from_square)))
+    try:
+        squares, _, _ = vision.look(executor_tips(executor))
+    except Exception as error:      # noqa: BLE001 - no picture, no objection
+        say('WARNING', f'capture check: {error}')
+        return True
+    seen_white = vision.cv.piece_colours(squares, board).get(target)
+    entry = squares.get(target, {})
+    if seen_white is None or not entry.get('seen'):
+        return True
+    student_is_white = not board.turn            # the arm is the side to move
+    if seen_white == student_is_white:           # the piece there is the student's: fine
+        return True
+    colour = 'white' if seen_white else 'black'
+    say('CHECK', {'square': target, 'camera_sees': colour, 'record_expects': 'the student\'s piece'})
+    answer = ask_operator('record_mismatch',
+                          f'I am about to take on {target}, but the camera sees a {colour} piece '
+                          'there, my own colour. Was the last student move entered wrong?',
+                          [option('u', 'Yes: take it back and re-enter it', 'go'),
+                           option(GO, 'No, the camera is wrong: go on', 'stop')] + GAME_OPTIONS)
+    return answer != 'u'
+
+
+def baseline_scan(vision, executor):
+    """The scan the first student move is read against (a new game, a resumed one)."""
+    if vision is None:
+        return
+    try:
+        vision.baseline, _, _ = vision.look(executor_tips(executor))
+    except Exception as error:      # noqa: BLE001 - no baseline: absolute reading until the arm moves
+        say('WARNING', f'no baseline scan: {error}')
+        vision.baseline = None
 
 
 def arm_move(board, move, session, args):
@@ -1926,10 +2254,12 @@ def arm_move(board, move, session, args):
                      auto=GO if args.yes else None)
         remaining = list(steps)
         while remaining:
-            done = run_steps(session[3], remaining, args.yes)
+            # "Everyone clear" approved the whole move; --careful asks per step too.
+            done = run_steps(session, remaining, args.yes, confirm_steps=args.careful)
             remaining = remaining[done:]
             if not remaining:
                 break
+            park_arm(session)                # a stopped move never leaves the arm over the box
             answer = ask_operator('failed', f'The arm did not finish {remaining[0][0]} → {remaining[0][1]}',
                                   [option('r', 'Retry this step', 'go'),
                                    option('h', 'I finished the move by hand')] + GAME_OPTIONS)
@@ -1939,6 +2269,16 @@ def arm_move(board, move, session, args):
         say('NOTE', note)
         if session is not None:
             ask_operator('swap', note, [option(GO, 'Swapped', 'go')], auto=GO if args.yes else None)
+
+
+def react(session, args, event, **detail):
+    """A game event: logged for the voice (events.jsonl), acted out by the arm (gestures)."""
+    chess_gestures.log_event(EVENTS_FILE, event, **detail)
+    say('EVENT', dict(event=event, **detail))
+    if session is None or getattr(args, 'no_gestures', False):
+        return
+    executor, lab, adapters, _ = session
+    chess_gestures.perform(event, executor, lab, adapters.geometry, executor.joint_rate, say)
 
 
 def play_game(board, arm, engine, session, args):
@@ -1952,21 +2292,51 @@ def play_game(board, arm, engine, session, args):
             move = student_move(vision, executor, board, side)
             if move is None:
                 continue
-            say('STUDENT', board.san(move))
+            san, capture = board.san(move), board.is_capture(move)
+            say('STUDENT', san)
             board.push(move)
             publish_state(fen=board.fen(), planned=None, moves=move_list(board))
+            if board.is_checkmate():
+                say('CHECKMATE', f'{san}: the student wins')
+            elif capture:
+                react(session, args, 'lost', san=san, fen=board.fen())
+            elif board.is_check():
+                react(session, args, 'checked', san=san, fen=board.fen())
             continue
         publish_state(thinking=True)
         move = engine.choose(board)
         publish_state(planned=planned_move(board, move), thinking=False)
+        if session is not None and session[2].vision is not None and board.is_capture(move):
+            # Before taking a piece, the camera must agree it is the student's.
+            # 2026-10-14: a misread student move put a white bishop on a6 in
+            # the record; the arm then removed its own pawn from a6.
+            if not capture_agrees(session[2].vision, session[0], board, move):
+                board.pop()
+                publish_state(fen=board.fen(), planned=None, moves=move_list(board))
+                say('UNDO', 'the student\'s last move was taken back; enter it again')
+                continue
         arm_move(board, move, session, args)
+        san, capture = board.san(move), board.is_capture(move)
         board.push(move)
         publish_state(fen=board.fen(), planned=None, moves=move_list(board))
         if session is not None and session[2].vision is not None:
             check_position(session[2].vision, session[0], board)
+        if board.is_game_over(claim_draw=True):
+            if board.is_checkmate():
+                say('CHECKMATE', f'{san}: the robot wins')
+            break
+        if capture:
+            react(session, args, 'captured', san=san, fen=board.fen())
+        elif board.is_check():
+            react(session, args, 'check', san=san, fen=board.fen())
     result = board.result(claim_draw=True)
-    say('GAME', {'result': result, 'moves': len(board.move_stack)})
-    publish_state(result=result)
+    by = ('checkmate' if board.is_checkmate() else 'stalemate' if board.is_stalemate()
+          else 'a draw by the rules')
+    say('GAME', {'result': result, 'by': by, 'moves': len(board.move_stack)})
+    publish_state(result=result, game_over=by)
+    arm_result = {'1-0': chess.WHITE, '0-1': chess.BLACK}.get(result)
+    react(session, args, 'draw' if arm_result is None else 'won' if arm_result == arm else 'lost_game',
+          result=result, by=by, moves=len(board.move_stack))
     return result
 
 
@@ -2000,6 +2370,8 @@ def cmd_play(args):
         board = chess.Board(args.fen) if args.fen else chess.Board()
     engine = Engine(args.engine, args.skill, args.think, args.seed)
     say('ENGINE', engine.name)
+    global AUTO_CONFIRM
+    AUTO_CONFIRM = bool(getattr(args, 'auto_confirm', False))
     if args.resume and not args.fen:
         publish_state(planned=None, prompt=None, result=None, thinking=False)
     else:
@@ -2011,6 +2383,10 @@ def cmd_play(args):
             if session is not None:
                 session[2].board = board          # the adapter answers DETECT from this board
             try:
+                if not board.move_stack:
+                    react(session, args, 'greeting', arm='white' if arm_white else 'black')
+                if session is not None:
+                    baseline_scan(session[2].vision, session[0])
                 result = play_game(board, arm, engine, session, args)
                 ask_operator('game_over', f'Game over: {result} after {len(board.move_stack)} moves',
                              GAME_OPTIONS)
@@ -2018,6 +2394,8 @@ def cmd_play(args):
                 continue
             except NewGame:
                 say('GAME', 'new game: set the pieces up; the record starts over')
+                if session is not None:
+                    park_arm(session)
                 board = chess.Board()
                 new_game_state(board, arm_white)
             except QuitGame:
@@ -2027,6 +2405,7 @@ def cmd_play(args):
         publish_state(prompt=None, thinking=False)
         engine.close()
         if session is not None:
+            park_arm(session)
             close_session(session)
 
 
@@ -2100,6 +2479,11 @@ def main():
     p = sub.add_parser('teach-home', help='save the present arm pose as chess_home')
     p.set_defaults(run=cmd_teach_home)
     arm.append(p)
+    p = sub.add_parser('gesture', help='one gesture from home (plan-only unless --execute)')
+    p.add_argument('name', choices=list(chess_gestures.GESTURES) + ['all'])
+    p.add_argument('--no-claps', action='store_true', help='no jaw claps')
+    p.set_defaults(run=cmd_gesture)
+    arm.append(p)
     p = sub.add_parser('goto', help='hover over a square; --touch points at it 10 mm up')
     p.add_argument('square')
     p.add_argument('--touch', action='store_true')
@@ -2120,6 +2504,14 @@ def main():
                    help='carry on from the recorded game (log/chess/state.json) after a restart')
     p.add_argument('--arm-white', action='store_true',
                    help='the arm plays White (default: Black)')
+    p.add_argument('--careful', action='store_true',
+                   help='ask before every step as well as before the move '
+                        '(first runs after a calibration change)')
+    p.add_argument('--no-gestures', action='store_true',
+                   help='no wrist gestures on captures, checks and the result')
+    p.add_argument('--auto-confirm', action='store_true',
+                   help='"I saw e4" stands after a few seconds unless the operator objects '
+                        '(default: the operator clicks Yes)')
     p.add_argument('--engine', default='stockfish', help='UCI engine binary, or none')
     p.add_argument('--skill', type=int, default=1, help='Stockfish Skill Level 0..20')
     p.add_argument('--think', type=float, default=0.5, help='seconds per engine move')
@@ -2135,13 +2527,19 @@ def main():
             add_session_arguments(p)
             # Chess carries lower than the project-1 picks (0.12): fingertips 8 cm over
             # the carried piece's top. open_session warns when that is too low to clear
-            # the tallest piece in lab_chess.yaml.
-            p.set_defaults(hover=0.08)
+            # the tallest piece in lab_chess.yaml. Rates (2026-10-14): 0.4 rad/s
+            # travel, 0.12 beside the pieces; the pendant slider scales both.
+            # 0.4 shook the arm before segments ramped in and out (retime.py);
+            # with the ramps, 0.4 travel / 0.12 beside the pieces is demo-day
+            # speed (2026-10-14). The envelope is 0.6; --joint-rate overrides.
+            # Demo day: the envelope itself (0.6, timed at 0.57) for travel; 0.15
+            # beside the pieces. --joint-rate 0.4 is the gentler setting.
+            p.set_defaults(hover=0.08, joint_rate=0.60, contact_rate=0.15)
         else:
             p.add_argument('--yes', action='store_true')
             p.description = f'{p.prog}: robot options {reason}'
     args = cli.parse_args()
-    if getattr(args, 'command', '') in ('teach-home', 'goto', 'move', 'play') \
+    if getattr(args, 'command', '') in ('teach-home', 'goto', 'move', 'play', 'gesture') \
             and add_session_arguments is None \
             and not getattr(args, 'steps_only', False):
         say('BLOCKED', f'{args.command} needs the ROS graph {reason}')

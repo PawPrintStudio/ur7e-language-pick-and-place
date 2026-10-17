@@ -39,6 +39,9 @@ _chess_setup_terminal() {
   source /opt/ros/humble/setup.bash || return 1
   source install/setup.bash || return 1
   source scripts/lab_env.sh || return 1
+  # On the shared Jetson our pip packages live in the checkout, not the system
+  # Python (docs/JETSON.md); the container has them system-wide and no .pydeps.
+  [[ -d .pydeps && ":${PYTHONPATH:-}:" != *":$PWD/.pydeps:"* ]] && export PYTHONPATH="$PWD/.pydeps${PYTHONPATH:+:$PYTHONPATH}"
   # Ubuntu's stockfish package installs to /usr/games, which is not on PATH here;
   # without it lab_chess.py silently plays as a random mover.
   [[ -d /usr/games && ":$PATH:" != *":/usr/games:"* ]] && export PATH="$PATH:/usr/games"

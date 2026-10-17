@@ -207,9 +207,14 @@ class PickExecutor(JogExecutor):
     """
 
     def __init__(self, calibration=None, hover=0.12, table_surface_z=None, tooling=None,
-                 surface_drop=0.0, **kwargs):
+                 surface_drop=0.0, contact_rate=None, **kwargs):
         super().__init__(**kwargs)
         self.calibration = calibration
+        # Two rates: joint_rate for travel (hover, carry, home), contact_rate
+        # for the segments beside objects (descend, lift, lower, back up),
+        # never faster than travel. Default: one rate, as before.
+        self.contact_rate = (min(float(contact_rate), self.joint_rate) if contact_rate
+                             else self.joint_rate)
         self.tooling = tooling or lab_tooling.load()
         # The calibration plane is the board's top surface. Off the board the
         # pick surface can sit lower (2026-10-08: the plate is 8 mm below the
@@ -690,7 +695,7 @@ class LabAdapters(Adapters):
         # fingertip floor in tool_z() is the guard instead.
         self._move(lambda: ex.move_pose(
             'descend', ex.pose_at(x, y, self.tip_height, self.grasp_yaw),
-            avoid_collisions=False))
+            avoid_collisions=False, rate=getattr(ex, 'contact_rate', None)))
 
     def _grip(self, width, force):
         if self.executor.plan_only and not isinstance(self.gripper, FakeRg2):
@@ -715,7 +720,7 @@ class LabAdapters(Adapters):
         x, y = self.target.xyz[0], self.target.xyz[1]
         self._move(lambda: ex.move_pose(
             'lift', ex.pose_at(x, y, self.hover_height, self.grasp_yaw),
-            avoid_collisions=False))
+            avoid_collisions=False, rate=getattr(ex, 'contact_rate', None)))
         if self.held_width is not None and not ex.plan_only:
             # A lost object lets the jaws close all the way; a width that
             # merely shrank means the object settled or slid in the grip (the
@@ -736,12 +741,12 @@ class LabAdapters(Adapters):
             'carry', ex.pose_at(px, py, self.hover_height, self.grasp_yaw)))
         self._move(lambda: ex.move_pose(
             'lower', ex.pose_at(px, py, self.release_height, self.grasp_yaw),
-            avoid_collisions=False))
+            avoid_collisions=False, rate=getattr(ex, 'contact_rate', None)))
         self._grip(cfg['open_mm'], cfg['force_n'])
         self.held_width = None
         self._move(lambda: ex.move_pose(
             'back_up', ex.pose_at(px, py, self.hover_height, self.grasp_yaw),
-            avoid_collisions=False))
+            avoid_collisions=False, rate=getattr(ex, 'contact_rate', None)))
 
     def release(self):
         """Open the jaws where the arm is (after a missed grasp)."""
@@ -859,6 +864,7 @@ def build(args, executor=None):
         executor = PickExecutor(
             calibration, hover=args.hover, max_speed_percent=args.max_speed_percent,
             joint_rate=args.joint_rate, max_excursion=args.max_excursion,
+            contact_rate=getattr(args, 'contact_rate', None),
             plan_only=not args.execute, poses_file=args.poses_file,
             tool_link=sim.get('tool_link', PICK_LINK), group=sim.get('group', GROUP),
             controller_action=sim.get('controller'), tooling=tooling,
@@ -953,7 +959,11 @@ def add_session_arguments(cli):
     # Upper bound only: the pendant slider is the real speed, and the gate
     # refuses to move when the slider is above this.
     cli.add_argument('--max-speed-percent', type=float, default=100.0)
-    cli.add_argument('--joint-rate', type=float, default=0.09)
+    cli.add_argument('--joint-rate', type=float, default=0.09,
+                     help='nominal rad/s for travel segments (hover, carry, home)')
+    cli.add_argument('--contact-rate', type=float,
+                     help='nominal rad/s beside objects (descend, lift, lower, back up); '
+                          'default: the joint rate')
     cli.add_argument('--surface-drop', type=float, default=0.015,
                      help='how far the pick surface off the board sits below the board, m '
                           '(2026-10-08: plate 8 mm below the board, +7 mm by eye)')

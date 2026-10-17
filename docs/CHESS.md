@@ -65,6 +65,11 @@ Dependencies: `pip install chess` and `apt install stockfish`; the dev
 container has both. Without Stockfish the arm plays random legal moves,
 captures first, which is enough to test the mechanics.
 
+### On the Jetson
+
+Native Humble on the shared makerspace Jetson, laptop for screens and voice:
+[JETSON.md](JETSON.md).
+
 ### On a Raspberry Pi 5
 
 The dev container's usual base image is amd64 only. On the Pi (64-bit
@@ -162,17 +167,133 @@ terminal still works: whichever answers first wins. How it is wired:
   `log/chess/answer.json`; `play` reads it, drops it if the id is stale.
   Answers are accepted from this computer only (127.0.0.1): the projected
   page cannot move the arm, and neither can anything on the network.
-- **New game** and **Quit** are on every student prompt and at game over:
-  a new group is one click, the record restarts, the arm stays parked.
-  `reset` is only needed when `play` is not running.
+- **New game** and **Quit** are standing buttons, taken on every prompt:
+  a new group is one click, the record restarts, the arm parks. With no
+  game running, New game resets the record through `POST /reset` (the same
+  as `lab_chess.py reset`, refused while a chess command holds the lock).
 - `play --resume` carries on from the recorded game after a restart of T3.
 
-Prompts, in order of a turn: *student move* (Read the board / type it /
-New game / Quit), *I saw e4: right?* (Yes / No, read again / type it),
-*Robot plays b5, everyone clear?* (Go), one *b7 → b5: go?* per step
-(Go / Stop), and after a failed step *Retry / I finished it by hand*.
+Prompts, in order of a turn (2026-10-14, spec S2): *student move* (the
+camera reads the board every 2.5 s while this waits and proposes a move
+once three readings in a row agree; or Read the board / type it), *I saw
+e4: right?* (the operator clicks Yes, No, or types the real move; with
+`play --auto-confirm` it stands after 8 s instead), *Robot plays b5,
+everyone clear?* (Go: approves the whole move), and after a failed step
+*Retry / I finished it by hand*. A normal turn is two clicks: Yes, Clear.
+`play --careful` adds one *b7 → b5: go?* per step, for the first runs after
+a calibration change. New game and Quit clicked while the arm moves are
+queued and taken at the next prompt. The audience page shows the move list
+with the robot's moves in bold; the operator view (`#operator`) puts the
+console first and large, and has **Ask Ro-Boko**: a question (or nothing)
+for the voice to answer in front of the children.
+
+Why the confirmation is a click again (game 3, 2026-10-14): a bishop lifted
+off f1 and held in the hand reads, in occupancy alone, exactly like "bishop
+captures somewhere along its line"; the camera proposed Bxa6, the
+auto-confirmation let it stand, and the arm then took its own pawn from a6.
+Two more guards came out of it: a capture is only read when the colour on
+its destination has flipped to the mover's (`infer_move_diff`), and before
+the arm takes a piece it checks the camera's colour there against the
+record and offers to take the student's last move back
+(`capture_agrees`).
 The audience page turns each of these into a headline ("Your move · White",
 "Robot is about to play b5: stand clear", "Arm stopped during b5").
+
+## Speed (2026-10-14, spec S1 in CHESS_IMPROVEMENTS.md)
+
+A step took 72 s at the baseline. What changed, and where each knob lives:
+
+- **Two rates.** `play`, `move`, `goto` default to `--joint-rate 0.60` (the envelope)
+  (travel: hover, carry, home) and `--contact-rate 0.15` (descend, lift,
+  lower, back up); 0.4 shook the arm at segment boundaries on 2026-10-14.
+  The envelope in `scripts/motion/ur_motion.py` is 0.6 rad/s nominal; the
+  pendant slider scales everything below it.
+- **Waypoints thinned** before timing (`scripts/motion/retime.py`): MoveIt's
+  0.003 rad steps under a 0.05 s floor meant the rate was never the limit.
+  Every segment now starts and stops over six stretched steps (a soft ramp).
+- **Release width.** Over the box the jaws open to 70 mm; on a square to the
+  held width plus 10 mm (at most 42). A knight held at 30.7 mm was "released"
+  at 32 mm and stayed wedged (2026-10-14).
+
+Measured with the first version (0.4 rad/s): a step in about 30 s, down
+from 72 (PLAN 4, APPROACH 9, LIFT 4, RETREAT 10, HOME 3).
+- **No OBSERVE move** when the arm already stands where the step starts, **no
+  HOME between a capture's two steps** (it waits at the box hover), and a
+  0.3 s settle before each plan instead of 1 s.
+
+First run after this change, in order: `goto e4` plan-only (read the new
+nominal seconds), then `move e4 --fen start --vision --execute
+--max-speed-percent 25`, then 100 %. `--joint-rate 0.09 --contact-rate 0.09`
+restores the baseline speed if anything looks wrong.
+
+## Reactions: events, gestures, voice (specs S3, S4)
+
+`play` writes every game event to `log/chess/events.jsonl` (`greeting`,
+`captured`, `lost`, `check`, `won`, `lost_game`, `draw`, with the move and
+position) and, with the arm connected, acts it out from home
+(`scripts/chess_gestures.py`): wrist-only offsets from `chess_home`, so the
+fingertips stay a hand's breadth from where home put them; planned through
+the collision check and followed with forward kinematics, refused whole if
+they would come within 60 mm of the board plane or 30 mm of its footprint.
+A capture and a win get three jaw "claps". `play --no-gestures` turns them
+off. The events file is what the laptop-side voice reads.
+
+**Voice** (`scripts/chess_voice.py`, on the laptop, not in the container:
+the sound card and the GPU are there). It tails the events file, asks a
+local model through Ollama for one sentence in Ro-Boko's voice (20 words,
+3 s timeout, otherwise a canned line) and speaks it with Piper. The game
+never waits for it. One-time setup on the laptop:
+
+```bash
+.venv-voice/bin/pip install piper-tts
+.venv-voice/bin/python -m piper.download_voices en_US-lessac-medium --download-dir log/chess/voices
+ollama pull qwen2.5:3b
+```
+
+Demo day, a fourth terminal **on the host, not in the container** (the
+container has no sound card; the script refuses to run there):
+
+```bash
+.venv-voice/bin/python scripts/chess_voice.py
+```
+
+It plays through the PipeWire sink whose name contains `HDMI` (the TV);
+`--sink default` is the laptop speakers, `--sink Analog` by name. Check the
+TV's volume once: `wpctl status` lists the sinks, `wpctl set-volume 74 1.0`
+with the HDMI sink's number. Each emotion also has a short synthesized
+jingle (rising arpeggio for a capture, fanfare for a win, sad trombone for
+a loss, two beeps for check) that plays as the gesture starts, then the
+line; `--no-sfx` turns them off. `--lead 1.0` is how long the page holds the
+bubble after the sound starts (the TV's HDMI audio delay); tune it in
+half-second steps. `--say captured` tries the pipeline once;
+`--no-llm` speaks canned lines only; `--replay lines.json` scripts the
+answers. The voice files live under `log/` (not committed): download them
+again on a new laptop. What is being said is written to `log/chess/said.json`
+and shown by the audience page as the arm's speech bubble (restart `watch`
+after pulling for the page to serve it).
+
+## Reading the student's move from what changed (spec S6)
+
+`play --vision` keeps a baseline scan (taken at the start of the game and
+after each arm move) and reads the student's move by comparing the new scan
+with it: a legal move is scored on whether each square seen in both scans
+changed occupancy as the move says. Squares the camera always misses (the
+back rank behind taller pieces) or always reads the same say nothing, which
+is what the absolute comparison got wrong. A capture shows only as its
+vacated square, so a capture whose destination is hidden ties with a plain
+move there and the operator types it, as before. Every reading is logged as
+a `seen` event (`margin`, `how`), every tie as `unsure`.
+
+## Set measurement (spec S5)
+
+With `grip_m` and `width_mm` set for a piece type in `lab_chess.yaml`, a
+`--vision` pick grips that type at its measured height and checks the jaw
+width against the table; the camera supplies the centre and the presence
+and warns when its height does not match the type the record expects. Types
+without `grip_m` still grip at 3/4 of the seen height with no width check.
+Measure with calipers: height, the narrowest solid spot below the head and
+the width there (what the RG2 reads closed on it, not the ruler width:
+pawn 21-22 for a 15 mm head), the base.
 
 ## Calibration order when something moved
 

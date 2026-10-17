@@ -1,166 +1,170 @@
 # The chess game on the Jetson
 
 The game as demoed on 2026-10-14, moved from the laptop's dev container to the
-makerspace Jetson (Yahboom Orin Nano, JetPack 6.2 = Ubuntu 22.04, ROS Humble
-native). **The Jetson is shared with other projects:** everything of ours lives
-in `~/chess_arm`, system changes are checked first and listed at the end so
-they can be undone.
+makerspace Jetson (hostname `ubuntu`, 16 GB, ROS Humble native; set up
+2026-10-17). **The Jetson is shared:** one `jetson` account for every project,
+so everything of ours lives in `~/chess_arm`, `~/.bashrc` stays untouched, and
+system changes are simulated first and listed at the end with their undo.
 
 | Machine | Runs |
 |---|---|
 | Jetson | driver + MoveIt (T1), camera + dashboard `watch` (T2), `play` (T3) |
 | Laptop | the two browser windows (operator, TV), `chess_voice.py` (Ollama on its GPU, TV sound) |
 
-The laptop keeps what it did on the host side before; the Jetson replaces the
-dev container. Nothing on the Jetson needs a monitor.
+**Network.** The laptop joins the Jetson's WiFi hotspot `JetsonArm` and
+reaches it at `ssh jetson@10.42.0.1` (the laptop's internet then runs through
+the Jetson). That leaves the Jetson's one Ethernet port `eno1` for the wall
+drop during setup and for the robot during a game. First connection after
+the September unit: SSH warns that the host key changed (same address,
+different machine); compare the fingerprint on the Jetson's screen
+(`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`), then
+`ssh-keygen -R 10.42.0.1` on the laptop.
 
-## 1. Internet for the Jetson through the laptop (laptop)
+## Setup (once, `eno1` on the wall drop for internet)
 
-The Jetson's single port `eno1` cabled to the laptop. The laptop shares its
-WiFi; the Jetson's existing DHCP profile takes an address without changes.
-
-```bash
-ip -br link                     # the laptop's Ethernet name (enp7s0 on 09-28)
-sudo nmcli con add type ethernet ifname enp7s0 con-name jetson-share ipv4.method shared ipv6.method ignore autoconnect no
-sudo nmcli con up jetson-share
-ip neigh show dev enp7s0        # after 20 s: the Jetson's 10.42.0.x
-ssh jetson@10.42.0.x
-```
-
-Undo: `sudo nmcli con down jetson-share`. WiFi is not affected.
-
-## 2. Look before touching (Jetson, read-only)
+### 1. Look before touching (read-only)
 
 ```bash
-whoami; ls /home; who; df -h / | tail -1; free -h | head -2
-nmcli -t -f NAME,DEVICE,AUTOCONNECT con show
-grep -h ROS_DOMAIN_ID /home/*/.bashrc 2>/dev/null
-ls -d ~/ur7e_ws ~/chess_arm 2>/dev/null
-which stockfish vcs tmux colcon; ss -ltn | grep -E ':8091\b'
+ls /home; who; df -h / | tail -1; free -h | head -2
+grep -h ROS_DOMAIN_ID /home/*/.bashrc; ls -d ~/chess_arm
+which vcs colcon stockfish tmux; ss -ltn | grep 8091
+cat /proc/device-tree/model; echo; head -1 /etc/nv_tegra_release; ls /opt/ros
+python3 -c "import cv2, numpy; print('cv2', cv2.__version__, 'numpy', numpy.__version__)"
 ```
 
-Needed: 6 GB free disk, no other project on ROS domain 42 (else change it in
-`scripts/lab_env.sh` for our side only), port 8091 free. `~/ur7e_ws` is the
-September clone: leave it as it is.
+Needed: `humble` in `/opt/ros`, 6 GB free, no one else on ROS domain 42
+(else change it in `scripts/lab_env.sh`), port 8091 free. Note the cv2 and
+numpy versions: nothing below may replace them.
 
-## 3. Our checkout (Jetson)
+### 2. Our checkout
 
 ```bash
 git clone https://github.com/PawPrintStudio/ur7e-language-pick-and-place.git ~/chess_arm
 cd ~/chess_arm
 ```
 
-A new folder, so nobody's files change.
+### 3. System packages: simulate, then install
 
-## 4. System packages: simulate, then ask (Jetson)
-
-`apt install` can upgrade libraries another project uses (a newer MoveIt
-pulls newer `ros-humble-*` core packages). Simulate first, nothing is
+`apt install` can upgrade packages another project uses (a newer MoveIt
+pulls newer `ros-humble-*` core packages). Simulate first; nothing is
 installed:
 
 ```bash
 sudo apt-get update
 sudo apt-get install -s --no-upgrade ros-humble-ur ros-humble-moveit ros-humble-rmw-cyclonedds-cpp \
   ros-humble-cv-bridge ros-humble-message-filters ros-humble-rosbag2-transport ros-humble-ros2controlcli \
-  python3-scipy python3-yaml libnet1-dev python3-colcon-common-extensions python3-vcstool stockfish tmux \
-  | grep -E '^(Inst|Remv)'
+  python3-scipy python3-yaml python3-pip libnet1-dev python3-colcon-common-extensions python3-vcstool \
+  stockfish tmux | grep -E '^(Inst|Remv)'
 ```
 
-`Inst pkg (new)` is a new package: harmless to others. `Inst pkg [old] (new)`
-**upgrades** something already there and `Remv` removes it: agree those with
-the other devs first. Then the same line without `-s`, and record it below.
+`Inst pkg (new)` adds a package: harmless to others. `Inst pkg [old] (new)`
+**upgrades** one already there and `Remv` removes one: agree those with the
+other devs first. Then the same command without `-s` and the `grep`, and
+write the list in the table at the end.
 
-## 5. Python packages, inside the checkout (Jetson)
+### 4. Python packages, inside the checkout
 
 ```bash
 python3 -m pip install --target .pydeps "chess>=1.10"
 ```
 
-Not the system Python and not `~/.local`, which every program of the `jetson`
-user would see. `scripts/chess_env.sh` adds `.pydeps` to `PYTHONPATH`. numpy,
-OpenCV (Yahboom's CUDA build) and PyYAML are the system ones: do not
-pip-install them.
+Not the system Python and not `~/.local`, which every program of the shared
+account would see. `scripts/chess_env.sh` adds `.pydeps` to `PYTHONPATH`.
+numpy, OpenCV and PyYAML stay the system ones: never pip-install them here.
 
-## 6. Build (Jetson)
+### 5. Build
 
 ```bash
 source /opt/ros/humble/setup.bash
-bash scripts/vendor_import.sh                 # UR + RG2 + pymoveit2 into src/vendor
+bash scripts/vendor_import.sh
 colcon build --symlink-install --packages-skip ur7e_gazebo --parallel-workers 2
 ```
 
-`ur7e_gazebo` needs Gazebo, which a robot computer does not. Two workers keep
-the box usable for others while it builds (about 15 min).
+`vendor_import.sh` fetches the UR + RG2 drivers and pymoveit2 into
+`src/vendor`. `ur7e_gazebo` needs Gazebo, which the robot computer does not;
+two workers leave the box usable for others while it builds.
 
-## 7. The demo's calibration (Jetson)
+### 6. The demo's calibration
 
-The live files are not in git (one placement of board and camera,
-`.gitignore`); the 2026-10-14 set is archived in `docs/evidence`. Copy it into
-place on purpose:
+The live files are not in git (one placement of board and camera); the
+2026-10-14 set is archived and copied into place on purpose (`-n`: never over
+an existing one):
 
 ```bash
 cp -n docs/evidence/chess-2026-10-14/{lab_chess.json,.lab_chess_touches.json,.console_poses.json,lab_table.json,.lab_camera.json} scripts/
 ```
 
-`chess_home` is in `.console_poses.json`. If anything moved since 10-14,
-re-touch anyway (CHESS.md, "Calibration order when something moved").
-
-## 8. Check without the arm (Jetson)
+### 7. Check without the arm
 
 ```bash
 source ~/chess_arm/scripts/chess_env.sh
-python3 -c "import chess, cv2, rclpy; print('ok', cv2.__version__)"
-python3 scripts/lab_chess.py squares          # board geometry from lab_chess.json
+python3 -c "import chess, cv2, rclpy; print('ok')"; which stockfish
+python3 scripts/lab_chess.py squares
 ```
 
-## 9. At the arm
+`chess_env.sh` prints `Chess terminal ready`; `which stockfish` must find
+`/usr/games/stockfish` (without it `play` silently picks random moves).
 
-**Network.** The pendant's External Control host is `192.168.1.2` and the
-robot is `192.168.1.10`, so the Jetson must hold `192.168.1.2`. With one port
-that is `eno1`; a small switch lets the laptop stay reachable: robot, Jetson
-and laptop on the switch, laptop at `192.168.1.3`.
+### 8. Camera and dashboard, still without the arm
+
+ZED into a Jetson USB-3 port (`lsusb`: STEREOLABS), then on the Jetson
+`python3 scripts/lab_chess.py watch`, and on the laptop the tunnel from
+"Screens" below: http://localhost:8091/ shows the live view.
+
+## Each game
+
+### Network at the arm
+
+The pendant's External Control host is `192.168.1.2` and the robot is
+`192.168.1.10`, so the Jetson holds `192.168.1.2` on `eno1`, cabled to the
+robot. One profile, added once (it changes no other profile; on the list at
+the end):
 
 ```bash
-# Jetson, once (adds a profile, changes none; ask first, see the list below)
 sudo nmcli con add type ethernet ifname eno1 con-name ur-link-chess ipv4.method manual ipv4.addresses 192.168.1.2/24 autoconnect no
-# laptop, once
-sudo nmcli con add type ethernet ifname enp7s0 con-name chess-lan ipv4.method manual ipv4.addresses 192.168.1.3/24 autoconnect no
 ```
 
-Each session, in this order (the SSH session drops at step 1, expected):
+Each session: robot cable into `eno1`, laptop on `JetsonArm`, `ssh
+jetson@10.42.0.1`, then `sudo nmcli con up ur-link-chess`. `autoconnect no`
+keeps the wired profile the others use as the default after a reboot.
+`chess_env.sh` calls this address `LAPTOP_IP`: "the computer the pendant
+connects back to", now the Jetson.
 
-1. Jetson, still over the 10.42 cable: `sudo nmcli con up ur-link-chess`
-2. Cables: Jetson `eno1`, robot and laptop into the switch
-3. Laptop: `sudo nmcli con up chess-lan`, then `ssh jetson@192.168.1.2`
+### Terminals (Jetson)
 
-After a Jetson reboot `ur-link-chess` is down again (`autoconnect no`, so the
-others' wired profile keeps the port by default): repeat from step 1 with the
-laptop cable, or a monitor and keyboard.
-
-`chess_env.sh` calls this address `LAPTOP_IP`: it means "the computer the
-pendant connects back to", now the Jetson. The ZED goes in a Jetson USB-3
-port (`lsusb`: STEREOLABS).
-
-**Terminals.** On the Jetson in `tmux` (an SSH drop must not kill the driver):
-`tmux new -s chess`, three windows, `source ~/chess_arm/scripts/chess_env.sh`
-in each, then the walkthrough's T1, T2, T3 lines unchanged (sections 4 to 7).
-
-**Screens, from the laptop.** The operator page only answers 127.0.0.1; a
-tunnel makes the laptop's browser count as the Jetson itself:
+In `tmux`, so an SSH drop does not stop the driver: `tmux new -s chess`, three
+windows (Ctrl+B C; Ctrl+B 0/1/2 to switch; Ctrl+B D to leave it running;
+`tmux attach -t chess` to return), and in each:
 
 ```bash
-ssh -N -L 8091:127.0.0.1:8091 jetson@192.168.1.2
+source ~/chess_arm/scripts/chess_env.sh
 ```
 
-Then http://localhost:8091/#operator and the TV view at http://localhost:8091/
+Then the walkthrough's lines unchanged: T1 `CHESS=true LAB_SPEED=100 bash
+scripts/lab_up.sh` (pendant Play when it asks), T2 `python3
+scripts/lab_chess.py watch`, T3 `track`, `scan`, `play ...`
+(CHESS_OPERATOR_WALKTHROUGH.md sections 4 to 7).
+
+### Screens (laptop)
+
+The operator page answers only the computer it runs on; a tunnel makes the
+laptop's browser count as the Jetson:
+
+```bash
+ssh -N -L 8091:127.0.0.1:8091 jetson@10.42.0.1
+```
+
+Then http://localhost:8091/#operator and the TV view http://localhost:8091/,
 exactly as before.
 
-**Voice, on the laptop.** It reads the game's events and writes the line the
-page shows, both in the Jetson's `log/chess`; mount it (`sudo apt install
-sshfs` on the laptop once):
+### Voice (laptop)
+
+It reads the game's events and writes the line the page shows, both in the
+Jetson's `log/chess`; mount that folder (`sudo apt install sshfs` on the
+laptop once):
 
 ```bash
-mkdir -p ~/jetson-chess && sshfs -o cache=no jetson@192.168.1.2:chess_arm/log/chess ~/jetson-chess
+mkdir -p ~/jetson-chess && sshfs -o cache=no jetson@10.42.0.1:chess_arm/log/chess ~/jetson-chess
 .venv-voice/bin/python scripts/chess_voice.py --events ~/jetson-chess/events.jsonl
 ```
 
@@ -173,5 +177,5 @@ Fill in as it happens; each line with its undo.
 | Change | Undo |
 |---|---|
 | `~/chess_arm` (checkout, build, `.pydeps`) | `rm -rf ~/chess_arm` |
-| apt packages: _list from step 4_ | `sudo apt-get remove <list>` |
+| apt packages: _list from step 3_ | `sudo apt-get remove <list>` |
 | NM profile `ur-link-chess` | `sudo nmcli con delete ur-link-chess` |

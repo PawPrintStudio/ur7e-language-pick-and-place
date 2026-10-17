@@ -25,7 +25,9 @@ ROBOT_IP=${ROBOT_IP:-192.168.56.101}
 robot_reachable() { timeout 3 bash -c "exec 3<>/dev/tcp/$ROBOT_IP/29999" 2>/dev/null; }
 
 # ---------------------------------------------------------------- host side
-if [[ ! -f /.dockerenv ]]; then
+# The laptop host has no ROS; the Jetson runs Humble natively and takes the
+# container branch below (docs/JETSON.md).
+if [[ ! -f /.dockerenv && ! -f /opt/ros/humble/setup.bash ]]; then
   echo "== host: bringing up the robot link"
   nmcli con up "${UR_LINK:-ur-link}"
   robot_reachable || { echo "== no reply from $ROBOT_IP: check the cable and the pendant network" >&2; exit 2; }

@@ -146,6 +146,18 @@ def test_the_tv_sink_is_found_from_wpctl_status(monkeypatch):
     assert v.player_for('HDMI') == ['aplay', '-q']
 
 
+def test_on_pulseaudio_the_tv_sink_goes_to_paplay(monkeypatch):
+    # The Jetson (2026-10-17): PulseAudio server, pw-play installed but useless.
+    outputs = {'info': 'Server String: /run/user/1000/pulse/native\nServer Name: pulseaudio\n',
+               'list': '0\talsa_output.platform-3510000.hda.hdmi-stereo\tmodule-alsa-card.c\ts16le 2ch\tSUSPENDED\n'
+                       '1\talsa_output.platform-sound.analog-stereo\tmodule-alsa-card.c\ts16le 2ch\tSUSPENDED\n'}
+    monkeypatch.setattr(v.subprocess, 'run', lambda cmd, **k: type('R', (), {'stdout': outputs[cmd[1]]})())
+    monkeypatch.setattr(v.shutil, 'which', lambda name: '/usr/bin/' + name)
+    assert v.player_for('HDMI') == ['paplay', '--device=alsa_output.platform-3510000.hda.hdmi-stereo']
+    assert v.player_for(None) == ['paplay']
+    assert v.player_for('Bluetooth') == ['paplay']
+
+
 def test_follow_speaks_new_events_only_and_skips_stale_ones(tmp_path):
     path = tmp_path / 'events.jsonl'
     path.write_text(json.dumps({'event': 'greeting', 't': time.time(), 'arm': 'black'}) + '\n')

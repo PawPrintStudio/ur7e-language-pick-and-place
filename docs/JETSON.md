@@ -92,14 +92,14 @@ colcon build --symlink-install --packages-skip ur7e_gazebo --parallel-workers 2
 `ur7e_gazebo` needs Gazebo, which a robot computer does not. Two workers keep
 the box usable for others while it builds (about 15 min).
 
-## 7. The demo's calibration (laptop → Jetson)
+## 7. The demo's calibration (Jetson)
 
-Not in git (they describe one placement of board and camera, `.gitignore`):
+The live files are not in git (one placement of board and camera,
+`.gitignore`); the 2026-10-14 set is archived in `docs/evidence`. Copy it into
+place on purpose:
 
 ```bash
-cd ~/Projects/Makerspace/AI_arm
-scp scripts/lab_chess.json scripts/.lab_chess_touches.json scripts/.console_poses.json \
-    scripts/lab_table.json scripts/.lab_camera.json jetson@10.42.0.x:chess_arm/scripts/
+cp -n docs/evidence/chess-2026-10-14/{lab_chess.json,.lab_chess_touches.json,.console_poses.json,lab_table.json,.lab_camera.json} scripts/
 ```
 
 `chess_home` is in `.console_poses.json`. If anything moved since 10-14,

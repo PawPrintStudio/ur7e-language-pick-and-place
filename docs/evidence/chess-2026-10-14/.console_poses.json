@@ -1,0 +1,50 @@
+{
+  "calib_start": {
+    "elbow_joint": -2.0275,
+    "shoulder_lift_joint": -1.6481,
+    "shoulder_pan_joint": -1.6094,
+    "wrist_1_joint": 2.1048,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": -5.9
+  },
+  "chess_home": {
+    "elbow_joint": -2.3691134452819824,
+    "shoulder_lift_joint": -1.2068108779243012,
+    "shoulder_pan_joint": 5.1792097091674805,
+    "wrist_1_joint": -1.1515627664378663,
+    "wrist_2_joint": 1.571791648864746,
+    "wrist_3_joint": 0.5776979923248291
+  },
+  "front": {
+    "elbow_joint": -1.7,
+    "shoulder_lift_joint": -1.4,
+    "shoulder_pan_joint": -1.577,
+    "wrist_1_joint": 1.53,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": -3.579
+  },
+  "home": {
+    "elbow_joint": 1.8120077292071741,
+    "shoulder_lift_joint": -1.3445593428662796,
+    "shoulder_pan_joint": -0.14937335649599248,
+    "wrist_1_joint": 1.4233807760426025,
+    "wrist_2_joint": 0.5341508388519287,
+    "wrist_3_joint": -0.4704330603228968
+  },
+  "observe": {
+    "elbow_joint": 1.8016446272479456,
+    "shoulder_lift_joint": -1.3452369731715699,
+    "shoulder_pan_joint": -0.15741330782045537,
+    "wrist_1_joint": 1.3902639585682373,
+    "wrist_2_joint": 0.4999725818634033,
+    "wrist_3_joint": -0.4154618422137659
+  },
+  "ready": {
+    "elbow_joint": -1.7,
+    "shoulder_lift_joint": -1.4,
+    "shoulder_pan_joint": -0.006,
+    "wrist_1_joint": 1.53,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": -3.579
+  }
+}

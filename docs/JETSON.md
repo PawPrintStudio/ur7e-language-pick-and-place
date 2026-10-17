@@ -36,6 +36,12 @@ Needed: `humble` in `/opt/ros`, 6 GB free, no one else on ROS domain 42
 (else change it in `scripts/lab_env.sh`), port 8091 free. Note the cv2 and
 numpy versions: nothing below may replace them.
 
+Found 2026-10-17: Orin NX 16 GB, JetPack 6.2.1 (R36.4.7). Another project's
+service `openmanipulator-xbox` starts at boot on ROS domain 0 (ours is 42),
+and an `ollama` service holds 127.0.0.1:11434. numpy 1.26.4 and
+opencv-python 4.11 are in `~/.local` (someone's pip installs, shared by every
+program of the account).
+
 ### 2. Our checkout
 
 ```bash
@@ -104,6 +110,14 @@ python3 scripts/lab_chess.py squares
 
 `chess_env.sh` prints `Chess terminal ready`; `which stockfish` must find
 `/usr/games/stockfish` (without it `play` silently picks random moves).
+
+Verified 2026-10-17: apt history shows no upgrades or removals; 15 packages
+built; Stockfish answers; `squares` prints the 10-14 board; 76 chess tests
+pass (`cd scripts && PYTHONPATH=$PYTHONPATH:../src/ur7e_perception python3 -m
+pytest -p no:launch_testing -p no:launch_ros test_lab_chess.py
+test_chess_operator.py test_chess_vision.py test_chess_gestures.py`);
+`CHESS=true bash scripts/lab_up.sh` takes the native path and stops at the
+robot check.
 
 ### 8. Camera and dashboard, still without the arm
 
@@ -177,5 +191,6 @@ Fill in as it happens; each line with its undo.
 | Change | Undo |
 |---|---|
 | `~/chess_arm` (checkout, build, `.pydeps`) | `rm -rf ~/chess_arm` |
-| apt packages: _list from step 3_ | `sudo apt-get remove <list>` |
+| apt (2026-10-17, simulated: 0 upgraded, 0 removed): `ros-humble-rmw-cyclonedds-cpp libnet1-dev stockfish tmux` (+7 dependencies) | `sudo apt-get remove` the same four, then `sudo apt-get autoremove` |
+| laptop key in `~/.ssh/authorized_keys` (line ending `nikola@nikola-LOQ`) | delete that line |
 | NM profile `ur-link-chess` | `sudo nmcli con delete ur-link-chess` |

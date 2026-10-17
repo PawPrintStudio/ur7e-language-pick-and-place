@@ -64,7 +64,7 @@ OUT="log/lab/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 echo "== logs: $OUT"
 
-robot_reachable || { echo "== no reply from $ROBOT_IP: on the host, run  nmcli con up ${UR_LINK:-ur-link}" >&2; exit 2; }
+robot_reachable || { echo "== no reply from $ROBOT_IP: bring up the robot link (laptop host: nmcli con up ${UR_LINK:-ur-link}; Jetson: sudo nmcli con up ur-link-chess)" >&2; exit 2; }
 # VS Code only forwards the key when it was started from a shell that had it;
 # the repo's .env is mounted here too, so read it directly when it's missing.
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -f .env ]]; then set -a; source .env; set +a; fi

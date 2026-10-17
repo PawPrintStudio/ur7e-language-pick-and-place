@@ -127,6 +127,8 @@ ZED into a Jetson USB-3 port (`lsusb`: STEREOLABS), then on the Jetson
 
 ## Each game
 
+The step-by-step version to keep open at the arm: [JETSON_GAME_WORKBOOK.md](JETSON_GAME_WORKBOOK.md).
+
 ### Network at the arm
 
 The pendant's External Control host is `192.168.1.2` and the robot is

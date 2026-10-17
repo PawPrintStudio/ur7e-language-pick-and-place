@@ -8,8 +8,8 @@ system changes are simulated first and listed at the end with their undo.
 
 | Machine | Runs |
 |---|---|
-| Jetson | driver + MoveIt (T1), camera + dashboard `watch` (T2), `play` (T3) |
-| Laptop | the two browser windows (operator, TV), `chess_voice.py` (Ollama on its GPU, TV sound) |
+| Jetson | driver + MoveIt (T1), camera + dashboard `watch` (T2), `play` (T3), voice (T4), the TV on its DisplayPort |
+| Laptop (optional) | the operator page over WiFi |
 
 **Network.** The laptop joins the Jetson's WiFi hotspot `JetsonArm` and
 reaches it at `ssh jetson@10.42.0.1` (the laptop's internet then runs through
@@ -171,18 +171,23 @@ ssh -N -L 8091:127.0.0.1:8091 jetson@10.42.0.1
 Then http://localhost:8091/#operator and the TV view http://localhost:8091/,
 exactly as before.
 
-### Voice (laptop)
+### TV and voice (Jetson)
 
-It reads the game's events and writes the line the page shows, both in the
-Jetson's `log/chess`; mount that folder (`sudo apt install sshfs` on the
-laptop once):
+The TV on the Jetson's DisplayPort (a DP-to-HDMI adapter carries the sound
+too). On the Jetson's desktop, Chromium full screen (F11) at
+http://localhost:8091/. The voice in a fourth tmux window:
 
 ```bash
-mkdir -p ~/jetson-chess && sshfs -o cache=no jetson@10.42.0.1:chess_arm/log/chess ~/jetson-chess
-.venv-voice/bin/python scripts/chess_voice.py --events ~/jetson-chess/events.jsonl
+python3 scripts/chess_voice.py --model llama3.2:3b
 ```
 
-Undo: `fusermount -u ~/jetson-chess`.
+The first line must say `AUDIO ... paplay --device=...hdmi-stereo`. The
+model is the one the Jetson's `ollama` service already has (another
+project's; nothing downloaded); a slow answer falls back to a canned line as
+on the laptop. Piper is the copy in `~/.local`. The voice and jingle files
+are not in git: copied once from the laptop's `log/chess/voices` and
+`log/chess/sfx` (2026-10-17). Verified that day without a screen: 11 voice
+tests, a line synthesized and played on the HDMI sink, model 1.9 s warm.
 
 ## What we changed on the Jetson
 

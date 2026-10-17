@@ -246,8 +246,42 @@ def find_sink(match='HDMI'):
     return None
 
 
+def pulse_sink(match):
+    """The PulseAudio sink whose name contains ``match`` (the Jetson's HDMI/DP: '...hdmi-stereo')."""
+    try:
+        listing = subprocess.run(['pactl', 'list', 'short', 'sinks'], capture_output=True, text=True,
+                                 timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in listing.splitlines():
+        fields = line.split('\t')
+        if len(fields) > 1 and match.lower() in fields[1].lower():
+            return fields[1]
+    return None
+
+
+def on_pulseaudio():
+    """True when PulseAudio, not PipeWire, is the sound server (the Jetson; the laptop runs PipeWire)."""
+    if not shutil.which('pactl'):
+        return False
+    try:
+        info = subprocess.run(['pactl', 'info'], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return 'Server Name: pulseaudio' in info
+
+
 def player_for(sink=None):
-    """The command that plays a wav: pw-play on the chosen sink (the TV over HDMI), else aplay."""
+    """The command that plays a wav: pw-play on the chosen sink (the TV over HDMI), else aplay.
+
+    On PulseAudio (the Jetson) pw-play is installed but has no server: paplay instead.
+    """
+    if on_pulseaudio():
+        device = pulse_sink(sink) if sink else None
+        if sink and device is None:
+            print(f'NOTE: no audio sink matching "{sink}" (pactl list short sinks); using the default output',
+                  flush=True)
+        return ['paplay'] + ([f'--device={device}'] if device else [])
     if shutil.which('pw-play'):
         target = find_sink(sink) if sink else None
         if sink and target is None:

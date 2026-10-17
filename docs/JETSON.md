@@ -111,6 +111,14 @@ python3 scripts/lab_chess.py squares
 `chess_env.sh` prints `Chess terminal ready`; `which stockfish` must find
 `/usr/games/stockfish` (without it `play` silently picks random moves).
 
+Verified 2026-10-17: apt history shows no upgrades or removals; 15 packages
+built; Stockfish answers; `squares` prints the 10-14 board; 76 chess tests
+pass (`cd scripts && PYTHONPATH=$PYTHONPATH:../src/ur7e_perception python3 -m
+pytest -p no:launch_testing -p no:launch_ros test_lab_chess.py
+test_chess_operator.py test_chess_vision.py test_chess_gestures.py`);
+`CHESS=true bash scripts/lab_up.sh` takes the native path and stops at the
+robot check.
+
 ### 8. Camera and dashboard, still without the arm
 
 ZED into a Jetson USB-3 port (`lsusb`: STEREOLABS), then on the Jetson
